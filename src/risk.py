@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import numpy as np
 import pandas as pd
 from arch import arch_model
-from scipy.stats import genextreme
+from scipy.stats import genextreme, kstest
 from sklearn.covariance import LedoitWolf
+
+logger = logging.getLogger(__name__)
 
 
 def compute_sharpe(returns: pd.Series, risk_free_rate: float = 0.02) -> float:
@@ -13,9 +16,11 @@ def compute_sharpe(returns: pd.Series, risk_free_rate: float = 0.02) -> float:
 
 
 def compute_sortino(returns: pd.Series, required_return: float = 0.0) -> float:
-    downside = returns[returns < required_return]
-    downside_std = np.sqrt((downside**2).mean()) if not downside.empty else 0.0
-    return returns.mean() / (downside_std + 1e-9) * np.sqrt(252)
+    downside = returns[returns < required_return] - required_return  # excess loss below MAR
+    # Lower partial moment (standard semideviation)
+    downside_std = np.sqrt((downside ** 2).mean()) if len(downside) > 1 else 0.0
+    excess_mean = returns.mean() - required_return
+    return excess_mean / (downside_std + 1e-9) * np.sqrt(252)
 
 
 def max_drawdown(returns: pd.Series) -> float:
@@ -32,7 +37,11 @@ def compute_var(returns: pd.Series, alpha: float = 0.95) -> float:
 def compute_cvar(returns: pd.Series, alpha: float = 0.95) -> float:
     var_level = compute_var(returns, alpha)
     tail = returns[returns <= var_level]
-    return tail.mean() if not tail.empty else var_level
+    if len(tail) == 0:
+        return float(var_level)
+    if len(tail) == 1:
+        return float(tail.iloc[0])
+    return float(tail.mean())
 
 
 def stress_test(
@@ -67,7 +76,10 @@ def fit_garch(returns: pd.Series, model: str = "GJR") -> arch_model:
         mod = arch_model(returns, vol="EGarch", p=1, q=1)
     else:
         raise ValueError("Unsupported model")
-    return mod.fit(disp="off")
+    result = mod.fit(disp="off")
+    if not result.convergence_flag == 0:
+        logger.warning("GARCH (%s) did not converge (flag=%d).", model, result.convergence_flag)
+    return result
 
 
 def garch_forecast_vol(fitted_result, horizon: int = 21) -> float:
@@ -82,7 +94,7 @@ def dynamic_var(returns: pd.Series, alpha: float = 0.95, method: str = "garch") 
     if method == "garch":
         fitted = fit_garch(returns, "GJR")
         vol = fitted.conditional_volatility
-        var = -vol * np.percentile(returns / returns.std(), 1 - alpha) * np.sqrt(252)
+        var = -vol * np.percentile(returns / (returns.std() + 1e-9), (1 - alpha) * 100)
     elif method == "empirical":
         var = returns.rolling(252).quantile(1 - alpha)
     else:
@@ -102,10 +114,23 @@ def monte_carlo_var(returns: pd.Series, alpha: float = 0.95, n_sim: int = 10000,
 
 def gev_var(returns: pd.Series, alpha: float = 0.95) -> tuple[float, float]:
     """VaR and CVaR using GEV distribution on left tail."""
-    tail = -returns[returns < 0]  # left tail
+    tail = -returns[returns < 0]
+    if len(tail) < 20:
+        # Not enough tail observations — fall back to empirical
+        empirical_var = float(np.percentile(returns.dropna(), (1 - alpha) * 100))
+        return empirical_var, float(returns[returns <= empirical_var].mean() if any(returns <= empirical_var) else empirical_var)
     params = genextreme.fit(tail)
-    var = genextreme.ppf(1 - alpha, *params)
-    cvar = (genextreme.sf(genextreme.ppf(alpha, *params), *params) / (1 - alpha)) * var
+    # Goodness-of-fit check: reject GEV if K-S p-value < 0.05
+    ks_stat, ks_pval = kstest(tail, "genextreme", args=params)
+    if ks_pval < 0.05:
+        logger.warning(
+            "GEV fit rejected by K-S test (p=%.4f); falling back to empirical quantile.", ks_pval
+        )
+        empirical_var = float(np.percentile(returns.dropna(), (1 - alpha) * 100))
+        return empirical_var, float(returns[returns <= empirical_var].mean() if any(returns <= empirical_var) else empirical_var)
+    var = float(genextreme.ppf(alpha, *params))
+    x_tail = np.linspace(var, genextreme.ppf(0.9999, *params), 1000)
+    cvar = float(np.trapz(x_tail * genextreme.pdf(x_tail, *params), x_tail) / (1 - alpha))
     return var, cvar
 
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import ElasticNetCV
 from typing import Dict
 
 
@@ -63,9 +62,14 @@ def build_equity_features(prices: pd.DataFrame, fundamentals: pd.DataFrame, macr
         fundamentals.sort_values(["ticker", "date"]).groupby("ticker").tail(1).set_index("ticker")
     )
     fundamentals_df = latest_fundamentals.reset_index().drop(columns=["date"])
-    universe_df = universe[["ticker", "liquidity_score", "market_cap_mxn", "usd_exposure", "asset_class"]]
+    universe_df = universe[["ticker", "sector", "liquidity_score", "market_cap_mxn", "usd_exposure", "asset_class"]]
 
-    daily_macro = macro.set_index("date").reindex(prices.index, method="ffill").reset_index().rename(columns={"index": "date"})
+    daily_macro = (
+        macro.set_index("date")
+             .reindex(prices.index, method="ffill")
+             .rename_axis("date")
+             .reset_index()
+    )
     price_stack = prices.stack().rename("price").reset_index().rename(columns={"level_0": "date", "level_1": "ticker"})
     momentum_63_stack = momentum_63.stack().rename("momentum_63").reset_index().rename(columns={"level_0": "date", "level_1": "ticker"})
     momentum_126_stack = momentum_126.stack().rename("momentum_126").reset_index().rename(columns={"level_0": "date", "level_1": "ticker"})
@@ -81,19 +85,6 @@ def build_equity_features(prices: pd.DataFrame, fundamentals: pd.DataFrame, macr
         .merge(daily_macro, on="date", how="left")
     )
     feature_df = feature_df.dropna(subset=["momentum_63", "volatility_63", "pe_ratio", "pb_ratio"])
-
-    # Elastic Net signal
-    feature_cols = ["momentum_63", "momentum_126", "volatility_63", "pe_ratio", "pb_ratio", "roe", "profit_margin", "net_debt_to_ebitda", "industrial_production_yoy", "usd_mxn", "exports_yoy"]
-    X = feature_df[feature_cols].fillna(0.0)
-    y = feature_df.groupby("date").apply(lambda x: x["price"].pct_change().shift(-21)).reset_index(drop=True).fillna(0.0)  # 21-day forward return
-    elastic_net = ElasticNetCV(cv=5, l1_ratio=[0.1, 0.5, 0.9], max_iter=2000, random_state=42)
-    elastic_net.fit(X, y)
-    feature_df["elastic_net_signal"] = elastic_net.predict(X)
-
-    # Fama-French proxies (simplified)
-    feature_df["beta_mkt"] = 1.0
-    feature_df["beta_smb"] = 0.0
-    feature_df["beta_hml"] = 0.0
 
     # Add legacy columns for compatibility
     feature_df["momentum"] = feature_df["momentum_63"]
@@ -117,9 +108,14 @@ def build_fibra_features(prices: pd.DataFrame, fibra_fundamentals: pd.DataFrame,
         fibra_fundamentals.sort_values(["ticker", "date"]).groupby("ticker").tail(1).set_index("ticker")
     )
     fibra_df = latest_fibra.reset_index().drop(columns=["date"])
-    universe_df = universe[["ticker", "liquidity_score", "market_cap_mxn", "usd_exposure", "asset_class"]]
+    universe_df = universe[["ticker", "sector", "liquidity_score", "market_cap_mxn", "usd_exposure", "asset_class"]]
 
-    daily_macro = macro.set_index("date").reindex(prices.index, method="ffill").reset_index().rename(columns={"index": "date"})
+    daily_macro = (
+        macro.set_index("date")
+             .reindex(prices.index, method="ffill")
+             .rename_axis("date")
+             .reset_index()
+    )
     price_stack = prices.stack().rename("price").reset_index().rename(columns={"level_0": "date", "level_1": "ticker"})
     momentum_stack = momentum_63.stack().rename("momentum_63").reset_index().rename(columns={"level_0": "date", "level_1": "ticker"})
     vol_stack = volatility_63.stack().rename("volatility_63").reset_index().rename(columns={"level_0": "date", "level_1": "ticker"})
@@ -141,10 +137,16 @@ def build_fibra_features(prices: pd.DataFrame, fibra_fundamentals: pd.DataFrame,
     # Add legacy columns
     feature_df["momentum"] = feature_df["momentum_63"]
     feature_df["volatility"] = feature_df["volatility_63"]
-    # For fibra, value_score could be based on cap_rate, etc.
-    feature_df["value_score"] = -feature_df["cap_rate"]  # lower cap_rate better
-    feature_df["quality_score"] = feature_df["ffo_yield"] - feature_df["ltv"] * 0.1
-    feature_df["macro_exposure"] = 0.0  # placeholder
+    # For fibra: higher cap_rate = better value; higher FFO yield with low leverage = higher quality
+    feature_df["value_score"] = feature_df["cap_rate"]  # higher cap_rate = cheaper / more value
+    feature_df["quality_score"] = (
+        feature_df["ffo_yield"] - feature_df["vacancy_rate"] - feature_df["ltv"] * 0.15
+    )
+    # FIBRA macro exposure: sensitive to rate moves and FX (via cap rate re-pricing)
+    feature_df["macro_exposure"] = (
+        feature_df["macro_sensitivity_usd"].fillna(0.5) * feature_df.get("exports_yoy", pd.Series(0.0, index=feature_df.index)).fillna(0.0)
+        - feature_df["macro_sensitivity_rate"].abs().fillna(0.2) * feature_df.get("banxico_rate", pd.Series(0.0, index=feature_df.index)).fillna(0.0)
+    )
 
     return feature_df
 
@@ -158,10 +160,12 @@ def build_fixed_income_features(bond_df: pd.DataFrame, macro: pd.DataFrame) -> p
     feature_df["banxico_sensitivity"] = feature_df["duration"] * 0.0025  # 25bp shock impact
     
     # Add legacy columns for fixed income
-    feature_df["momentum"] = 0.0  # no momentum for bonds
-    feature_df["volatility"] = 0.0
-    feature_df["value_score"] = -feature_df["credit_spread"]  # lower spread better
-    feature_df["quality_score"] = feature_df["duration"]  # longer duration higher quality?
-    feature_df["macro_exposure"] = 0.0
+    feature_df["momentum"] = 0.0  # no price momentum for bonds
+    feature_df["volatility"] = feature_df["dv01"].fillna(0.0)  # proxy: price sensitivity to rate
+    feature_df["value_score"] = feature_df["carry"].fillna(0.0)  # higher carry = more value
+    # Quality: low credit spread + short duration = safer
+    feature_df["quality_score"] = -feature_df["credit_spread"] - 0.02 * feature_df["duration"]
+    # Macro exposure: interest rate sensitivity via DV01 and duration
+    feature_df["macro_exposure"] = -feature_df["duration"] * feature_df["banxico_sensitivity"].fillna(0.0)
     
     return feature_df

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import numpy as np
 import pandas as pd
 from scipy.stats import genextreme
@@ -9,6 +10,8 @@ from scipy.special import expit  # sigmoid function
 
 from .risk import compute_cvar, max_drawdown, compute_sharpe, compute_sortino, compute_var, gev_var
 from .portfolio import optimize_portfolio
+
+logger = logging.getLogger(__name__)
 
 
 def long_short_portfolio(
@@ -19,7 +22,6 @@ def long_short_portfolio(
 ) -> pd.DataFrame:
     """Build a market-neutral long/short book within each sector."""
     results = []
-    np.random.seed(42)
     
     for date in signal_df["date"].unique():
         date_signals = signal_df[signal_df["date"] == date].copy()
@@ -121,25 +123,27 @@ def dynamic_leverage(
     window: int = 63,
 ) -> pd.Series:
     """Compute a daily leverage scalar in [0.5, max_leverage]."""
-    np.random.seed(42)
     leverage = pd.Series(1.0, index=portfolio_returns.index)
     
     for i in range(window, len(portfolio_returns)):
         rolling_returns = portfolio_returns.iloc[i - window:i]
         rolling_cvar = compute_cvar(rolling_returns, alpha=alpha)
-        
-        if rolling_cvar > cvar_limit:
-            # Scale down linearly toward 0.5
-            leverage.iloc[i] = 0.5 + (max_leverage - 0.5) * max(0, (cvar_limit - rolling_cvar) / cvar_limit)
-        elif rolling_cvar <= cvar_limit * 0.5:
-            # Scale up toward max_leverage
-            leverage.iloc[i] = 0.5 + (max_leverage - 0.5) * (1 - rolling_cvar / (cvar_limit * 0.5))
+        abs_cvar = abs(rolling_cvar)
+
+        if abs_cvar > cvar_limit:
+            # Risk too high: scale down toward 0.5
+            scale = max(0.0, 1.0 - (abs_cvar - cvar_limit) / cvar_limit)
+            leverage.iloc[i] = 0.5 + (max_leverage - 0.5) * scale
+        elif abs_cvar <= cvar_limit * 0.5:
+            # Risk very low: scale up toward max_leverage
+            leverage.iloc[i] = max_leverage
         else:
-            # Linear interpolation
-            leverage.iloc[i] = 0.5 + (max_leverage - 0.5) * (cvar_limit - rolling_cvar) / (cvar_limit * 0.5)
+            # Linear interpolation between 0.5 and max_leverage
+            t = (cvar_limit - abs_cvar) / (cvar_limit * 0.5)
+            leverage.iloc[i] = 0.5 + (max_leverage - 0.5) * t
     
-    # Smooth with 5-day EMA
-    leverage = leverage.ewm(span=5, adjust=False).mean()
+    # Smooth with 5-day EMA using adjust=True for stable initial values
+    leverage = leverage.ewm(span=5, adjust=True).mean()
     leverage = leverage.clip(lower=0.5, upper=max_leverage)
     
     return leverage
@@ -154,7 +158,6 @@ def fx_directional_overlay(
     min_hedge_ratio: float = 0.10,
 ) -> pd.DataFrame:
     """Active FX positioning beyond passive hedging."""
-    np.random.seed(42)
     
     # Ensure us_fed_rate exists in macro_df
     if "us_fed_rate" not in macro_df.columns:
@@ -178,21 +181,20 @@ def fx_directional_overlay(
     mom_zscore = (macro_df["mxn_momentum"] - macro_df["mxn_momentum"].mean()) / \
                  (macro_df["mxn_momentum"].std(ddof=0) + 1e-9)
     
-    # FX signal score
+    # FX signal score: high rate differential = more incentive to stay unhedged (carry trade)
+    # Negative momentum in MXN (USD/MXN rising = MXN weakening) = increase hedge
     macro_df["fx_signal_score"] = -0.6 * rd_zscore + 0.4 * mom_zscore
-    
-    # Map signal to hedge ratio via sigmoid
+
+    # Clip z-scores to [-3, 3] before sigmoid so the full [min, max] range is utilized
+    clipped_score = macro_df["fx_signal_score"].clip(-3.0, 3.0) / 3.0  # normalize to [-1, 1]
     macro_df["hedge_ratio"] = min_hedge_ratio + (max_hedge_ratio - min_hedge_ratio) * \
-                              expit(macro_df["fx_signal_score"])
-    
-    # Compute estimated FX PnL with next-period returns
-    macro_df["mxn_return_next"] = macro_df["usd_mxn"].pct_change(-1)  # -1 shifts forward
-    mean_usd_exposure = usd_exposure.mean() if len(usd_exposure) > 0 else 0.3
-    macro_df["estimated_fx_pnl"] = mean_usd_exposure * \
-                                    (1 - macro_df["hedge_ratio"]) * \
-                                    macro_df["mxn_return_next"]
-    
-    return macro_df[["date", "hedge_ratio", "fx_signal_score", "rate_differential", "mxn_momentum", "estimated_fx_pnl"]].reset_index(drop=True)
+                              expit(clipped_score * 6)  # scale so sigmoid is responsive
+
+    # NOTE: estimated_fx_pnl is NOT computed here to avoid look-ahead bias.
+    # The actual FX PnL is computed in run_hedge_backtest using lagged hedge ratios
+    # and realized (contemporaneous) FX changes.
+
+    return macro_df[["date", "hedge_ratio", "fx_signal_score", "rate_differential", "mxn_momentum"]].reset_index(drop=True)
 
 
 def tail_risk_hedge(
@@ -238,12 +240,13 @@ def run_hedge_backtest(
     transaction_cost: float = 0.0015,
 ) -> dict:
     """Full Layer 2 backtest combining all hedge components."""
-    np.random.seed(42)
     
     # Step 1: Build long_short_portfolio weights per rebalance date
-    long_short = long_short_portfolio(signal_df, top_n=5, bottom_n=5, sector_neutral=True)
+    # Use top_n/bottom_n per sector based on realistic universe size
+    long_short = long_short_portfolio(signal_df, top_n=3, bottom_n=3, sector_neutral=True)
     
     if long_short.empty:
+        logger.warning("long_short_portfolio returned empty DataFrame — check signal_df coverage.")
         return {
             "returns": pd.Series(0.0, index=prices.index),
             "leverage_series": pd.Series(1.0, index=prices.index),
@@ -286,14 +289,25 @@ def run_hedge_backtest(
     leverage_series = dynamic_leverage(base_returns, max_leverage=max_leverage, cvar_limit=cvar_limit)
     leveraged_returns = base_returns * leverage_series
     
-    # Step 4: Apply fx_directional_overlay() estimated_fx_pnl as additive daily return
+    # Step 4: Compute FX PnL from LAGGED hedge ratios and REALIZED (contemporaneous) FX changes
+    # hedge_ratio[t-1] is decided at close of t-1; usd_mxn_return[t] is the actual next-day FX move
     fx_overlay = fx_directional_overlay(
         macro_df,
         signal_df,
         universe.set_index("ticker")["usd_exposure"]
     )
-    fx_overlay = fx_overlay.set_index("date").reindex(prices.index, method="ffill").reset_index()
-    fx_pnl = pd.Series(fx_overlay["estimated_fx_pnl"].values, index=prices.index).fillna(0.0)
+    fx_df = fx_overlay.sort_values("date").set_index("date").reindex(prices.index, method="ffill")
+    hedge_ratio_series = fx_df["hedge_ratio"].fillna(0.5)
+
+    # Realized FX change: pct_change of usd_mxn (contemporaneous, not forward-looking)
+    macro_reindexed = (
+        macro_df.set_index("date")["usd_mxn"]
+        .reindex(prices.index, method="ffill")
+    )
+    usd_mxn_daily_return = macro_reindexed.pct_change().fillna(0.0)
+    mean_usd_exposure = universe.set_index("ticker")["usd_exposure"].mean()
+    # FX PnL = exposure * (1 - lagged_hedge) * realized_fx_change
+    fx_pnl = mean_usd_exposure * (1 - hedge_ratio_series.shift(1).fillna(0.5)) * usd_mxn_daily_return
     
     # Step 5: Subtract transaction_cost * gross_turnover per rebalance
     gross_turnover = turnover * 2  # long and short

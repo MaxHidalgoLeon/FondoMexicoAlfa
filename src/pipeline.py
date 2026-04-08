@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
+import numpy as np
 import pandas as pd
+from sklearn.covariance import LedoitWolf
 
 from .backtest import run_backtest
 from .data_loader import load_mock_data
@@ -8,6 +11,8 @@ from .features import build_signal_matrix
 from .signals import score_cross_section, forecast_returns
 from .portfolio import black_litterman, apply_fx_overlay, optimize_portfolio
 from .risk import stress_test, fit_garch, garch_forecast_vol, dynamic_var, monte_carlo_var, gev_var
+
+logger = logging.getLogger(__name__)
 
 
 def run_pipeline(hedge_mode: bool = False) -> dict[str, object]:
@@ -24,11 +29,34 @@ def run_pipeline(hedge_mode: bool = False) -> dict[str, object]:
     forecast_df = forecast_returns(scored, prices.pct_change().fillna(0.0))
     
     # Black-Litterman
-    market_weights = universe.set_index("ticker")["market_cap_mxn"] / universe["market_cap_mxn"].sum()
-    market_weights = market_weights.reindex(forecast_df["ticker"].unique()).fillna(0.0)
-    cov_matrix = prices.pct_change().cov().reindex(index=market_weights.index, columns=market_weights.index).fillna(0.0)
-    views = forecast_df.set_index("ticker")["expected_return"].to_dict()
-    view_confidences = {t: 0.5 for t in views.keys()}  # uniform confidence
+    forecast_tickers = forecast_df["ticker"].unique() if not forecast_df.empty else []
+    market_weights = universe.set_index("ticker")["market_cap_mxn"] / (universe["market_cap_mxn"].sum() + 1e-9)
+    market_weights = market_weights.reindex(forecast_tickers).fillna(0.0)
+
+    # Warn about any ticker mismatch between forecast and universe
+    missing_from_universe = set(forecast_tickers) - set(universe["ticker"])
+    if missing_from_universe:
+        logger.warning("Tickers in forecast but not in universe (will get 0 market weight): %s", missing_from_universe)
+
+    # Build covariance with Ledoit-Wolf shrinkage
+    raw_returns = prices.pct_change().dropna(how="all")
+    cov_tickers = [t for t in forecast_tickers if t in raw_returns.columns]
+    if cov_tickers:
+        lw = LedoitWolf()
+        lw.fit(raw_returns[cov_tickers].fillna(0.0))
+        cov_matrix = pd.DataFrame(lw.covariance_, index=cov_tickers, columns=cov_tickers)
+    else:
+        cov_matrix = pd.DataFrame(dtype=float)
+
+    views = forecast_df.groupby("ticker")["expected_return"].mean().to_dict()
+    # Data-driven view confidences: scale |expected_return| to [0.30, 0.70]
+    abs_views = pd.Series(views).abs()
+    view_range = abs_views.max() - abs_views.min()
+    if view_range > 1e-9:
+        view_confidences = (0.30 + 0.40 * (abs_views - abs_views.min()) / view_range).to_dict()
+    else:
+        view_confidences = {t: 0.50 for t in views}
+
     bl_returns = black_litterman(market_weights, cov_matrix, views, view_confidences)
     
     # FX overlay
@@ -36,13 +64,7 @@ def run_pipeline(hedge_mode: bool = False) -> dict[str, object]:
     expected_usdmxn_return = macro["usd_mxn"].pct_change().mean()  # simple proxy
     adjusted_returns = apply_fx_overlay(bl_returns, usd_exposure, macro["usd_mxn"].iloc[-1], expected_usdmxn_return)
     
-    # Optimize with constraints
-    asset_class_constraints = {
-        "equity": {"max_weight": 0.60, "min_weight": 0.20},
-        "fibra": {"max_weight": 0.30, "min_weight": 0.05},
-        "fixed_income": {"max_weight": 0.30, "min_weight": 0.05},
-    }
-    # For simplicity, assume all tickers are equities for now
+    # TODO: pass asset_class_constraints to optimize_portfolio once implemented
     backtest_results = run_backtest(prices, forecast_df, universe)
 
     exposures = {
@@ -70,8 +92,8 @@ def run_pipeline(hedge_mode: bool = False) -> dict[str, object]:
         "end_date": prices.index.max(),
         "metrics": backtest_results["metrics"],
         "stress": stress,
-        "garch_vol_forecast": garch_vol,
-        "dynamic_var": dyn_var,
+        "garch_vol_forecast": garch_vol if np.isfinite(garch_vol) else None,
+        "dynamic_var": float(dyn_var) if np.isfinite(dyn_var) else None,
         "monte_carlo_var": mc_var,
         "gev_var": gev_v,
         "gev_cvar": gev_cv,
@@ -120,7 +142,9 @@ def print_summary(results: dict[str, object], hedge_mode: bool = False) -> None:
         for key in layer1_metrics.keys():
             l1_val = layer1_metrics.get(key, 0.0)
             l2_val = layer2_metrics.get(key, 0.0)
-            print(f"{key:<22} {l1_val:>14.4f} {l2_val:>14.4f}")
+            l1_str = f"{l1_val:>14.4f}" if isinstance(l1_val, (int, float)) and np.isfinite(l1_val) else f"{'N/A':>14}"
+            l2_str = f"{l2_val:>14.4f}" if isinstance(l2_val, (int, float)) and np.isfinite(l2_val) else f"{'N/A':>14}"
+            print(f"{key:<22} {l1_str} {l2_str}")
         
         print("\nTail hedge analysis (Layer 2):")
         tail_hedge = results["hedge_layer"]["tail_hedge"]
@@ -132,7 +156,8 @@ def print_summary(results: dict[str, object], hedge_mode: bool = False) -> None:
     else:
         print("\nLayer 1 metrics:")
         for key, value in summary["metrics"].items():
-            print(f"{key}: {value:.4f}")
+            val_str = f"{value:.4f}" if isinstance(value, (int, float)) and np.isfinite(value) else "N/A"
+            print(f"{key}: {val_str}")
         print("\nStress test results:")
         print(summary["stress"].to_string(index=False))
 

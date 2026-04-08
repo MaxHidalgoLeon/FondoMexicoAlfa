@@ -1,20 +1,53 @@
 from __future__ import annotations
 
+import logging
 import numpy as np
 import pandas as pd
 from typing import Dict
+from sklearn.covariance import LedoitWolf
 
 from .portfolio import optimize_portfolio
 from .risk import compute_cvar, max_drawdown, compute_sortino, compute_sharpe
 
+logger = logging.getLogger(__name__)
+
 
 def get_rebalance_dates(prices: pd.DataFrame, freq: str = "ME") -> pd.DatetimeIndex:
-    return prices.resample(freq).first().index
+    """Return the last available trading date in each rebalancing period."""
+    resampled = prices.resample(freq).last().dropna(how="all")
+    # Snap to the nearest actual trading day that exists in prices.index
+    snapped = []
+    for dt in resampled.index:
+        # Find the last trading day on or before dt
+        candidates = prices.index[prices.index <= dt]
+        if len(candidates):
+            snapped.append(candidates[-1])
+    return pd.DatetimeIndex(sorted(set(snapped)))
 
 
-def build_covariance_matrix(returns: pd.DataFrame, date: pd.Timestamp, window: int = 63) -> pd.DataFrame:
-    subset = returns.loc[:date].tail(window)
-    return subset.cov().fillna(0.0)
+def build_covariance_matrix(
+    returns: pd.DataFrame, date: pd.Timestamp, window: int = 63
+) -> pd.DataFrame:
+    """Build a Ledoit-Wolf shrunk covariance matrix using at most `window` days."""
+    subset = returns.loc[:date].tail(window).fillna(0.0)
+    if subset.shape[0] < 10:
+        # Fallback to identity-scaled matrix when data is scarce
+        n = len(returns.columns)
+        avg_var = returns.var().mean() if not returns.empty else 1e-4
+        return pd.DataFrame(
+            np.eye(n) * avg_var, index=returns.columns, columns=returns.columns
+        )
+    try:
+        lw = LedoitWolf()
+        lw.fit(subset)
+        cov_array = lw.covariance_
+        return pd.DataFrame(cov_array, index=subset.columns, columns=subset.columns).reindex(
+            index=returns.columns, columns=returns.columns
+        ).fillna(0.0)
+    except Exception:
+        return subset.cov().reindex(
+            index=returns.columns, columns=returns.columns
+        ).fillna(0.0)
 
 
 def run_backtest(
@@ -22,7 +55,7 @@ def run_backtest(
     signal_df: pd.DataFrame,
     universe: pd.DataFrame,
     transaction_cost: float = 0.001,
-    rebalance_freq: str = "M",
+    rebalance_freq: str = "ME",
 ) -> Dict[str, pd.DataFrame]:
     returns = prices.pct_change().fillna(0.0)
     rebalance_dates = get_rebalance_dates(prices, rebalance_freq)
@@ -36,6 +69,7 @@ def run_backtest(
             continue
         date_signal = signal_df[signal_df["date"] == date]
         if date_signal.empty:
+            logger.warning("No signal for rebalance date %s — carrying previous weights.", date)
             continue
         expected_returns = date_signal.set_index("ticker")["expected_return"].reindex(prices.columns).fillna(0.0)
         cov_matrix = build_covariance_matrix(returns, date)
@@ -50,7 +84,8 @@ def run_backtest(
                 risk_aversion=4.0,
                 turnover_penalty=0.05,
             )
-        except RuntimeError:
+        except RuntimeError as exc:
+            logger.warning("Optimization failed on %s: %s — carrying previous weights.", date, exc)
             target_weights = prev_weights
         weights.loc[date:, :] = target_weights.values
         turnover.loc[date] = np.sum(np.abs(target_weights - prev_weights))
