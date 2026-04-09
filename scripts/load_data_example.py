@@ -6,15 +6,15 @@ Usage:
     python scripts/load_data_example.py --source mock
     python scripts/load_data_example.py --source yahoo
     python scripts/load_data_example.py --source bloomberg
-    python scripts/load_data_example.py --source refinitiv
+    python scripts/load_data_example.py --source lseg
 """
 import argparse
 from src.pipeline import run_pipeline, print_summary
 
 PARSER = argparse.ArgumentParser(description="Run the Fondo Mexico pipeline with a chosen data source.")
-PARSER.add_argument("--source", choices=["mock", "yahoo", "bloomberg", "refinitiv"], default="mock")
-PARSER.add_argument("--start", default="2018-01-01")
-PARSER.add_argument("--end", default="2025-12-31")
+PARSER.add_argument("--source", choices=["mock", "yahoo", "bloomberg", "lseg"], default="mock")
+PARSER.add_argument("--start", default="2017-01-01")
+PARSER.add_argument("--end", default="2026-03-31")
 PARSER.add_argument("--hedge", action="store_true", help="Enable hedge overlay (Layer 2).")
 
 if __name__ == "__main__":

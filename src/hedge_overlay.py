@@ -156,8 +156,14 @@ def fx_directional_overlay(
     hedge_ratio_base: float = 0.5,
     max_hedge_ratio: float = 0.95,
     min_hedge_ratio: float = 0.10,
+    mxn_garch_vol: float | None = None,
 ) -> pd.DataFrame:
-    """Active FX positioning beyond passive hedging."""
+    """Active FX positioning beyond passive hedging.
+
+    Args:
+        mxn_garch_vol: GARCH vol forecast anualizada para USD/MXN. Cuando se
+            provee, regímenes de alta volatilidad incrementan el hedge ratio.
+    """
 
     # Ensure us_fed_rate exists in macro_df
     if "us_fed_rate" not in macro_df.columns:
@@ -189,6 +195,15 @@ def fx_directional_overlay(
     clipped_score = macro_df["fx_signal_score"].clip(-3.0, 3.0) / 3.0  # normalize to [-1, 1]
     macro_df["hedge_ratio"] = min_hedge_ratio + (max_hedge_ratio - min_hedge_ratio) * \
         expit(clipped_score * 6)  # scale so sigmoid is responsive  # noqa: E127
+
+    # GARCH vol adjustment: alta vol de MXN → incrementar hedge ratio
+    if mxn_garch_vol is not None and np.isfinite(mxn_garch_vol) and mxn_garch_vol > 0:
+        # 15% anualizado = neutral, >25% = régimen de alta vol
+        vol_zscore = (mxn_garch_vol - 0.15) / 0.10
+        vol_boost = 0.05 * float(np.clip(vol_zscore, -1.0, 1.0))  # máx ±5%
+        macro_df["hedge_ratio"] = (macro_df["hedge_ratio"] + vol_boost).clip(
+            lower=min_hedge_ratio, upper=max_hedge_ratio
+        )
 
     # NOTE: estimated_fx_pnl is NOT computed here to avoid look-ahead bias.
     # The actual FX PnL is computed in run_hedge_backtest using lagged hedge ratios
@@ -238,6 +253,8 @@ def run_hedge_backtest(
     max_leverage: float = 1.5,
     cvar_limit: float = 0.02,
     transaction_cost: float = 0.0015,
+    risk_free_rate: float = 0.02,
+    mxn_garch_vol: float | None = None,
 ) -> dict:
     """Full Layer 2 backtest combining all hedge components."""
 
@@ -294,7 +311,8 @@ def run_hedge_backtest(
     fx_overlay = fx_directional_overlay(
         macro_df,
         signal_df,
-        universe.set_index("ticker")["usd_exposure"]
+        universe.set_index("ticker")["usd_exposure"],
+        mxn_garch_vol=mxn_garch_vol,
     )
     fx_df = fx_overlay.sort_values("date").set_index("date").reindex(prices.index, method="ffill")
     hedge_ratio_series = fx_df["hedge_ratio"].fillna(0.5)
@@ -317,8 +335,8 @@ def run_hedge_backtest(
 
     # Step 6: Compute full risk metrics
     metrics = {
-        "sharpe": compute_sharpe(final_returns),
-        "sortino": compute_sortino(final_returns),
+        "sharpe": compute_sharpe(final_returns, risk_free_rate=risk_free_rate),
+        "sortino": compute_sortino(final_returns, required_return=risk_free_rate / 252),
         "max_drawdown": max_drawdown(final_returns),
         "cvar_95": compute_cvar(final_returns, alpha=0.95),
         "annualized_return": ((1 + final_returns).prod() ** (252 / len(final_returns))) - 1,

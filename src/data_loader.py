@@ -6,51 +6,75 @@ from typing import Dict
 
 
 def get_investable_universe() -> pd.DataFrame:
-    """Create the initial thematic universe for Mexico industrial research."""
+    """Create the nearshoring industrial universe for México (verified on Yahoo Finance 2026-04)."""
     tickers = [
-        "GFM0", "FIBRA1", "LOGI2", "INDU3", "UTIL4",
-        "TRANS5", "ENER6", "TECH7", "MEXI8", "ENGR9",
-        "AUT10", "RWL11", "IND12", "FIBR13", "LOG14",
-        "IND15", "FRA16", "STOR17", "CARG18", "ECO19",
+        # Equities — industrial / logistics / infrastructure / nearshoring
+        "NEMAKA", "GISSAA", "CEMEXCPO", "ICHB", "GCARSOA1",
+        "ASURB", "GAPB", "OMAB", "PINFRA", "ORBIA",
+        "VESTA", "FEMSAUBD", "KIMBERA", "BIMBOA", "GRUMAB",
+        # FIBRAs — industrial / logistics focus
+        "FUNO11", "FIBRAPL14", "FIBRAMQ12",
+        # Fixed income — internal identifiers (always mock-generated)
         "CETES28", "CETES91", "MBONO3Y", "MBONO5Y", "MBONO10Y", "CORP1", "CORP2",
     ]
     names = [
-        "Grupo Fabricación", "Fibra Industrial Uno", "Logística Norte", "Industria MX", "Utility Industrial",
-        "Transporte Integral", "Energía Manufacturera", "Tecnologías de Planta", "México Industrial", "Ingeniería 4.0",
-        "Automotriz Supply", "Rieles Logísticos", "Industrial Desarrollo", "Fibra Park", "Logística Global",
-        "Industria Sostenible", "FIBRA Renta", "Storage Infra", "Cargo Rex", "Energía Conexión",
+        "Nemak", "Grupo Industrial Saltillo", "CEMEX", "Ternium México", "Grupo Carso",
+        "Aeropuertos del Sureste", "Grupo Aeroportuario del Pacífico", "Grupo Aeroportuario Centro Norte", "Pinfra", "Orbia",
+        "Vesta", "FEMSA", "Kimberly-Clark México", "Bimbo", "Gruma",
+        "FIBRA Uno", "FIBRA Prologis", "FIBRA Macquarie",
         "Cetes 28d", "Cetes 91d", "Mbono 3yr", "Mbono 5yr", "Mbono 10yr", "Corporate Bond 1", "Corporate Bond 2",
     ]
     sectors = [
-        "Industrial", "FIBRA", "Logistics", "Industrial", "Utilities",
-        "Logistics", "Energy", "Industrial", "Industrial", "Industrial",
-        "Industrial", "Logistics", "Industrial", "FIBRA", "Logistics",
-        "Industrial", "FIBRA", "Logistics", "Logistics", "Energy",
+        "Industrial", "Industrial", "Industrial", "Industrial", "Industrial",
+        "Logistics", "Logistics", "Logistics", "Infrastructure", "Industrial",
+        "Industrial", "Consumer/Industrial", "Industrial", "Industrial", "Industrial",
+        "FIBRA", "FIBRA", "FIBRA",
         "Government", "Government", "Government", "Government", "Government", "Corporate", "Corporate",
     ]
     asset_classes = [
-        "equity", "fibra", "equity", "equity", "equity",
         "equity", "equity", "equity", "equity", "equity",
-        "equity", "equity", "equity", "fibra", "equity",
-        "equity", "fibra", "equity", "equity", "equity",
+        "equity", "equity", "equity", "equity", "equity",
+        "equity", "equity", "equity", "equity", "equity",
+        "fibra", "fibra", "fibra",
         "fixed_income", "fixed_income", "fixed_income", "fixed_income", "fixed_income", "fixed_income", "fixed_income",
     ]
-    flags = [
-        True, True, True, True, False,
-        True, False, True, True, True,
+    investable = [
         True, True, True, True, True,
-        True, True, True, True, False,
+        True, True, True, True, True,
+        True, True, True, True, True,
+        True, True, True,
         True, True, True, True, True, True, True,
     ]
-    usd_exposure = [0.2, 0.4, 0.1, 0.35, 0.15, 0.25, 0.55, 0.1, 0.3, 0.2, 0.4, 0.2, 0.3, 0.45, 0.2, 0.25, 0.4, 0.05, 0.15, 0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.1]
-    market_caps = np.linspace(10_000, 120_000, 20).tolist() + [0] * 7  # bonds have no market cap
-    liquidity = np.linspace(0.25, 1.0, 20).tolist() + [1.0] * 7  # bonds are liquid
+    # USD revenue exposure estimate (0.0–1.0) — nearshoring names have high USD exposure
+    usd_exposure = [
+        0.85, 0.70, 0.40, 0.75, 0.30,   # NEMAKA, GISSAA, CEMEX, ICHB, GCARSOA1
+        0.30, 0.25, 0.30, 0.20, 0.50,   # ASURB, GAPB, OMAB, PINFRA, ORBIA
+        0.65, 0.35, 0.20, 0.15, 0.35,   # VESTA, FEMSA, KIMBERA, BIMBOA, GRUMAB
+        0.50, 0.80, 0.55,               # FUNO11, FIBRAPL14, FIBRAMQ12
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.1,  # bonds
+    ]
+    # Approximate market caps in MXN millions (Q1 2026 estimates, bonds = 0)
+    market_caps = [
+        18_000, 12_000, 250_000, 95_000, 180_000,
+        120_000, 100_000, 60_000, 85_000, 55_000,
+        35_000, 300_000, 90_000, 220_000, 75_000,
+        140_000, 50_000, 30_000,
+        0, 0, 0, 0, 0, 0, 0,
+    ]
+    # Liquidity score (0.0–1.0) based on average daily traded value
+    liquidity = [
+        0.55, 0.45, 0.95, 0.70, 0.80,
+        0.85, 0.80, 0.65, 0.75, 0.60,
+        0.50, 1.00, 0.75, 0.90, 0.70,
+        0.90, 0.65, 0.55,
+        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    ]
     df = pd.DataFrame({
         "ticker": tickers,
         "name": names,
         "sector": sectors,
         "asset_class": asset_classes,
-        "investable": flags,
+        "investable": investable,
         "usd_exposure": usd_exposure,
         "market_cap_mxn": market_caps,
         "liquidity_score": liquidity,
@@ -60,8 +84,8 @@ def get_investable_universe() -> pd.DataFrame:
 
 def generate_mock_price_series(
     tickers: list[str],
-    start_date: str = "2018-01-01",
-    end_date: str = "2025-12-31",
+    start_date: str = "2017-01-01",
+    end_date: str = "2026-03-31",
     freq: str = "B",
 ) -> pd.DataFrame:
     dates = pd.date_range(start_date, end_date, freq=freq)
@@ -214,7 +238,7 @@ def build_mock_bonds(dates: pd.DatetimeIndex) -> pd.DataFrame:
     return pd.DataFrame.from_records(records)
 
 
-def build_mock_macro_series(start_date: str = "2018-01-01", end_date: str = "2025-12-31") -> pd.DataFrame:
+def build_mock_macro_series(start_date: str = "2017-01-01", end_date: str = "2026-03-31") -> pd.DataFrame:
     dates = pd.date_range(start_date, end_date, freq="ME")
     np.random.seed(9)
 
@@ -268,8 +292,8 @@ def load_mock_data() -> Dict[str, pd.DataFrame]:
 
 def load_data(
     source: str = "mock",
-    start_date: str = "2018-01-01",
-    end_date: str = "2025-12-31",
+    start_date: str = "2017-01-01",
+    end_date: str = "2026-03-31",
     **provider_kwargs,
 ) -> Dict[str, pd.DataFrame]:
     """
@@ -303,13 +327,44 @@ def load_data(
         universe["investable"] & (universe["asset_class"] == "fixed_income"), "ticker"
     ].tolist()
 
+    import warnings
+
     prices = provider.get_prices(equity_tickers, start_date, end_date)
-    fundamentals = provider.get_fundamentals(
-        [t for t in equity_tickers if t not in fibra_tickers], start_date, end_date
-    )
-    fibra_fundamentals = provider.get_fibra_fundamentals(fibra_tickers, start_date, end_date)
-    bonds = provider.get_bonds(bond_tickers, start_date, end_date)
-    macro = provider.get_macro(start_date, end_date)
+
+    try:
+        fundamentals = provider.get_fundamentals(
+            [t for t in equity_tickers if t not in fibra_tickers], start_date, end_date
+        )
+    except NotImplementedError as e:
+        warnings.warn(f"Fundamentals not available from {source}: {e}. Falling back to mock.")
+        from .data_loader import build_mock_fundamentals
+        fundamentals = build_mock_fundamentals(
+            [t for t in equity_tickers if t not in fibra_tickers],
+            pd.date_range(start_date, end_date, freq="ME")
+        )
+
+    try:
+        fibra_fundamentals = provider.get_fibra_fundamentals(fibra_tickers, start_date, end_date)
+    except NotImplementedError as e:
+        warnings.warn(f"FIBRA fundamentals not available from {source}: {e}. Falling back to mock.")
+        from .data_loader import build_mock_fibra_fundamentals
+        fibra_fundamentals = build_mock_fibra_fundamentals(
+            fibra_tickers, pd.date_range(start_date, end_date, freq="ME")
+        )
+
+    try:
+        bonds = provider.get_bonds(bond_tickers, start_date, end_date)
+    except NotImplementedError as e:
+        warnings.warn(f"Bond data not available from {source}: {e}. Falling back to mock.")
+        from .data_loader import build_mock_bonds
+        bonds = build_mock_bonds(pd.date_range(start_date, end_date, freq="ME"))
+
+    try:
+        macro = provider.get_macro(start_date, end_date)
+    except NotImplementedError as e:
+        warnings.warn(f"Macro data not available from {source}: {e}. Falling back to mock.")
+        from .data_loader import build_mock_macro_series
+        macro = build_mock_macro_series(start_date=start_date, end_date=end_date)
 
     return {
         "universe": universe,

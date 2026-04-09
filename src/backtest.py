@@ -56,6 +56,7 @@ def run_backtest(
     universe: pd.DataFrame,
     transaction_cost: float = 0.001,
     rebalance_freq: str = "ME",
+    risk_free_rate: float = 0.02,
 ) -> Dict[str, pd.DataFrame]:
     returns = prices.pct_change().fillna(0.0)
     rebalance_dates = get_rebalance_dates(prices, rebalance_freq)
@@ -95,8 +96,8 @@ def run_backtest(
     transaction_costs = turnover * transaction_cost
     portfolio_returns = portfolio_returns - transaction_costs
     metrics = {
-        "sharpe": compute_sharpe(portfolio_returns),
-        "sortino": compute_sortino(portfolio_returns),
+        "sharpe": compute_sharpe(portfolio_returns, risk_free_rate=risk_free_rate),
+        "sortino": compute_sortino(portfolio_returns, required_return=risk_free_rate / 252),
         "max_drawdown": max_drawdown(portfolio_returns),
         "cvar_95": compute_cvar(portfolio_returns, alpha=0.95),
         "annualized_return": ((1 + portfolio_returns).prod() ** (252 / len(portfolio_returns))) - 1,

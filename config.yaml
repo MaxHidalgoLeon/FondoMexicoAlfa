@@ -1,0 +1,21 @@
+# =============================================================================
+# Fondo Mexico — Configuración del pipeline
+# Edita estos valores para cambiar el comportamiento del proyecto.
+# Los argumentos de la terminal siempre sobreescriben este archivo.
+# =============================================================================
+
+# Fuente de datos: "mock" | "yahoo" | "bloomberg" | "refinitiv"
+source: "mock"
+
+# Periodo de análisis
+start_date: "2017-01-01"
+end_date:   "2026-03-31"
+
+# Activar overlay de cobertura (hedge Layer 2)
+hedge: false
+
+# Ruta de salida del reporte HTML
+report_output: "reports/output/strategy_report.html"
+
+# Detener el pipeline si algún test falla
+abort_on_test_failure: true

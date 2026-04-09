@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 def run_pipeline(
     hedge_mode: bool = False,
     data_source: str = "mock",
-    start_date: str = "2018-01-01",
-    end_date: str = "2025-12-31",
+    start_date: str = "2017-01-01",
+    end_date: str = "2026-03-31",
     **provider_kwargs,
 ) -> dict[str, object]:
     from .data_loader import load_data
@@ -63,11 +63,33 @@ def run_pipeline(
     else:
         view_confidences = {t: 0.50 for t in views}
 
+    # Align market_weights to the covariance matrix's ticker set before BL
+    market_weights = market_weights.reindex(cov_matrix.columns).fillna(0.0)
+
     bl_returns = black_litterman(market_weights, cov_matrix, views, view_confidences)
+
+    # Risk-free rate: último valor de Banxico disponible en macro
+    banxico_series = macro["banxico_rate"].dropna()
+    risk_free_rate = float(banxico_series.iloc[-1]) if not banxico_series.empty else 0.02
+    logger.info("Risk-free rate (Banxico): %.4f", risk_free_rate)
+
+    # GARCH sobre retornos de USD/MXN para proyectar vol y drift
+    usdmxn_returns = macro["usd_mxn"].pct_change().dropna()
+    mxn_garch_vol = None
+    if len(usdmxn_returns) >= 30:
+        try:
+            _mxn_garch = fit_garch(usdmxn_returns)
+            mxn_garch_vol = garch_forecast_vol(_mxn_garch)
+            expected_usdmxn_return = float(usdmxn_returns.mean() + _mxn_garch.resid.mean())
+            logger.info("GARCH USD/MXN vol forecast (anualizada): %.4f", mxn_garch_vol)
+        except Exception:
+            logger.warning("GARCH fit para USD/MXN falló — usando media histórica.")
+            expected_usdmxn_return = float(usdmxn_returns.mean())
+    else:
+        expected_usdmxn_return = float(usdmxn_returns.mean()) if len(usdmxn_returns) > 0 else 0.0
 
     # FX overlay
     usd_exposure = universe.set_index("ticker")["usd_exposure"]
-    expected_usdmxn_return = macro["usd_mxn"].pct_change().mean()  # simple proxy
     adjusted_returns = apply_fx_overlay(bl_returns, usd_exposure, macro["usd_mxn"].iloc[-1], expected_usdmxn_return)
 
     # Merge BL-adjusted expected returns back into forecast_df before backtesting
@@ -77,7 +99,7 @@ def run_pipeline(
         forecast_df["expected_return"] = forecast_df["ticker"].map(bl_lookup).fillna(
             forecast_df["expected_return"]
         )
-    backtest_results = run_backtest(prices, forecast_df, universe)
+    backtest_results = run_backtest(prices, forecast_df, universe, risk_free_rate=risk_free_rate)
 
     exposures = {
         "banxico_shock": 0.5,
@@ -89,7 +111,7 @@ def run_pipeline(
         "peso_depreciation": -0.05,
         "us_slowdown": -0.04,
     }
-    stress = stress_test(backtest_results["returns"], scenario_shocks, exposures)
+    stress = stress_test(backtest_results["returns"], scenario_shocks, exposures, risk_free_rate=risk_free_rate)
 
     # Additional risk metrics
     returns = backtest_results["returns"]
@@ -130,6 +152,8 @@ def run_pipeline(
             max_leverage=1.5,
             cvar_limit=0.02,
             transaction_cost=0.0015,
+            risk_free_rate=risk_free_rate,
+            mxn_garch_vol=mxn_garch_vol,
         )
         results["hedge_layer"] = hedge_results
 

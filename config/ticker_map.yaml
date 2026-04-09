@@ -1,0 +1,161 @@
+# ---------------------------------------------------------------------------
+# Ticker mapping: canonical name -> provider-specific symbols
+#
+# canonical: internal name used throughout the codebase
+# yahoo:     ticker as used by yfinance (appended with .MX by provider)
+# lseg:      Refinitiv RIC (appended with .MX by provider unless overridden)
+# bloomberg: Bloomberg ticker (appended with " MM Equity" by provider)
+#
+# Fallback rule (applied automatically by each provider):
+#   If a provider key is missing, the provider uses canonical + its default suffix.
+# ---------------------------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Equities — Industrial / Logistics / Infrastructure / Nearshoring
+# ------------------------------------------------------------------
+
+NEMAKA:
+  yahoo:     "NEMAKA"
+  lseg:      "NEMAKA"
+  bloomberg: "NEMAKA"
+
+GISSAA:
+  yahoo:     "GISSAA"
+  lseg:      "GISSAA"
+  bloomberg: "GISSAA"
+
+CEMEXCPO:
+  yahoo:     "CEMEXCPO"
+  lseg:      "CEMEXCPO"
+  bloomberg: "CEMEXCPO"
+
+ICHB:
+  yahoo:     "ICHB"
+  lseg:      "ICHB"
+  bloomberg: "ICHB"
+
+GCARSOA1:
+  yahoo:     "GCARSOA1"
+  lseg:      "GCARSOA1"
+  bloomberg: "GCARSOA1"
+
+ASURB:
+  yahoo:     "ASURB"
+  lseg:      "ASURB"
+  bloomberg: "ASURB"
+
+GAPB:
+  yahoo:     "GAPB"
+  lseg:      "GAPB"
+  bloomberg: "GAPB"
+
+OMAB:
+  yahoo:     "OMAB"
+  lseg:      "OMAB"
+  bloomberg: "OMAB"
+
+PINFRA:
+  yahoo:     "PINFRA"
+  lseg:      "PINFRA"
+  bloomberg: "PINFRA"
+
+ORBIA:
+  yahoo:     "ORBIA"
+  lseg:      "ORBIA"
+  bloomberg: "ORBIA"
+
+VESTA:
+  yahoo:     "VESTA"
+  lseg:      "VESTA"
+  bloomberg: "VESTA"
+
+FEMSAUBD:
+  yahoo:     "FEMSAUBD"
+  lseg:      "FEMSAUBD"
+  bloomberg: "FEMSAUBD"
+
+KIMBERA:
+  yahoo:     "KIMBERA"
+  lseg:      "KIMBERA"
+  bloomberg: "KIMBERA"
+
+BIMBOA:
+  yahoo:     "BIMBOA"
+  lseg:      "BIMBOA"
+  bloomberg: "BIMBOA"
+
+GRUMAB:
+  yahoo:     "GRUMAB"
+  lseg:      "GRUMAB"
+  bloomberg: "GRUMAB"
+
+# ------------------------------------------------------------------
+# FIBRAs — Industrial / Logistics focus
+# ------------------------------------------------------------------
+
+FUNO11:
+  yahoo:     "FUNO11"
+  lseg:      "FUNO11"
+  bloomberg: "FUNO11"
+
+FIBRAPL14:
+  yahoo:     "FIBRAPL14"
+  lseg:      "FIBRAPL14"
+  bloomberg: "FIBRAPL14"
+
+FIBRAMQ12:
+  yahoo:     "FIBRAMQ12"
+  lseg:      "FIBRAMQ12"
+  bloomberg: "FIBRAMQ12"
+
+# ------------------------------------------------------------------
+# Fixed Income — internal canonical identifiers
+#
+# Government bonds (CETES/Mbonos):
+#   - Yahoo:     real yields via Banxico SIE (SF43936/SF43939/SF43773/SF43774/SF43775)
+#   - Bloomberg: real data via _BBG_BOND_TICKERS (CETES 28D Govt, MBONO 5Y Govt, etc.)
+#   - LSEG:      real data via _RD_BOND_RICS (MX0001Y=, MX5YT=RR, etc.)
+#
+# Corporate bonds (CORP1/CORP2):
+#   - Yahoo:     mock until real ISINs are configured
+#   - Bloomberg: placeholder tickers — update _BBG_BOND_TICKERS with real ISINs
+#   - LSEG:      not yet in _RD_BOND_RICS — add real RICs when available
+#
+# Bond symbols are null here because bonds go through get_bonds() / dedicated
+# provider dicts, NOT through the equity _resolve_symbols() path.
+# ------------------------------------------------------------------
+
+CETES28:
+  yahoo:     null
+  lseg:      null
+  bloomberg: null
+
+CETES91:
+  yahoo:     null
+  lseg:      null
+  bloomberg: null
+
+MBONO3Y:
+  yahoo:     null
+  lseg:      null
+  bloomberg: null
+
+MBONO5Y:
+  yahoo:     null
+  lseg:      null
+  bloomberg: null
+
+MBONO10Y:
+  yahoo:     null
+  lseg:      null
+  bloomberg: null
+
+CORP1:
+  yahoo:     null
+  lseg:      null
+  bloomberg: null
+
+CORP2:
+  yahoo:     null
+  lseg:      null
+  bloomberg: null

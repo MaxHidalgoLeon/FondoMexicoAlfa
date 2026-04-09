@@ -4,6 +4,10 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Credenciales — NUNCA subir a GitHub
+.env
+lseg-data.config.json
+
 # Data
 data/
 

@@ -1,7 +1,36 @@
-from src.data_loader import load_mock_data
+import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+# Load .env
+_env = ROOT / ".env"
+if _env.exists():
+    with open(_env) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                os.environ.setdefault(_k.strip(), _v.strip())
+
+# Load config.yaml
+_cfg = {"source": "mock", "start_date": "2017-01-01", "end_date": "2026-03-31"}
+_cfg_path = ROOT / "config.yaml"
+if _cfg_path.exists():
+    try:
+        import yaml
+        with open(_cfg_path) as _f:
+            _file_cfg = yaml.safe_load(_f) or {}
+        _cfg.update({k: v for k, v in _file_cfg.items() if v is not None})
+    except ImportError:
+        pass
+
+from src.data_loader import load_data
 from src.features import calculate_returns, rolling_momentum, volatility_signal
 
-data = load_mock_data()
+data = load_data(source=_cfg["source"], start_date=_cfg["start_date"], end_date=_cfg["end_date"])
 prices = data['prices']
 macro = data['macro']
 returns = calculate_returns(prices)
@@ -12,7 +41,12 @@ latest_fundamentals = data['fundamentals'].sort_values(['ticker', 'date']).group
 fundamentals_df = latest_fundamentals.reset_index()
 universe_df = data['universe'][['ticker', 'liquidity_score', 'market_cap_mxn', 'usd_exposure']]
 
-daily_macro = macro.set_index('date').reindex(prices.index, method='ffill').reset_index().rename(columns={'index': 'date'})
+daily_macro = (
+    macro.set_index('date')
+         .reindex(prices.index, method='ffill')
+         .rename_axis('date')
+         .reset_index()
+)
 print('daily_macro cols', daily_macro.columns.tolist())
 print(daily_macro.head(2))
 

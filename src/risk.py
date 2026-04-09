@@ -48,6 +48,7 @@ def stress_test(
     portfolio_returns: pd.Series,
     scenario_shocks: dict[str, float],
     exposures: dict[str, float],
+    risk_free_rate: float = 0.02,
 ) -> pd.DataFrame:
     scenario_results = []
     _base_return = portfolio_returns.mean()  # noqa: F841
@@ -59,7 +60,7 @@ def stress_test(
                 "scenario": label,
                 "mean_return": adjusted.mean(),
                 "volatility": adjusted.std(ddof=0),
-                "sharpe": compute_sharpe(adjusted),
+                "sharpe": compute_sharpe(adjusted, risk_free_rate=risk_free_rate),
                 "max_drawdown": max_drawdown(adjusted),
             }
         )
@@ -69,11 +70,11 @@ def stress_test(
 def fit_garch(returns: pd.Series, model: str = "GJR") -> arch_model:
     """Fit a GARCH model to returns."""
     if model == "GARCH":
-        mod = arch_model(returns, vol="Garch", p=1, q=1)
+        mod = arch_model(returns, vol="Garch", p=1, q=1, rescale=True)
     elif model == "GJR":
-        mod = arch_model(returns, vol="Garch", p=1, o=1, q=1)
+        mod = arch_model(returns, vol="Garch", p=1, o=1, q=1, rescale=True)
     elif model == "EGARCH":
-        mod = arch_model(returns, vol="EGarch", p=1, q=1)
+        mod = arch_model(returns, vol="EGarch", p=1, q=1, rescale=True)
     else:
         raise ValueError("Unsupported model")
     result = mod.fit(disp="off")
@@ -121,7 +122,7 @@ def gev_var(returns: pd.Series, alpha: float = 0.95) -> tuple[float, float]:
         return empirical_var, float(returns[returns <= empirical_var].mean() if any(returns <= empirical_var) else empirical_var)
     params = genextreme.fit(tail)
     # Goodness-of-fit check: reject GEV if K-S p-value < 0.05
-    ks_stat, ks_pval = kstest(tail, "genextreme", args=params)
+    _ks_stat, ks_pval = kstest(tail, "genextreme", args=params)
     if ks_pval < 0.05:
         logger.warning(
             "GEV fit rejected by K-S test (p=%.4f); falling back to empirical quantile.", ks_pval
@@ -136,4 +137,4 @@ def gev_var(returns: pd.Series, alpha: float = 0.95) -> tuple[float, float]:
 
 def duration_var(duration: float, dv01: float, rate_shock_std: float) -> float:
     """Parametric VaR for fixed income position."""
-    return duration * rate_shock_std * 10000  # assuming 1bp = 0.0001
+    return dv01 * rate_shock_std * 10000  # DV01 × rate shock in bps
