@@ -50,7 +50,7 @@ def stress_test(
     exposures: dict[str, float],
 ) -> pd.DataFrame:
     scenario_results = []
-    base_return = portfolio_returns.mean()
+    _base_return = portfolio_returns.mean()  # noqa: F841
     for label, shock in scenario_shocks.items():
         exposure = exposures.get(label, 0.0)
         adjusted = portfolio_returns + shock * exposure

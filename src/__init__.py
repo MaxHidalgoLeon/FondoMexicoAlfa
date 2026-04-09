@@ -1,7 +1,7 @@
 """Fondo Mexico research package."""
 
 from .pipeline import run_pipeline, print_summary
-from .data_loader import load_mock_data
+from .data_loader import load_mock_data, load_data
 from .features import build_signal_matrix
 from .signals import score_cross_section, forecast_returns
 from .portfolio import optimize_portfolio, black_litterman, apply_fx_overlay
@@ -13,6 +13,7 @@ __all__ = [
     "run_pipeline",
     "print_summary",
     "load_mock_data",
+    "load_data",
     "build_signal_matrix",
     "score_cross_section",
     "forecast_returns",

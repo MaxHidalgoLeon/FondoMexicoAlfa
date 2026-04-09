@@ -88,10 +88,10 @@ def forecast_returns(feature_df: pd.DataFrame, returns: pd.DataFrame) -> pd.Data
             continue
 
         # Precompute forward returns with NO look-ahead (NaN for last FORWARD_DAYS rows per ticker)
-        class_df["_fwd_return"] = (
-            class_df.groupby("ticker", group_keys=False)
-            .apply(_compute_forward_returns, include_groups=False)
-        )
+        _fwd_parts = []
+        for ticker, grp in class_df.groupby("ticker", group_keys=False):
+            _fwd_parts.append(_compute_forward_returns(grp))
+        class_df["_fwd_return"] = pd.concat(_fwd_parts).reindex(class_df.index)
 
         # Only retrain at end-of-month dates (efficiency + monthly rebalancing cadence)
         all_dates = pd.DatetimeIndex(sorted(class_df["date"].unique()))

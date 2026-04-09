@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Tuple
+from typing import Dict
 
 
 def get_investable_universe() -> pd.DataFrame:
@@ -140,7 +140,6 @@ def build_mock_fibra_fundamentals(tickers: list[str], dates: pd.DatetimeIndex) -
                 "vacancy_rate": vacancy,
             })
     return pd.DataFrame.from_records(records)
-   
 
 
 def _bond_price(ytm: float, coupon_rate: float, n_years: float) -> float:
@@ -218,7 +217,7 @@ def build_mock_bonds(dates: pd.DatetimeIndex) -> pd.DataFrame:
 def build_mock_macro_series(start_date: str = "2018-01-01", end_date: str = "2025-12-31") -> pd.DataFrame:
     dates = pd.date_range(start_date, end_date, freq="ME")
     np.random.seed(9)
-    
+
     # Compute us_fed_rate: 5.25 through 2024-Q2, then -25bps per quarter, floor at 4.0
     us_fed_rate = []
     cutoff_date = pd.Timestamp("2024-06-30")  # End of Q2 2024
@@ -231,7 +230,7 @@ def build_mock_macro_series(start_date: str = "2018-01-01", end_date: str = "202
             rate = 5.25 - (quarters_elapsed * 0.0025)
             rate = max(rate, 4.0)
         us_fed_rate.append(rate)
-    
+
     macro = pd.DataFrame(
         {
             "date": dates,
@@ -257,6 +256,61 @@ def load_mock_data() -> Dict[str, pd.DataFrame]:
     fibra_fundamentals = build_mock_fibra_fundamentals(fibra_tickers, pd.date_range(prices.index[0], prices.index[-1], freq="ME"))
     bonds = build_mock_bonds(pd.date_range(prices.index[0], prices.index[-1], freq="ME"))
     macro = build_mock_macro_series(prices.index[0].strftime("%Y-%m-%d"), prices.index[-1].strftime("%Y-%m-%d"))
+    return {
+        "universe": universe,
+        "prices": prices,
+        "fundamentals": fundamentals,
+        "fibra_fundamentals": fibra_fundamentals,
+        "bonds": bonds,
+        "macro": macro,
+    }
+
+
+def load_data(
+    source: str = "mock",
+    start_date: str = "2018-01-01",
+    end_date: str = "2025-12-31",
+    **provider_kwargs,
+) -> Dict[str, pd.DataFrame]:
+    """
+    Load strategy data from the specified source.
+
+    Args:
+        source: Data source — "mock", "yahoo", "bloomberg", or "refinitiv".
+        start_date: Backtest start date (YYYY-MM-DD).
+        end_date: Backtest end date (YYYY-MM-DD).
+        **provider_kwargs: Passed to the provider constructor (e.g., api keys).
+
+    Returns:
+        Dict with keys: universe, prices, fundamentals, fibra_fundamentals, bonds, macro.
+        Same schema as load_mock_data().
+    """
+    from .data_providers import get_provider
+
+    if source == "mock":
+        return load_mock_data()
+
+    universe = get_investable_universe()
+    provider = get_provider(source, **provider_kwargs)
+
+    equity_tickers = universe.loc[
+        universe["investable"] & universe["asset_class"].isin(["equity", "fibra"]), "ticker"
+    ].tolist()
+    fibra_tickers = universe.loc[
+        universe["investable"] & (universe["asset_class"] == "fibra"), "ticker"
+    ].tolist()
+    bond_tickers = universe.loc[
+        universe["investable"] & (universe["asset_class"] == "fixed_income"), "ticker"
+    ].tolist()
+
+    prices = provider.get_prices(equity_tickers, start_date, end_date)
+    fundamentals = provider.get_fundamentals(
+        [t for t in equity_tickers if t not in fibra_tickers], start_date, end_date
+    )
+    fibra_fundamentals = provider.get_fibra_fundamentals(fibra_tickers, start_date, end_date)
+    bonds = provider.get_bonds(bond_tickers, start_date, end_date)
+    macro = provider.get_macro(start_date, end_date)
+
     return {
         "universe": universe,
         "prices": prices,

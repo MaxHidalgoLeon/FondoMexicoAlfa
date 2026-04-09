@@ -56,7 +56,9 @@ def optimize_portfolio(
         # Requires expected_returns.index to have an associated asset_class_map passed
         # via the name attribute or a separate mapping.  We accept a parallel dict
         # under the special key "__asset_class_map__" if present.
-        ac_map: Dict[str, str] = asset_class_constraints.pop("__asset_class_map__", {})
+        asset_class_constraints = dict(asset_class_constraints)  # defensive copy
+        ac_map: Dict[str, str] = asset_class_constraints.get("__asset_class_map__", {})
+        asset_class_constraints = {k: v for k, v in asset_class_constraints.items() if k != "__asset_class_map__"}
         if ac_map:
             for ac, bounds_dict in asset_class_constraints.items():
                 ac_tickers = [t for t in tickers if ac_map.get(t) == ac]

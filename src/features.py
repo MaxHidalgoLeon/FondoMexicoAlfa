@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
-from typing import Dict
+from typing import Dict  # noqa: F401
 
 
 def calculate_returns(price_df: pd.DataFrame) -> pd.DataFrame:
@@ -29,7 +28,7 @@ def build_signal_matrix(
     investable_universe = universe[universe["investable"]]
     equity_tickers = investable_universe.loc[investable_universe["asset_class"] == "equity", "ticker"].tolist()
     fibra_tickers = investable_universe.loc[investable_universe["asset_class"] == "fibra", "ticker"].tolist()
-    fixed_tickers = investable_universe.loc[investable_universe["asset_class"] == "fixed_income", "ticker"].tolist()
+    _fixed_tickers = investable_universe.loc[investable_universe["asset_class"] == "fixed_income", "ticker"].tolist()  # noqa: F841
 
     equity_prices = prices[equity_tickers + fibra_tickers]  # equities and fibras have prices
     fibra_prices = prices[fibra_tickers]
@@ -145,7 +144,7 @@ def build_fibra_features(prices: pd.DataFrame, fibra_fundamentals: pd.DataFrame,
     # FIBRA macro exposure: sensitive to rate moves and FX (via cap rate re-pricing)
     feature_df["macro_exposure"] = (
         feature_df["macro_sensitivity_usd"].fillna(0.5) * feature_df.get("exports_yoy", pd.Series(0.0, index=feature_df.index)).fillna(0.0)
-        - feature_df["macro_sensitivity_rate"].abs().fillna(0.2) * feature_df.get("banxico_rate", pd.Series(0.0, index=feature_df.index)).fillna(0.0)
+        - feature_df["macro_sensitivity_rate"].abs().fillna(0.2) * feature_df.get("banxico_rate", pd.Series(0.0, index=feature_df.index)).fillna(0.0)  # noqa: W503
     )
 
     return feature_df
@@ -158,7 +157,7 @@ def build_fixed_income_features(bond_df: pd.DataFrame, macro: pd.DataFrame) -> p
     macro_daily = macro.set_index("date").reindex(feature_df["date"], method="ffill").reset_index()
     feature_df["carry"] = feature_df["ytm"] - macro_daily["banxico_rate"]
     feature_df["banxico_sensitivity"] = feature_df["duration"] * 0.0025  # 25bp shock impact
-    
+
     # Add legacy columns for fixed income
     feature_df["momentum"] = 0.0  # no price momentum for bonds
     feature_df["volatility"] = feature_df["dv01"].fillna(0.0)  # proxy: price sensitivity to rate
@@ -167,5 +166,5 @@ def build_fixed_income_features(bond_df: pd.DataFrame, macro: pd.DataFrame) -> p
     feature_df["quality_score"] = -feature_df["credit_spread"] - 0.02 * feature_df["duration"]
     # Macro exposure: interest rate sensitivity via DV01 and duration
     feature_df["macro_exposure"] = -feature_df["duration"] * feature_df["banxico_sensitivity"].fillna(0.0)
-    
+
     return feature_df
