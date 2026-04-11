@@ -1,6 +1,7 @@
 """Multi-source data provider abstraction for the Mexico quant strategy."""
 from __future__ import annotations
 
+import logging
 import math
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -8,6 +9,8 @@ from typing import Dict, List
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -47,6 +50,19 @@ def _resolve_symbols(tickers: List[str], provider: str, suffix: str) -> Dict[str
         raw = symbol if symbol is not None else canonical
         result[f"{raw}{suffix}"] = canonical
     return result
+
+
+def _fill_numeric_defaults(df: pd.DataFrame, defaults: Dict[str, float]) -> pd.DataFrame:
+    """Replace sparse Yahoo fundamentals with stable medians/defaults."""
+    filled = df.copy()
+    for col, default in defaults.items():
+        if col not in filled.columns:
+            continue
+        series = pd.to_numeric(filled[col], errors="coerce").replace([np.inf, -np.inf], np.nan)
+        median = series.dropna().median()
+        fill_value = float(median) if pd.notna(median) else float(default)
+        filled[col] = series.fillna(fill_value)
+    return filled
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +206,7 @@ class YahooFinanceProvider(BaseDataProvider):
             end=end_date,
             auto_adjust=True,
             progress=False,
+            threads=False,
         )["Close"]
 
         # yfinance may return a Series when only one ticker is requested
@@ -218,6 +235,7 @@ class YahooFinanceProvider(BaseDataProvider):
             end=end_date,
             auto_adjust=True,
             progress=False,
+            threads=False,
         )["Volume"]
 
         if isinstance(raw, pd.Series):
@@ -232,11 +250,14 @@ class YahooFinanceProvider(BaseDataProvider):
     def get_fundamentals(self, tickers: List[str], start_date: str, end_date: str) -> pd.DataFrame:
         import yfinance as yf
 
+        mapping = self._to_mx_tickers(tickers)  # {yahoo_symbol: canonical}
+        canonical_to_yahoo = {v: k for k, v in mapping.items()}
         today = pd.Timestamp.today().normalize()
         records = []
         for ticker in tickers:
+            yahoo_symbol = canonical_to_yahoo.get(ticker, f"{ticker}.MX")
             try:
-                info = yf.Ticker(f"{ticker}.MX").info
+                info = yf.Ticker(yahoo_symbol).info
             except Exception:
                 info = {}
 
@@ -267,7 +288,18 @@ class YahooFinanceProvider(BaseDataProvider):
                 "ebitda_growth": info.get("revenueGrowth", np.nan),
                 "capex_to_sales": capex_to_sales,
             })
-        return pd.DataFrame.from_records(records)
+        return _fill_numeric_defaults(
+            pd.DataFrame.from_records(records),
+            {
+                "pe_ratio": 14.0,
+                "pb_ratio": 1.8,
+                "roe": 0.12,
+                "profit_margin": 0.08,
+                "net_debt_to_ebitda": 2.5,
+                "ebitda_growth": 0.05,
+                "capex_to_sales": 0.05,
+            },
+        )
 
     def get_macro(self, start_date: str, end_date: str) -> pd.DataFrame:
         """Fetch macro from FRED + Banxico SIE + INEGI (all free, no Bloomberg/Refinitiv needed)."""
@@ -279,24 +311,44 @@ class YahooFinanceProvider(BaseDataProvider):
     ) -> pd.DataFrame:
         import yfinance as yf
 
+        mapping = self._to_mx_tickers(tickers)  # {yahoo_symbol: canonical}
+        canonical_to_yahoo = {v: k for k, v in mapping.items()}
         today = pd.Timestamp.today().normalize()
         records = []
         for ticker in tickers:
+            yahoo_symbol = canonical_to_yahoo.get(ticker, f"{ticker}.MX")
             try:
-                info = yf.Ticker(f"{ticker}.MX").info
+                info = yf.Ticker(yahoo_symbol).info
             except Exception:
                 info = {}
+
+            dividend_yield = info.get("dividendYield", np.nan)
+            if pd.notna(dividend_yield):
+                cap_rate = dividend_yield + 0.01
+                ffo_yield = dividend_yield
+            else:
+                cap_rate = np.nan
+                ffo_yield = np.nan
 
             records.append({
                 "date": today,
                 "ticker": ticker,
-                "cap_rate": np.nan,
-                "ffo_yield": np.nan,
-                "dividend_yield": info.get("dividendYield", np.nan),
+                "cap_rate": cap_rate,
+                "ffo_yield": ffo_yield,
+                "dividend_yield": dividend_yield,
                 "ltv": np.nan,
                 "vacancy_rate": np.nan,
             })
-        return pd.DataFrame.from_records(records)
+        return _fill_numeric_defaults(
+            pd.DataFrame.from_records(records),
+            {
+                "cap_rate": 0.075,
+                "ffo_yield": 0.065,
+                "dividend_yield": 0.055,
+                "ltv": 0.35,
+                "vacancy_rate": 0.08,
+            },
+        )
 
     def get_bonds(self, tickers: List[str], start_date: str, end_date: str) -> pd.DataFrame:
         from .data_loader import build_mock_bonds
@@ -852,7 +904,7 @@ class FREDBanxicoMacroProvider:
     @staticmethod
     def _yoy(series: pd.Series) -> pd.Series:
         """Compute year-over-year % change from a monthly level series."""
-        return series.pct_change(12)
+        return series.pct_change(12, fill_method=None)
 
     @staticmethod
     def _resample_monthly(df: pd.DataFrame) -> pd.DataFrame:

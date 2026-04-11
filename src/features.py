@@ -4,11 +4,11 @@ import pandas as pd
 
 
 def calculate_returns(price_df: pd.DataFrame) -> pd.DataFrame:
-    return price_df.pct_change().fillna(0.0)
+    return price_df.pct_change(fill_method=None).fillna(0.0)
 
 
 def rolling_momentum(price_df: pd.DataFrame, window: int = 126) -> pd.DataFrame:
-    return price_df.pct_change(periods=window).shift(1)
+    return price_df.pct_change(periods=window, fill_method=None).shift(1)
 
 
 def volatility_signal(return_df: pd.DataFrame, window: int = 63) -> pd.DataFrame:

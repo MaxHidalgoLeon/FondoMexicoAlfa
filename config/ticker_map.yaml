@@ -94,7 +94,7 @@ GRUMAB:
 # ------------------------------------------------------------------
 
 ALPEK:
-  yahoo:     "ALPEK"
+  yahoo:     "ALPEKA"
   lseg:      "ALPEK"
   bloomberg: "ALPEK"
 
@@ -104,7 +104,7 @@ GMEXICOB:
   bloomberg: "GMEXICOB"
 
 ALFA:
-  yahoo:     "ALFA"
+  yahoo:     "SIGMAFA"
   lseg:      "ALFA"
   bloomberg: "ALFA"
 
@@ -113,13 +113,13 @@ SIMECB:
   lseg:      "SIMECB"
   bloomberg: "SIMECB"
 
-RASSINIA:
-  yahoo:     "RASSINIA"
-  lseg:      "RASSINIA"
-  bloomberg: "RASSINIA"
+VITRO:
+  yahoo:     "VITROA"
+  lseg:      "VITRO"
+  bloomberg: "VITRO"
 
 BECLE:
-  yahoo:     "BECLE"
+  yahoo:     "CUERVO"
   lseg:      "BECLE"
   bloomberg: "BECLE"
 

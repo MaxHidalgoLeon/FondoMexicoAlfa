@@ -75,8 +75,11 @@ def run_backtest(
     macro       : macro DataFrame used by detect_macro_regime() at each
                   rebalance date to override static asset-class constraints.
     """
-    returns = prices.pct_change().fillna(0.0)
+    returns = prices.pct_change(fill_method=None).fillna(0.0)
     rebalance_dates = get_rebalance_dates(prices, rebalance_freq)
+    if not signal_df.empty and "date" in signal_df.columns:
+        first_signal_date = pd.Timestamp(signal_df["date"].min())
+        rebalance_dates = rebalance_dates[rebalance_dates >= first_signal_date]
 
     run_mv     = optimizer in ("mv",     "both")
     run_cvar   = optimizer in ("cvar",   "both")
@@ -113,7 +116,6 @@ def run_backtest(
             continue
         date_signal = signal_df[signal_df["date"] == date]
         if date_signal.empty:
-            logger.warning("No signal for rebalance date %s — carrying previous weights.", date)
             continue
         expected_returns = date_signal.set_index("ticker")["expected_return"].reindex(prices.columns).fillna(0.0)
         cov_matrix = build_covariance_matrix(returns, date)

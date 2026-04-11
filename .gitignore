@@ -14,5 +14,8 @@ data/
 # VS Code
 .vscode/
 
+# Runtime caches
+.cache/
+
 # Notebook checkpoints
 .ipynb_checkpoints/

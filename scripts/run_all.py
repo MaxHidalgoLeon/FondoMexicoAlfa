@@ -29,6 +29,9 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+_mpl_cache = ROOT / ".cache" / "matplotlib"
+_mpl_cache.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("MPLCONFIGDIR", str(_mpl_cache))
 
 # ---------------------------------------------------------------------------
 # Cargar .env (credenciales) si existe

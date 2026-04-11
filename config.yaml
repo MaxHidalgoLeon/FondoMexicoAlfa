@@ -5,7 +5,7 @@
 # =============================================================================
 
 # Fuente de datos: "mock" | "yahoo" | "bloomberg" | "refinitiv"
-source: "mock"
+source: "yahoo"
 
 # Periodo de análisis
 start_date: "2017-01-01"

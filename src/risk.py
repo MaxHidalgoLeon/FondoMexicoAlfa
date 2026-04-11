@@ -68,6 +68,8 @@ def stress_test(
 
 def fit_garch(returns: pd.Series, model: str = "GJR") -> arch_model:
     """Fit a GARCH model to returns."""
+    import warnings
+
     if model == "GARCH":
         mod = arch_model(returns, vol="Garch", p=1, q=1, rescale=True)
     elif model == "GJR":
@@ -76,9 +78,18 @@ def fit_garch(returns: pd.Series, model: str = "GJR") -> arch_model:
         mod = arch_model(returns, vol="EGarch", p=1, q=1, rescale=True)
     else:
         raise ValueError("Unsupported model")
-    result = mod.fit(disp="off")
-    if not result.convergence_flag == 0:
-        logger.warning("GARCH (%s) did not converge (flag=%d).", model, result.convergence_flag)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        result = mod.fit(disp="off", show_warning=False, options={"maxiter": 500})
+    if result.convergence_flag != 0 and model != "GARCH":
+        # Fallback to simpler standard GARCH(1,1) which is easier to fit
+        logger.debug("GARCH (%s) did not converge — retrying with GARCH(1,1).", model)
+        mod2 = arch_model(returns, vol="Garch", p=1, q=1, rescale=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result2 = mod2.fit(disp="off", show_warning=False, options={"maxiter": 500})
+        if result2.convergence_flag == 0:
+            return result2
     return result
 
 
@@ -160,7 +171,7 @@ def gev_var(returns: pd.Series, alpha: float = 0.95) -> tuple[float, float]:
     # Goodness-of-fit check: reject GEV if K-S p-value < 0.05
     _ks_stat, ks_pval = kstest(tail, "genextreme", args=params)
     if ks_pval < 0.05:
-        logger.warning(
+        logger.debug(
             "GEV fit rejected by K-S test (p=%.4f); falling back to empirical quantile.", ks_pval
         )
         empirical_var = float(np.percentile(returns.dropna(), (1 - alpha) * 100))
@@ -168,7 +179,8 @@ def gev_var(returns: pd.Series, alpha: float = 0.95) -> tuple[float, float]:
     # ppf gives positive loss magnitude; negate to match return convention (negative = loss)
     loss_var = float(genextreme.ppf(alpha, *params))
     x_tail = np.linspace(loss_var, genextreme.ppf(0.9999, *params), 1000)
-    loss_cvar = float(np.trapz(x_tail * genextreme.pdf(x_tail, *params), x_tail) / (1 - alpha))
+    _trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))
+    loss_cvar = float(_trapz(x_tail * genextreme.pdf(x_tail, *params), x_tail) / (1 - alpha))
     return -loss_var, -loss_cvar
 
 

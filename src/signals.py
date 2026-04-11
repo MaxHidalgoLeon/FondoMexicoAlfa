@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
+import warnings
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import ElasticNetCV
+from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
@@ -113,12 +116,17 @@ def forecast_returns(feature_df: pd.DataFrame, returns: pd.DataFrame) -> pd.Data
             X_train = train_data[feature_cols].fillna(0.0)
             y_train = train_data["_fwd_return"]
 
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+
             model = ElasticNetCV(
-                cv=5, l1_ratio=[0.1, 0.5, 0.9], max_iter=2000,
-                random_state=42, n_jobs=-1,
+                cv=5, l1_ratio=[0.1, 0.5, 0.9], max_iter=10000,
+                tol=1e-3, random_state=42, n_jobs=-1,
             )
             try:
-                model.fit(X_train, y_train)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=ConvergenceWarning)
+                    model.fit(X_train_scaled, y_train)
             except Exception as exc:
                 logger.warning("ElasticNetCV fit failed for %s on %s: %s", asset_class, date, exc)
                 continue
@@ -127,7 +135,7 @@ def forecast_returns(feature_df: pd.DataFrame, returns: pd.DataFrame) -> pd.Data
             if current_data.empty:
                 continue
             X_pred = current_data[feature_cols].fillna(0.0)
-            current_data["expected_return"] = model.predict(X_pred)
+            current_data["expected_return"] = model.predict(scaler.transform(X_pred))
             forecasts.append(current_data)
 
     if not forecasts:

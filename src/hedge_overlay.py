@@ -176,7 +176,7 @@ def fx_directional_overlay(
     macro_df["rate_differential"] = macro_df["banxico_rate"] - macro_df["us_fed_rate"]
 
     # Compute MXN momentum (usd_mxn.pct_change(21)) - negative = MXN strengthening
-    macro_df["usd_mxn_pct_change"] = macro_df["usd_mxn"].pct_change(21)
+    macro_df["usd_mxn_pct_change"] = macro_df["usd_mxn"].pct_change(21, fill_method=None)
     macro_df["mxn_momentum"] = macro_df["usd_mxn_pct_change"]
 
     # Compute zscores
@@ -258,7 +258,7 @@ def run_hedge_backtest(
 
     # Step 1: Build long_short_portfolio weights per rebalance date
     # Use top_n/bottom_n per sector based on realistic universe size
-    long_short = long_short_portfolio(signal_df, top_n=3, bottom_n=3, sector_neutral=True)
+    long_short = long_short_portfolio(signal_df, top_n=2, bottom_n=2, sector_neutral=False)
 
     if long_short.empty:
         logger.warning("long_short_portfolio returned empty DataFrame — check signal_df coverage.")
@@ -273,7 +273,7 @@ def run_hedge_backtest(
         }
 
     # Build daily portfolio returns from long/short weights
-    returns = prices.pct_change().fillna(0.0)
+    returns = prices.pct_change(fill_method=None).fillna(0.0)
     rebalance_dates = long_short["date"].unique()
     weights = pd.DataFrame(0.0, index=prices.index, columns=prices.columns)
     prev_weights = pd.Series(0.0, index=prices.columns)
@@ -319,7 +319,7 @@ def run_hedge_backtest(
         macro_df.set_index("date")["usd_mxn"]
         .reindex(prices.index, method="ffill")
     )
-    usd_mxn_daily_return = macro_reindexed.pct_change().fillna(0.0)
+    usd_mxn_daily_return = macro_reindexed.pct_change(fill_method=None).fillna(0.0)
     mean_usd_exposure = universe.set_index("ticker")["usd_exposure"].mean()
     # FX PnL = exposure * (1 - lagged_hedge) * realized_fx_change
     fx_pnl = mean_usd_exposure * (1 - hedge_ratio_series.shift(1).fillna(0.5)) * usd_mxn_daily_return

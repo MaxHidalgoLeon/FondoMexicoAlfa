@@ -73,7 +73,7 @@ def run_pipeline(
 
     feature_df = build_signal_matrix(prices, fundamentals, fibra_fundamentals, bonds, macro, universe)
     scored = score_cross_section(feature_df)
-    forecast_df = forecast_returns(scored, prices.pct_change().fillna(0.0))
+    forecast_df = forecast_returns(scored, prices.pct_change(fill_method=None).fillna(0.0))
 
     # Black-Litterman
     forecast_tickers = forecast_df["ticker"].unique() if not forecast_df.empty else []
@@ -86,7 +86,7 @@ def run_pipeline(
         logger.warning("Tickers in forecast but not in universe (will get 0 market weight): %s", missing_from_universe)
 
     # Build covariance with Ledoit-Wolf shrinkage
-    raw_returns = prices.pct_change().dropna(how="all")
+    raw_returns = prices.pct_change(fill_method=None).dropna(how="all")
     cov_tickers = [t for t in forecast_tickers if t in raw_returns.columns]
     if cov_tickers:
         lw = LedoitWolf()
@@ -115,7 +115,7 @@ def run_pipeline(
     logger.info("Risk-free rate (Banxico): %.4f", risk_free_rate)
 
     # GARCH sobre retornos de USD/MXN para proyectar vol y drift
-    usdmxn_returns = macro["usd_mxn"].pct_change().dropna()
+    usdmxn_returns = macro["usd_mxn"].pct_change(fill_method=None).dropna()
     mxn_garch_vol = None
     if len(usdmxn_returns) >= 30:
         try:
@@ -201,7 +201,7 @@ def run_pipeline(
     final_weights = backtest_results["weights"].loc[
         backtest_results["weights"].abs().sum(axis=1) > 1e-9
     ].iloc[-1] if not backtest_results["weights"].empty else None
-    raw_daily_returns = prices.pct_change().dropna(how="all")
+    raw_daily_returns = prices.pct_change(fill_method=None).dropna(how="all")
     garch_vol = garch_forecast_vol(fit_garch(returns))
     dyn_var = dynamic_var(returns).iloc[-1]
     mc_var = monte_carlo_var(returns, asset_returns=raw_daily_returns, weights=final_weights)
