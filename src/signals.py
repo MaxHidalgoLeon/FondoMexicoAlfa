@@ -157,7 +157,7 @@ def forecast_returns(
             forecasts.append(current_data)
 
     if not forecasts:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=["date", "ticker", "asset_class", "expected_return"])
 
     result = pd.concat(forecasts, ignore_index=True)
     result["expected_return"] = result.groupby("date")["expected_return"].transform(

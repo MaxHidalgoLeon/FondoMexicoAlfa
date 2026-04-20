@@ -145,6 +145,13 @@ class BaseDataProvider(ABC):
         """Return long-format bond data: date, ticker, asset_class, price, ytm,
         duration, credit_spread."""
 
+    @abstractmethod
+    def get_market_caps(
+        self,
+        tickers: List[str],
+    ) -> pd.Series:
+        """Return current market capitalizations in millions (base currency) as a Series indexed by canonical ticker."""
+
 
 # ---------------------------------------------------------------------------
 # Mock provider — delegates to existing data_loader functions
@@ -187,6 +194,12 @@ class MockDataProvider(BaseDataProvider):
         from .data_loader import build_mock_bonds
         dates = pd.date_range(start_date, end_date, freq="ME")
         return build_mock_bonds(dates)
+
+    def get_market_caps(self, tickers: List[str]) -> pd.Series:
+        from .data_loader import get_investable_universe
+        univ = get_investable_universe().set_index("ticker")
+        caps = univ["market_cap_mxn"].reindex(tickers)
+        return caps
 
 
 # ---------------------------------------------------------------------------
@@ -377,8 +390,25 @@ class YahooFinanceProvider(BaseDataProvider):
             allow_defaults=allow_defaults,
         )
 
+    def get_market_caps(self, tickers: List[str]) -> pd.Series:
+        import yfinance as yf
+
+        mapping = self._to_mx_tickers(tickers)
+        canonical_to_yahoo = {v: k for k, v in mapping.items()}
+        records = {}
+        for ticker in tickers:
+            symbol = canonical_to_yahoo.get(ticker, f"{ticker}.MX")
+            try:
+                info = yf.Ticker(symbol).info
+                mcap = info.get("marketCap")
+                if mcap:
+                    records[ticker] = mcap / 1_000_000.0  # Convert to millions
+            except Exception:
+                pass
+        return pd.Series(records, dtype=float) if records else pd.Series(dtype=float)
+
     def get_bonds(self, tickers: List[str], start_date: str, end_date: str) -> pd.DataFrame:
-        from .data_loader import build_mock_bonds
+        pass
 
         govt_tickers = {"CETES28", "CETES91", "MBONO3Y", "MBONO5Y", "MBONO10Y"}
         requested_govt = [t for t in tickers if t in govt_tickers]
@@ -395,13 +425,18 @@ class YahooFinanceProvider(BaseDataProvider):
                 if not govt_df.empty:
                     frames.append(govt_df)
 
-        # --- Corporate bonds: mock until real tickers are configured ---
+        # Corporate bonds (CORP1, CORP2) removed from investable universe (Paso 1.2).
+        # If any corporate ticker is requested in the future, raise explicitly
+        # rather than silently falling back to mock data (strict_data_mode policy).
         if requested_corp:
-            dates = pd.date_range(start_date, end_date, freq="ME")
-            mock_df = build_mock_bonds(dates)
-            corp_df = mock_df[mock_df["ticker"].isin(requested_corp)]
-            if not corp_df.empty:
-                frames.append(corp_df)
+            import logging as _logging
+            _logging.getLogger(__name__).error(
+                "Corporate bond tickers requested but not supported in Yahoo mode "
+                "(strict_data_mode policy \u2014 no mock fallback): %s. "
+                "Add real tickers or use RefinitivProvider.",
+                requested_corp,
+            )
+            # Do not append mock data to frames.
 
         if not frames:
             return pd.DataFrame(columns=["date", "ticker", "asset_class", "price", "ytm", "duration", "credit_spread"])
@@ -503,6 +538,24 @@ class BloombergProvider(BaseDataProvider):
         raw = raw.reindex(bdays).pipe(self._forward_fill_prices)
         return raw
 
+    def get_volume(self, tickers: List[str], start_date: str, end_date: str) -> pd.DataFrame:
+        from xbbg import blp
+
+        mapping = self._equity_bbg(tickers)
+        bbg_tickers = list(mapping.keys())
+
+        try:
+            raw = blp.bdh(bbg_tickers, "PX_VOLUME", start_date, end_date)
+            if raw.empty:
+                return pd.DataFrame(index=pd.DatetimeIndex([]), columns=tickers)
+            raw = self._collapse_multiindex(raw, {v: v for v in mapping.values()})
+
+            bdays = pd.bdate_range(start_date, end_date)
+            raw.index = pd.DatetimeIndex(raw.index)
+            return raw.reindex(bdays).fillna(0.0)
+        except Exception:
+            return pd.DataFrame(index=pd.DatetimeIndex([]), columns=tickers)
+
     def get_fundamentals(self, tickers: List[str], start_date: str, end_date: str, allow_defaults: bool = True) -> pd.DataFrame:
         from xbbg import blp
 
@@ -536,7 +589,11 @@ class BloombergProvider(BaseDataProvider):
 
         if not records:
             return pd.DataFrame(columns=["date", "ticker"] + list(field_rename.values()))
-        return pd.concat(records, ignore_index=True)
+        out = pd.concat(records, ignore_index=True)
+        for col in ["date", "ticker"] + list(field_rename.values()):
+            if col not in out.columns:
+                out[col] = np.nan
+        return out
 
     def get_macro(self, start_date: str, end_date: str) -> pd.DataFrame:
         from xbbg import blp
@@ -586,7 +643,31 @@ class BloombergProvider(BaseDataProvider):
 
         if not records:
             return pd.DataFrame(columns=["date", "ticker"] + list(field_rename.values()))
-        return pd.concat(records, ignore_index=True)
+        out = pd.concat(records, ignore_index=True)
+        for col in ["date", "ticker"] + list(field_rename.values()):
+            if col not in out.columns:
+                out[col] = np.nan
+        return out
+
+    def get_market_caps(self, tickers: List[str]) -> pd.Series:
+        from xbbg import blp
+
+        mapping = self._equity_bbg(tickers)
+        bbg_tickers = list(mapping.keys())
+        
+        records = {}
+        try:
+            raw = blp.bdp(tickers=bbg_tickers, flds=["CUR_MKT_CAP"])
+            if raw is not None and not raw.empty:
+                for bbg_ticker, orig_ticker in mapping.items():
+                    if bbg_ticker in raw.index:
+                        val = raw.loc[bbg_ticker, "cur_mkt_cap"]
+                        if pd.notna(val):
+                            records[orig_ticker] = float(val)
+        except Exception:
+            pass
+
+        return pd.Series(records, dtype=float) if records else pd.Series(dtype=float)
 
     def get_bonds(self, tickers: List[str], start_date: str, end_date: str) -> pd.DataFrame:
         from xbbg import blp
@@ -766,6 +847,32 @@ class RefinitivProvider(BaseDataProvider):
         raw = raw.reindex(bdays).pipe(self._forward_fill_prices)
         return raw
 
+    def get_volume(self, tickers: List[str], start_date: str, end_date: str) -> pd.DataFrame:
+        import lseg.data as ld
+
+        self._ensure_session()
+        mapping = self._to_rics(tickers)
+        rics = list(mapping.keys())
+        
+        try:
+            raw = ld.get_history(universe=rics, fields=["TR.Volume"], start=start_date, end=end_date)
+            if raw is None or raw.empty:
+                return pd.DataFrame(index=pd.DatetimeIndex([]), columns=tickers)
+                
+            if isinstance(raw.index, pd.MultiIndex):
+                raw = raw.reset_index().pivot(index="Date", columns="Instrument", values="Volume")
+            elif "Instrument" in raw.columns:
+                raw = raw.reset_index().pivot(index="Date", columns="Instrument", values="Volume")
+            else:
+                raw.index.name = "Date"
+
+            raw.index = pd.DatetimeIndex(raw.index)
+            raw.columns = [mapping.get(str(c), str(c)) for c in raw.columns]
+            bdays = pd.bdate_range(start_date, end_date)
+            return raw.reindex(bdays).fillna(0.0)
+        except Exception:
+            return pd.DataFrame(index=pd.DatetimeIndex([]), columns=tickers)
+
     def get_fundamentals(self, tickers: List[str], start_date: str, end_date: str, allow_defaults: bool = True) -> pd.DataFrame:
         import lseg.data as ld
 
@@ -816,7 +923,11 @@ class RefinitivProvider(BaseDataProvider):
 
         if not records:
             return pd.DataFrame(columns=["date", "ticker"] + list(field_rename.values()))
-        return pd.concat(records, ignore_index=True)
+        out = pd.concat(records, ignore_index=True)
+        for col in ["date", "ticker"] + list(field_rename.values()):
+            if col not in out.columns:
+                out[col] = np.nan
+        return out
 
     def get_macro(self, start_date: str, end_date: str) -> pd.DataFrame:
         import lseg.data as ld
@@ -889,7 +1000,36 @@ class RefinitivProvider(BaseDataProvider):
 
         if not records:
             return pd.DataFrame(columns=["date", "ticker"] + list(field_rename.values()))
-        return pd.concat(records, ignore_index=True)
+        out = pd.concat(records, ignore_index=True)
+        for col in ["date", "ticker"] + list(field_rename.values()):
+            if col not in out.columns:
+                out[col] = np.nan
+        return out
+
+    def get_market_caps(self, tickers: List[str]) -> pd.Series:
+        import lseg.data as ld
+
+        self._ensure_session()
+        mapping = self._to_rics(tickers)
+        rics = list(mapping.keys())
+
+        records = {}
+        try:
+            raw = ld.get_data(universe=rics, fields=["TR.CompanyMarketCap"])
+            if raw is not None and not raw.empty:
+                val_col = [c for c in raw.columns if "Market Cap" in c or "TR.CompanyMarketCap" in c]
+                if val_col and "Instrument" in raw.columns:
+                    val_col = val_col[0]
+                    for _, row in raw.iterrows():
+                        ric = row["Instrument"]
+                        val = row[val_col]
+                        orig_ticker = mapping.get(ric)
+                        if orig_ticker and pd.notna(val):
+                            records[orig_ticker] = float(val) / 1_000_000.0  # Assumes LSEG returns raw units
+        except Exception:
+            pass
+
+        return pd.Series(records, dtype=float) if records else pd.Series(dtype=float)
 
     def get_bonds(self, tickers: List[str], start_date: str, end_date: str) -> pd.DataFrame:
         import lseg.data as ld

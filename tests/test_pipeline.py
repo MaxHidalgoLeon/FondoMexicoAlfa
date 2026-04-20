@@ -556,6 +556,41 @@ class PipelineTestCase(unittest.TestCase):
         self.assertGreaterEqual(block, 5)
         self.assertLessEqual(block, 60)
 
+    def test_no_lookahead_in_fundamentals(self) -> None:
+        """
+        Paso 4.5: Para cualquier fecha t del backtest, los fundamentales
+        (pe_ratio, pb_ratio, roe) deben provenir de un reporte con
+        report_date <= t - 90 días (fundamentals_lag_days del config).
+        Con datos mock no hay report_date real, así que validamos que:
+        - el pipeline aplica el lag: ningún feature de fundamentales en el
+          signal_matrix tiene fecha más reciente que (date - 90 days) para
+          el mismo ticker.
+        - Si la columna 'report_date' no existe (modo mock), el test valida
+          en su lugar que fundamentals_lag_days >= 90 está en el config.
+        """
+        import yaml, os
+        cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+        with open(cfg_path) as f:
+            cfg = yaml.safe_load(f)
+        lag = cfg.get("fundamentals_lag_days", 0)
+        self.assertGreaterEqual(
+            lag, 90,
+            f"fundamentals_lag_days={lag} < 90: look-ahead bias no mitigado en config."
+        )
+
+        # Si el pipeline produjo una signal_matrix con fechas, verificar lag real
+        results = self.__class__.results  # reusar el pipeline ya corrido en setUpClass
+        signal_df = results.get("signal_matrix")
+        if signal_df is not None and "report_date" in signal_df.columns:
+            merged = signal_df[["date", "ticker", "report_date", "pe_ratio"]].dropna()
+            if not merged.empty:
+                lag_actual = (merged["date"] - merged["report_date"]).dt.days
+                min_lag = lag_actual.min()
+                self.assertGreaterEqual(
+                    min_lag, 90,
+                    f"Look-ahead detectado: lag mínimo={min_lag} días < 90 en fundamentales."
+                )
+
 
 # =====================================================================
 # PASO 9 — Part A regression tests + Part B hyperopt tests

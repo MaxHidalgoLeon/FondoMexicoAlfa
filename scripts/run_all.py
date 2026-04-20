@@ -279,7 +279,7 @@ def main() -> None:
             successful_sources.append(source)
         except Exception as exc:
             failed_sources.append((source, str(exc)))
-            print(f"\n[ERROR] source={source} falló: {exc}")
+            raise exc
             print("        Se continúa con el siguiente provider.")
 
     if failed_sources:

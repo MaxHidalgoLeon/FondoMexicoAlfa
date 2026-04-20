@@ -101,11 +101,11 @@ def get_investable_universe() -> pd.DataFrame:
     ]
     # USD revenue exposure estimate (0.0–1.0) — nearshoring names have high USD exposure
     usd_exposure = [
-        0.85, 0.70, 0.40, 0.75, 0.30,   # NEMAKA, GISSAA, CEMEX, ICHB, GCARSOA1
-        0.30, 0.25, 0.30, 0.20, 0.50,   # ASURB, GAPB, OMAB, PINFRA, ORBIA
-        0.65,                             # VESTA
-        0.60, 0.70, 0.35, 0.55, 0.55,   # ALPEK, GMEXICOB, ALFA, SIMECB, VITRO
-        0.50, 0.80, 0.55, 0.75, 0.60,   # FUNO11, FIBRAPL14, FIBRAMQ12, TERRA13, FMTY14
+        0.865, 0.70, 0.5387, 0.0038, 0.1977,   # NEMAKA, GISSAA, CEMEX, ICHB, GCARSOA1
+        0.1515, 0.0924, 0.30, 0.20, 0.6961,   # ASURB, GAPB, OMAB, PINFRA, ORBIA
+        0.86,                             # VESTA
+        0.4207, 0.3103, 0.2671, 0.55, 0.55,   # ALPEK, GMEXICOB, ALFA, SIMECB, VITRO
+        0.4381, 0.75, 0.8365, 0.9302, 0.7196,   # FUNO11, FIBRAPL14, FIBRAMQ12, TERRA13, FMTY14
         0.0, 0.0, 0.0,                   # bonds
     ]
     # Approximate market caps in MXN millions (Q1 2026 estimates, bonds = 0)

@@ -171,8 +171,12 @@ def _ci_range_text(metric_stats: dict | None, fmt_fn) -> str:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def build_dashboard_html(results: dict, hedge_mode: bool, data_source: str) -> str:
+def build_dashboard_html(results: dict, hedge_mode, data_source: str) -> str:
     import datetime
+
+    hedge_active = bool(hedge_mode)  # True si es True, "analytical", o "regulated"
+    hedge_is_analytical = (hedge_mode == "analytical" or hedge_mode is True)
+    # True = tratar como analytical (default seguro)
 
     settings   = resolve_settings(results.get("settings"))
     summary    = results["summary"]
@@ -186,13 +190,13 @@ def build_dashboard_html(results: dict, hedge_mode: bool, data_source: str) -> s
     metrics    = summary["metrics"]
     benchmarks = results.get("benchmarks")
 
-    hedge_returns  = results["hedge_layer"]["returns"]      if hedge_mode else None
-    hedge_metrics  = results["hedge_layer"]["metrics"]      if hedge_mode else None
-    hedge_stress   = results["hedge_layer"].get("stress")   if hedge_mode else None
-    hedge_overlay  = results["hedge_layer"]["fx_overlay"]   if hedge_mode else None
-    hedge_leverage = results["hedge_layer"]["leverage_series"] if hedge_mode else None
-    tail_hedge     = results["hedge_layer"]["tail_hedge"]   if hedge_mode else None
-    hedge_layer    = results.get("hedge_layer") if hedge_mode else None
+    hedge_returns  = results["hedge_layer"]["returns"]      if hedge_active else None
+    hedge_metrics  = results["hedge_layer"]["metrics"]      if hedge_active else None
+    hedge_stress   = results["hedge_layer"].get("stress")   if hedge_active else None
+    hedge_overlay  = results["hedge_layer"]["fx_overlay"]   if hedge_active else None
+    hedge_leverage = results["hedge_layer"]["leverage_series"] if hedge_active else None
+    tail_hedge     = results["hedge_layer"]["tail_hedge"]   if hedge_active else None
+    hedge_layer    = results.get("hedge_layer") if hedge_active else None
     signal_diag    = results.get("signal_diagnostics", {})
     benchmark_alpha = (benchmarks or {}).get("alpha_significance", {}) if isinstance(benchmarks, dict) else {}
 
@@ -201,22 +205,22 @@ def build_dashboard_html(results: dict, hedge_mode: bool, data_source: str) -> s
     timestamp  = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
     sections = []
-    sections.append(_section_performance(returns, hedge_returns, metrics, hedge_metrics, hedge_mode, summary, settings))
+    sections.append(_section_performance(returns, hedge_returns, metrics, hedge_metrics, hedge_active, summary, settings, hedge_is_analytical))
     sections.append(_section_benchmarks(returns, hedge_returns, benchmarks, benchmark_alpha))
     sections.append(_section_risk(returns, summary, hedge_returns=hedge_returns, hedge_metrics=hedge_metrics, settings=settings))
     sections.append(_section_statistical_significance(summary, benchmark_alpha, signal_diag))
     # Optimizer comparison — only when "both" were run
     if summary.get("optimizer") == "both" and summary.get("metrics_cvar") and backtest.get("returns_cvar") is not None:
-        sections.append(_section_optimizer_comparison(backtest, summary, hedge_mode=hedge_mode))
-    if hedge_mode and hedge_layer is not None:
+        sections.append(_section_optimizer_comparison(backtest, summary, hedge_mode=hedge_active))
+    if hedge_active and hedge_layer is not None:
         sections.append(_section_hedge_engine_breakdown(hedge_layer, metrics, hedge_metrics))
     sections.append(_section_signals(feature_df, forecast_df, signal_diag))
     sections.append(_section_universe_donuts(feature_df, universe))
     sections.append(_section_portfolio(weights, turnover, universe, hedge_layer=hedge_layer))
     sections.append(_section_stress(summary["stress"], hedge_stress_df=hedge_stress, stress_distributional=summary.get("stress_test_distributional")))
-    if hedge_mode:
+    if hedge_active:
         sections.append(_section_fx_overlay(hedge_overlay, hedge_leverage))
-        sections.append(_section_layer_comparison(metrics, hedge_metrics, tail_hedge))
+        sections.append(_section_layer_comparison(metrics, hedge_metrics, tail_hedge, hedge_is_analytical))
 
     body = "\n".join(sections)
 
@@ -262,7 +266,7 @@ def build_dashboard_html(results: dict, hedge_mode: bool, data_source: str) -> s
   Data source: <strong>{data_source}</strong> &nbsp;|&nbsp;
   Period: <strong>{start_date}</strong> to <strong>{end_date}</strong> &nbsp;|&nbsp;
   Generated: <strong>{timestamp}</strong> &nbsp;|&nbsp;
-  Hedge overlay: <strong>{"Yes" if hedge_mode else "No"}</strong>
+  Hedge overlay: <strong>{"Yes" if hedge_active else "No"}</strong>
 </p>
 {body}
 <script>
@@ -277,7 +281,7 @@ def build_dashboard_html(results: dict, hedge_mode: bool, data_source: str) -> s
 # Section 1: Performance Overview
 # ---------------------------------------------------------------------------
 
-def _section_performance(returns, hedge_returns, metrics, hedge_metrics, hedge_mode, summary, settings) -> str:
+def _section_performance(returns, hedge_returns, metrics, hedge_metrics, hedge_mode, summary, settings, hedge_is_analytical=False) -> str:
     metrics_ci = summary.get("metrics_ci", {}) or {}
     # Chart 1.1 — Cumulative returns (combined)
     cum = _cum_from_log(returns)
@@ -446,6 +450,12 @@ def _section_performance(returns, hedge_returns, metrics, hedge_metrics, hedge_m
     cum_grid = f"<div class=\"card\">{chart_cum}</div>"
     if fan_chart:
         cum_grid += f"\n<div class=\"card\">{fan_chart}<p style='color:#8892b0; font-size:0.82rem; margin-top:10px;'>El fan chart muestra un envelope de trayectorias consistentes con la dependencia temporal observada via stationary bootstrap.</p></div>"
+    
+    if hedge_is_analytical:
+        cum_grid += """
+   <p style="font-size:11px;color:#9ca3af;margin-top:4px;">
+   * Hedge Layer 2 mostrado como referencia analítica \u2014 no incluido en NAV regulatorio.
+   </p>"""
     sharpe_grid = (
         f"<div class=\"grid2\"><div class=\"card\">{chart_sharpe_trad}</div><div class=\"card\">{chart_sharpe_hedge}</div></div>"
         if chart_sharpe_hedge
@@ -1417,7 +1427,7 @@ def _section_fx_overlay(fx_overlay, leverage_series) -> str:
 # Section 8: Traditional vs Hedge
 # ---------------------------------------------------------------------------
 
-def _section_layer_comparison(metrics, hedge_metrics, tail_hedge) -> str:
+def _section_layer_comparison(metrics, hedge_metrics, tail_hedge, hedge_is_analytical=False) -> str:
     hm = hedge_metrics or {}
 
     def delta_class(v1, v2, good_if_positive=True):
@@ -1452,8 +1462,11 @@ def _section_layer_comparison(metrics, hedge_metrics, tail_hedge) -> str:
           <td class="{dc} mono">{ds}</td>
         </tr>""")
 
+    header_trad = "Regulated NAV" if hedge_is_analytical else "Traditional"
+    header_hedge = "Analytical Overlay" if hedge_is_analytical else "Hedge"
+
     table = f"""<table>
-      <tr><th>Metric</th><th>Traditional</th><th>Hedge</th><th>Delta</th></tr>
+      <tr><th>Metric</th><th>{header_trad}</th><th>{header_hedge}</th><th>Delta</th></tr>
       {"".join(rows)}
     </table>"""
 
@@ -1481,8 +1494,18 @@ def _section_layer_comparison(metrics, hedge_metrics, tail_hedge) -> str:
                           xaxis_title="Component", yaxis_title="Value (%)")
         chart_tail = _fig_to_div(fig)
 
+    banner = ""
+    if hedge_is_analytical:
+        banner = """<div class="alert-banner" style="background:#2a1a00;border-left:4px solid #f59e0b;
+       padding:10px 16px;margin-bottom:12px;font-size:13px;color:#fcd34d;">
+       ⚠️ <strong>Analytical Overlay — Not Part of Regulated NAV.</strong>
+       Las métricas del hedge Layer 2 son un ejercicio paralelo y no forman
+       parte del NAV regulatorio reportable ante la CNBV.
+     </div>"""
+
     return f"""
 <h2>10. Traditional vs Hedge</h2>
+{banner}
 <div class="card"><h3>Performance Comparison</h3>{table}</div>
 <div class="card">{chart_tail}</div>"""
 
