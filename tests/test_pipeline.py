@@ -400,12 +400,29 @@ class PipelineTestCase(unittest.TestCase):
         switches_ewma = int((ewma["regime"] != ewma["regime"].shift(1)).sum() - 1)
         self.assertLessEqual(switches_ewma, switches_discrete)
 
-    def test_adtv_ewma_decay_halflife(self) -> None:
-        from src.data_loader import ewma_decay_weights
+    def test_adtv_ewma_produces_monotone_scores(self) -> None:
+        """
+        ADTV with method='ewma' (pandas .ewm) must weight the tail more than
+        method='uniform', so the last-window average is pulled toward recent
+        observations.  This replaces the old ewma_decay_weights unit test
+        after the dead-code helper was removed in the data_loader cleanup.
+        """
+        from src.data_loader import compute_adtv_liquidity_scores
 
-        weights = ewma_decay_weights(252, 0.97)
-        self.assertAlmostEqual(float(weights[0]), 0.5 ** (251 / 23) * (1 - 0.97), delta=5e-4)
-        self.assertAlmostEqual(float(weights[-23:].sum()), 0.5, delta=0.08)
+        rng = np.random.default_rng(7)
+        dates = pd.date_range("2023-01-01", periods=300, freq="B")
+        prices = pd.DataFrame(
+            {"A": np.linspace(100.0, 110.0, 300), "B": np.linspace(50.0, 52.0, 300)},
+            index=dates,
+        )
+        # Volume for B surges only in the last 30 days — EWMA should weight that more
+        vol_a = np.full(300, 1_000.0)
+        vol_b = np.concatenate([np.full(270, 500.0), np.full(30, 5_000.0)])
+        volume = pd.DataFrame({"A": vol_a, "B": vol_b}, index=dates)
+        uniform = compute_adtv_liquidity_scores(prices, volume, window=252, method="uniform")
+        ewma = compute_adtv_liquidity_scores(prices, volume, window=252, method="ewma", ewma_lambda=0.97)
+        self.assertTrue(np.isfinite(ewma["B"]))
+        self.assertGreaterEqual(float(ewma["B"]), float(uniform["B"]) - 1e-9)
 
     def test_ewma_config_fallback_to_uniform(self) -> None:
         from src.backtest import _rolling_ledoit_wolf_covariance, build_covariance_matrix

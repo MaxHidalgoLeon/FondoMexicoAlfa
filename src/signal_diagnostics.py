@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
-from .bootstrap import bootstrap_metric
+from .bootstrap import _sign_p_value, bootstrap_metric
 from .settings import resolve_settings
 
 SIGNAL_COLUMNS = [
@@ -15,16 +15,6 @@ SIGNAL_COLUMNS = [
     "quality_score",
     "liquidity_score",
 ]
-
-
-def _sign_p_value(point: float, distribution: np.ndarray) -> float:
-    dist = np.asarray(distribution, dtype=float)
-    dist = dist[np.isfinite(dist)]
-    if dist.size == 0 or abs(point) < 1e-12:
-        return 1.0
-    if point > 0:
-        return float(np.mean(dist <= 0.0))
-    return float(np.mean(dist >= 0.0))
 
 
 def compute_signal_ic_diagnostics(

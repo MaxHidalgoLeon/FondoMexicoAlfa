@@ -1770,3 +1770,222 @@ if (document.readyState === 'loading') {
     _wireDynamicAnnotations();
 }
 """
+
+
+# ---------------------------------------------------------------------------
+# Hyperparameter optimization report
+# ---------------------------------------------------------------------------
+
+def _section_hyperopt_parallel(history: pd.DataFrame, objective: str) -> str:
+    """Parallel-coordinates plot — one line per trial, color = objective value."""
+    if history is None or history.empty or "value" not in history.columns:
+        return ""
+
+    param_cols = [c for c in history.columns if c not in {"trial_number", "value", "state"}]
+    if not param_cols:
+        return ""
+
+    df = history.dropna(subset=["value"]).copy()
+    if df.empty:
+        return ""
+
+    dims = []
+    for col in param_cols:
+        series = df[col]
+        if series.dtype == object:
+            codes, uniques = pd.factorize(series)
+            dims.append(dict(label=col, values=codes, tickvals=list(range(len(uniques))), ticktext=[str(u) for u in uniques]))
+        else:
+            values = pd.to_numeric(series, errors="coerce")
+            dims.append(dict(label=col, values=values.fillna(values.median()).tolist()))
+
+    fig = go.Figure(data=go.Parcoords(
+        line=dict(color=df["value"].values, colorscale="Viridis", showscale=True,
+                  colorbar=dict(title=objective)),
+        dimensions=dims,
+    ))
+    fig.update_layout(**LAYOUT, title=f"Parallel coordinates — trials colored by {objective}")
+    return f'<div class="card">{_fig_to_div(fig, div_id="hyperopt-parcoords")}</div>'
+
+
+def _section_hyperopt_importance(study_importance: dict[str, float]) -> str:
+    if not study_importance:
+        return ""
+    items = sorted(study_importance.items(), key=lambda kv: kv[1], reverse=True)
+    names = [k for k, _ in items]
+    vals = [float(v) for _, v in items]
+    fig = go.Figure(data=go.Bar(x=vals, y=names, orientation="h", marker_color=C_BLUE))
+    fig.update_layout(**LAYOUT, title="Parameter importance", xaxis_title="Importance",
+                      yaxis=dict(autorange="reversed"))
+    return f'<div class="card">{_fig_to_div(fig, div_id="hyperopt-importance")}</div>'
+
+
+def _section_hyperopt_convergence(history: pd.DataFrame, objective: str) -> str:
+    if history is None or history.empty or "value" not in history.columns:
+        return ""
+    df = history.sort_values("trial_number")
+    running_best = df["value"].cummax()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df["trial_number"], y=df["value"], mode="markers",
+                             marker=dict(color=C_GRAY, size=6), name="Trial value"))
+    fig.add_trace(go.Scatter(x=df["trial_number"], y=running_best, mode="lines",
+                             line=dict(color=C_GREEN, width=2), name="Running best"))
+    fig.update_layout(**LAYOUT, title=f"Convergence — best {objective} vs trials",
+                      xaxis_title="Trial", yaxis_title=objective)
+    return f'<div class="card">{_fig_to_div(fig, div_id="hyperopt-convergence")}</div>'
+
+
+def _section_hyperopt_top_trials(history: pd.DataFrame, top_n: int = 10) -> str:
+    if history is None or history.empty or "value" not in history.columns:
+        return ""
+    df = history.dropna(subset=["value"]).sort_values("value", ascending=False).head(top_n)
+    if df.empty:
+        return ""
+    cols = ["trial_number", "value"] + [c for c in df.columns if c not in {"trial_number", "value", "state"}]
+    rows = []
+    for _, r in df.iterrows():
+        tds = "".join(f"<td>{_num(r[c], 4) if isinstance(r[c], (int, float)) else r[c]}</td>" for c in cols)
+        rows.append(f"<tr>{tds}</tr>")
+    header = "".join(f"<th>{c}</th>" for c in cols)
+    return (
+        f'<div class="card"><h3>Top {min(top_n, len(df))} trials</h3>'
+        f'<table><thead><tr>{header}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
+    )
+
+
+def _section_hyperopt_validation(validation_metrics: dict, best_params: dict,
+                                 best_value: float, objective: str) -> str:
+    if not best_params and not validation_metrics:
+        return ""
+    param_rows = "".join(
+        f"<tr><td>{k}</td><td class='mono'>{v}</td></tr>" for k, v in best_params.items()
+    )
+    metric_rows = "".join(
+        f"<tr><td>{k}</td><td class='mono'>{_num(v, 4)}</td></tr>"
+        for k, v in validation_metrics.items()
+    )
+    return (
+        f'<div class="grid2">'
+        f'<div class="card"><h3>Best params ({objective} = {_num(best_value, 4)})</h3>'
+        f'<table><tbody>{param_rows}</tbody></table></div>'
+        f'<div class="card"><h3>Validation metrics (walk-forward mean)</h3>'
+        f'<table><tbody>{metric_rows}</tbody></table></div>'
+        f'</div>'
+    )
+
+
+def generate_hyperopt_report(result, output_path) -> str:
+    """Write a standalone HTML report for a hyperopt OptimResult.
+
+    Builds four panels (validation, parallel coordinates, importance,
+    convergence) plus the top-10 trial table and writes them to
+    `output_path`.  Returns the HTML string.
+    """
+    import datetime
+    from pathlib import Path
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    history = result.trial_history if result.trial_history is not None else pd.DataFrame()
+    importance: dict[str, float] = {}
+    try:
+        import optuna  # noqa: F401
+        from optuna.importance import get_param_importances
+
+        if not history.empty and "trial_number" in history.columns:
+            # Rebuild a minimal study from the history so we can call importance
+            study = _rebuild_study_from_history(result)
+            if study is not None and len(study.trials) >= 2:
+                importance = dict(get_param_importances(study))
+    except Exception:
+        importance = {}
+
+    sections = [
+        _section_hyperopt_validation(
+            result.validation_metrics, result.best_params, result.best_value, result.objective_metric
+        ),
+        _section_hyperopt_convergence(history, result.objective_metric),
+        _section_hyperopt_parallel(history, result.objective_metric),
+        _section_hyperopt_importance(importance),
+        _section_hyperopt_top_trials(history, top_n=10),
+    ]
+    body = "\n".join(s for s in sections if s)
+
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    plotly_cdn = '<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>'
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FMIA Hyperparameter Optimization Report</title>
+{plotly_cdn}
+{STYLE}
+</head>
+<body>
+<h1>Hyperparameter Optimization Report</h1>
+<p class="meta">
+  Objective: <strong>{result.objective_metric}</strong> &nbsp;|&nbsp;
+  Trials: <strong>{result.n_trials_completed}</strong> &nbsp;|&nbsp;
+  Turnover penalty: <strong>{result.turnover_penalty}</strong> &nbsp;|&nbsp;
+  Elapsed: <strong>{result.optimization_time_seconds:.1f}s</strong> &nbsp;|&nbsp;
+  Generated: <strong>{timestamp}</strong>
+</p>
+{body}
+</body>
+</html>"""
+    with open(output_path, "w") as f:
+        f.write(html)
+    return html
+
+
+def _rebuild_study_from_history(result):
+    """Reconstruct a minimal Optuna study from a trial_history DataFrame.
+
+    Importance analysis needs a study object.  We replay trials into an
+    in-memory study so get_param_importances can run without re-executing
+    the expensive objective.
+    """
+    try:
+        import optuna
+    except ImportError:
+        return None
+    history = result.trial_history
+    if history is None or history.empty:
+        return None
+    study = optuna.create_study(direction="maximize")
+    param_cols = [c for c in history.columns if c not in {"trial_number", "value", "state"}]
+    search_space = result.search_space or {}
+    for _, row in history.iterrows():
+        if not np.isfinite(row.get("value", np.nan)):
+            continue
+        distributions = {}
+        params = {}
+        for col in param_cols:
+            val = row[col]
+            if pd.isna(val):
+                continue
+            spec = search_space.get(col) or search_space.get(col.replace("__idx", ""))
+            if spec is None:
+                continue
+            kind = spec[0]
+            if kind == "float":
+                distributions[col] = optuna.distributions.FloatDistribution(spec[1], spec[2], log=bool(spec[3]))
+                params[col] = float(val)
+            elif kind == "int":
+                distributions[col] = optuna.distributions.IntDistribution(int(spec[1]), int(spec[2]), log=bool(spec[3]))
+                params[col] = int(val)
+            elif kind == "categorical":
+                choices = list(range(len(spec[1])))
+                distributions[col] = optuna.distributions.CategoricalDistribution(choices)
+                params[col] = int(val)
+        if not params:
+            continue
+        trial = optuna.trial.create_trial(
+            params=params,
+            distributions=distributions,
+            value=float(row["value"]),
+        )
+        study.add_trial(trial)
+    return study

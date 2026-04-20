@@ -138,3 +138,25 @@ stress_distributional_enabled: true
 stress_window_days: 21
 
 enable_method_comparison: true
+
+# ==========================================================================
+# Hyperparameter optimization (Optuna TPE) — scripts/run_hyperopt.py
+# ==========================================================================
+# Only consumed by the dedicated script. Flipping this flag in config.yaml
+# does NOT trigger a hyperopt run from run_all.py — it is a separate and
+# explicit process so that search-generated params never leak into
+# production by accident.
+hyperopt_enabled: false
+hyperopt_n_trials: 50
+hyperopt_n_folds: 3
+hyperopt_purge_gap_days: 21
+hyperopt_objective: "sharpe_adj"          # "sharpe_adj" | "sortino" | "calmar"
+hyperopt_turnover_penalty: 0.5
+hyperopt_optimizer: "mv"                  # "mv" | "cvar" | "robust"
+hyperopt_seed: 42
+hyperopt_output: "reports/output/hyperopt_results.json"
+hyperopt_config_out: "config_optimized.yaml"
+hyperopt_report_out: "reports/output/hyperopt_report.html"
+# Subset of parameter keys to optimize (null = full DEFAULT_SEARCH_SPACE).
+# Example: hyperopt_search_keys: [bl_risk_aversion, mv_risk_aversion, ewma_lambda_cov]
+hyperopt_search_keys: null

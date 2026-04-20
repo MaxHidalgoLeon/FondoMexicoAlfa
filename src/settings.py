@@ -60,6 +60,40 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "enable_method_comparison": True,
     # Numerical tolerances
     "covariance_psd_tolerance": 1e-9,
+    # ------------------------------------------------------------------
+    # Forecast model (ElasticNetCV)
+    # ------------------------------------------------------------------
+    "elasticnet_cv_folds": 5,
+    "elasticnet_l1_ratios": [0.1, 0.5, 0.9],
+    "elasticnet_max_iter": 10000,
+    "elasticnet_tol": 1e-3,
+    "forecast_forward_days": 21,
+    "forecast_min_train_rows": 50,
+    # ------------------------------------------------------------------
+    # Portfolio / optimizer hyperparameters
+    # Defaults are kept bit-identical to the values currently hardcoded in
+    # backtest.py and portfolio.py, so an unmodified run reproduces
+    # pre-migration results exactly.
+    # ------------------------------------------------------------------
+    "bl_risk_aversion": 2.5,
+    "bl_tau": 0.05,
+    "mv_risk_aversion": 4.0,
+    "mv_turnover_penalty": 0.05,
+    "mv_market_impact_eta": 0.1,
+    "cvar_risk_aversion": 25.0,
+    "cvar_turnover_penalty": 0.01,
+    "cvar_alpha": 0.99,
+    "robust_risk_aversion": 4.0,
+    "robust_turnover_penalty": 0.05,
+    "michaud_n_simulations": 100,
+    "michaud_t_effective": 252,
+    "target_net_exposure_mv": 0.90,
+    "target_net_exposure_cvar": 0.75,
+    "target_net_exposure_robust": 0.90,
+    "fx_hedge_ratio_default": 0.5,
+    "garch_refit_every": 5,
+    "garch_forecast_horizon": 21,
+    "garch_lookback": 252,
 }
 
 

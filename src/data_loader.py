@@ -40,18 +40,6 @@ def compute_adtv_liquidity_scores(
     return scores
 
 
-def ewma_decay_weights(length: int, lambda_: float) -> np.ndarray:
-    """Return normalized EWMA weights with the newest observation last."""
-    n = max(int(length), 1)
-    lam = float(lambda_)
-    powers = np.arange(n - 1, -1, -1, dtype=float)
-    raw = (1.0 - lam) * np.power(lam, powers)
-    total = raw.sum()
-    if total <= 0.0:
-        return np.full(n, 1.0 / n)
-    return raw / total
-
-
 def get_investable_universe() -> pd.DataFrame:
     """Create the nearshoring industrial universe for México (verified on Yahoo Finance 2026-04).
 
@@ -413,6 +401,9 @@ def load_data(
     if source == "mock":
         return load_mock_data()
 
+    dropped_tickers: list[str] = []
+    mock_fallbacks_used: list[str] = []
+
     universe = get_investable_universe()
     provider = get_provider(source, **provider_kwargs)
 
@@ -466,49 +457,51 @@ def load_data(
         except Exception as e:
             logger.warning("Failed to load dynamic market caps from %s (%s). Using defaults.", source, e)
 
-    mock_fallbacks_used = []
-    
     try:
         fundamentals = provider.get_fundamentals(
             [t for t in equity_tickers if t not in fibra_tickers], start_date, end_date, allow_defaults=not strict_data_mode
         )
     except Exception as e:
-        logger.error("Fundamentals load failed from %s (%s). No mock fallback will be used.", source, e)
+        logger.error("Fundamentals load failed (%s). strict_data_mode=%s", e, strict_data_mode)
+        mock_fallbacks_used.append("fundamentals")
         fundamentals = pd.DataFrame(columns=["date", "ticker", "pe_ratio", "pb_ratio", "roe",
                                               "profit_margin", "net_debt_to_ebitda", "ebitda_growth", "capex_to_sales"])
 
     try:
         fibra_fundamentals = provider.get_fibra_fundamentals(fibra_tickers, start_date, end_date, allow_defaults=not strict_data_mode)
     except Exception as e:
-        logger.error("FIBRA fundamentals load failed from %s (%s). No mock fallback will be used.", source, e)
+        logger.error("FIBRA fundamentals load failed (%s). strict_data_mode=%s", e, strict_data_mode)
+        mock_fallbacks_used.append("fibra_fundamentals")
         fibra_fundamentals = pd.DataFrame(columns=["date", "ticker", "cap_rate", "ffo_yield",
                                                     "dividend_yield", "ltv", "vacancy_rate"])
 
     try:
         bonds = provider.get_bonds(bond_tickers, start_date, end_date)
     except Exception as e:
-        logger.error("Bond data load failed from %s (%s). No mock fallback will be used.", source, e)
+        logger.error("Bond data load failed (%s). strict_data_mode=%s", e, strict_data_mode)
+        mock_fallbacks_used.append("bonds")
         bonds = pd.DataFrame(columns=["date", "ticker", "asset_class", "price", "ytm", "duration", "credit_spread"])
 
     try:
         macro = provider.get_macro(start_date, end_date)
     except Exception as e:
-        logger.error("Macro load failed from %s (%s). No mock fallback will be used.", source, e)
+        logger.error("Macro load failed (%s). strict_data_mode=%s", e, strict_data_mode)
+        mock_fallbacks_used.append("macro")
         macro = pd.DataFrame(columns=["date", "IMAI", "industrial_production_yoy", "exports_yoy",
                                       "usd_mxn", "banxico_rate", "inflation_yoy", "us_ip_yoy", "us_fed_rate"])
-                                      
+
     if fundamentals_lag_days > 0:
         if not fundamentals.empty and "date" in fundamentals.columns:
             fundamentals["date"] = pd.to_datetime(fundamentals["date"]) + pd.Timedelta(days=fundamentals_lag_days)
         if not fibra_fundamentals.empty and "date" in fibra_fundamentals.columns:
             fibra_fundamentals["date"] = pd.to_datetime(fibra_fundamentals["date"]) + pd.Timedelta(days=fundamentals_lag_days)
-            
+
     data_integrity = {
         "source": source,
         "strict_data_mode": strict_data_mode,
-        "dropped_tickers": dropped_tickers if 'dropped_tickers' in locals() else [],
+        "dropped_tickers": dropped_tickers,
         "mock_fallbacks_used": mock_fallbacks_used,
-        "fundamentals_lag_days": fundamentals_lag_days
+        "fundamentals_lag_days": fundamentals_lag_days,
     }
 
     return {

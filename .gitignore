@@ -4,6 +4,9 @@ __pycache__/
 *.pyo
 *.pyd
 
+# One-shot migration scripts must never land in the repo
+update_*.py
+
 # Credenciales — NUNCA subir a GitHub
 .env
 lseg-data.config.json

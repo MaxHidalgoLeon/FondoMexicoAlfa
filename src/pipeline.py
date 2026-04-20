@@ -192,7 +192,11 @@ def run_pipeline(
 
     feature_df = build_signal_matrix(prices, fundamentals, fibra_fundamentals, bonds, macro, universe)
     scored = score_cross_section(feature_df)
-    forecast_df = forecast_returns(scored, np.log(prices / prices.shift(1)).replace([np.inf, -np.inf], np.nan).fillna(0.0))
+    forecast_df = forecast_returns(
+        scored,
+        np.log(prices / prices.shift(1)).replace([np.inf, -np.inf], np.nan).fillna(0.0),
+        settings=cfg,
+    )
 
     # ------------------------------------------------------------------
     # Separate equity/FIBRA tickers (optimizable) from fixed_income (sleeve)
@@ -238,7 +242,11 @@ def run_pipeline(
     # Align market_weights to the covariance matrix's ticker set before BL
     market_weights = market_weights.reindex(cov_matrix.columns).fillna(0.0)
 
-    bl_returns = black_litterman(market_weights, cov_matrix, views, view_confidences)
+    bl_returns = black_litterman(
+        market_weights, cov_matrix, views, view_confidences,
+        risk_aversion=float(cfg["bl_risk_aversion"]),
+        tau=float(cfg["bl_tau"]),
+    )
 
     # Risk-free rate: último valor de Banxico disponible en macro
     banxico_series = macro["banxico_rate"].dropna()
@@ -265,7 +273,13 @@ def run_pipeline(
 
     # FX overlay
     usd_exposure = universe.set_index("ticker")["usd_exposure"]
-    adjusted_returns = apply_fx_overlay(bl_returns, usd_exposure, macro["usd_mxn"].iloc[-1], expected_usdmxn_return)
+    adjusted_returns = apply_fx_overlay(
+        bl_returns,
+        usd_exposure,
+        macro["usd_mxn"].iloc[-1],
+        expected_usdmxn_return,
+        hedge_ratio=float(cfg["fx_hedge_ratio_default"]),
+    )
 
     # Merge BL-adjusted expected returns back into forecast_df before backtesting
     if not adjusted_returns.empty and not forecast_df_opt.empty:
@@ -402,7 +416,12 @@ def run_pipeline(
         backtest_results["weights"].abs().sum(axis=1) > 1e-9
     ].iloc[-1] if not backtest_results["weights"].empty else None
     raw_daily_returns = np.log(prices / prices.shift(1)).replace([np.inf, -np.inf], np.nan).dropna(how="all")
-    garch_vol_series = rolling_garch_forecast(returns, horizon=21, lookback=252, refit_every=5)
+    garch_vol_series = rolling_garch_forecast(
+        returns,
+        horizon=int(cfg["garch_forecast_horizon"]),
+        lookback=int(cfg["garch_lookback"]),
+        refit_every=int(cfg["garch_refit_every"]),
+    )
     garch_vol = (
         float(garch_vol_series.dropna().iloc[-1])
         if not garch_vol_series.dropna().empty
