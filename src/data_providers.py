@@ -902,11 +902,19 @@ class RefinitivProvider(BaseDataProvider):
         )
 
         records = []
+        is_multi = isinstance(raw.columns, pd.MultiIndex)
+        tickers_in_raw = raw.columns.get_level_values(0).unique() if is_multi else set()
+        # Non-MultiIndex happens when Refinitiv returns data for only one RIC
+        flat_ric: str | None = None
+        if not is_multi and len(mapping) >= 1:
+            flat_ric = next(iter(mapping))
         for ric, orig_ticker in mapping.items():
-            if ric not in raw.columns.get_level_values(0) if isinstance(raw.columns, pd.MultiIndex) else raw.columns:
+            if is_multi and ric not in tickers_in_raw:
+                continue
+            if not is_multi and ric != flat_ric:
                 continue
             try:
-                ticker_df = raw[ric].copy() if isinstance(raw.columns, pd.MultiIndex) else raw
+                ticker_df = raw[ric].copy() if is_multi else raw.copy()
             except (KeyError, TypeError):
                 continue
 
@@ -927,6 +935,12 @@ class RefinitivProvider(BaseDataProvider):
         for col in ["date", "ticker"] + list(field_rename.values()):
             if col not in out.columns:
                 out[col] = np.nan
+        if allow_defaults:
+            out = _fill_numeric_defaults(out, {
+                "pe_ratio": 14.0, "pb_ratio": 1.8, "roe": 0.12,
+                "profit_margin": 0.08, "net_debt_to_ebitda": 2.5,
+                "ebitda_growth": 0.05, "capex_to_sales": 0.05,
+            })
         return out
 
     def get_macro(self, start_date: str, end_date: str) -> pd.DataFrame:
@@ -935,14 +949,46 @@ class RefinitivProvider(BaseDataProvider):
         self._ensure_session()
         rics = list(_RD_MACRO_RICS.keys())
 
-        raw = ld.get_history(universe=rics, fields=["CLOSE"], start=start_date, end=end_date)
+        # ECI (economic indicator) and QS (quote/settlement) RICs reject "CLOSE" when
+        # requested explicitly. Fetch without specifying fields to get each RIC's default
+        # value, then detect the value column dynamically.
+        try:
+            raw = ld.get_history(universe=rics, start=start_date, end=end_date)
+            if raw is None or (hasattr(raw, "empty") and raw.empty):
+                raise ValueError("Empty LSEG response for macro series")
+        except Exception as exc:
+            logger.warning("LSEG macro fetch failed (%s). Falling back to FRED/Banxico/INEGI.", exc)
+            return FREDBanxicoMacroProvider().get_macro(start_date, end_date)
+
+        def _pick_value_col(df: pd.DataFrame) -> str | None:
+            skip = {"Date", "Instrument", "date", "instrument"}
+            for col in df.columns:
+                if col not in skip and pd.api.types.is_numeric_dtype(df[col]):
+                    return col
+            for col in df.columns:
+                if col not in skip:
+                    return col
+            return None
 
         if isinstance(raw.index, pd.MultiIndex):
-            raw = raw.reset_index().pivot(index="Date", columns="Instrument", values="CLOSE")
+            flat = raw.reset_index()
+            val_col = _pick_value_col(flat.drop(columns=["Date", "Instrument"], errors="ignore"))
+            if val_col is None:
+                logger.warning("No value column in LSEG macro response. Falling back to FRED/Banxico/INEGI.")
+                return FREDBanxicoMacroProvider().get_macro(start_date, end_date)
+            raw = flat.pivot(index="Date", columns="Instrument", values=val_col)
+        elif "Instrument" in raw.columns:
+            flat = raw.reset_index()
+            val_col = _pick_value_col(flat.drop(columns=["Date", "Instrument"], errors="ignore"))
+            if val_col is None:
+                logger.warning("No value column in LSEG macro response. Falling back to FRED/Banxico/INEGI.")
+                return FREDBanxicoMacroProvider().get_macro(start_date, end_date)
+            raw = flat.pivot(index="Date", columns="Instrument", values=val_col)
+
         raw.index = pd.DatetimeIndex(raw.index)
         raw = raw.rename(columns=_RD_MACRO_RICS)
 
-        # MXN= is MXN per 1 USD; take reciprocal to get USD/MXN
+        # MXN= returns MXN per 1 USD; invert to USD/MXN
         if "usd_mxn" in raw.columns:
             raw["usd_mxn"] = 1.0 / raw["usd_mxn"].replace(0, np.nan)
 
@@ -1004,6 +1050,11 @@ class RefinitivProvider(BaseDataProvider):
         for col in ["date", "ticker"] + list(field_rename.values()):
             if col not in out.columns:
                 out[col] = np.nan
+        if allow_defaults:
+            out = _fill_numeric_defaults(out, {
+                "cap_rate": 0.075, "ffo_yield": 0.065, "dividend_yield": 0.055,
+                "ltv": 0.35, "vacancy_rate": 0.08,
+            })
         return out
 
     def get_market_caps(self, tickers: List[str]) -> pd.Series:
@@ -1048,7 +1099,10 @@ class RefinitivProvider(BaseDataProvider):
             ric = _RD_BOND_RICS.get(ticker)
             if ric is None:
                 continue
-            raw = ld.get_history(universe=[ric], fields=fields, start=start_date, end=end_date)
+            try:
+                raw = ld.get_history(universe=[ric], fields=fields, start=start_date, end=end_date)
+            except Exception:
+                raw = None
             if raw is None or raw.empty:
                 continue
             if isinstance(raw.columns, pd.MultiIndex):
@@ -1060,9 +1114,23 @@ class RefinitivProvider(BaseDataProvider):
             raw = raw.reset_index()
             records.append(raw)
 
-        if not records:
-            return pd.DataFrame(columns=["date", "ticker", "asset_class", "price", "ytm", "duration", "credit_spread"])
-        return pd.concat(records, ignore_index=True)
+        if records:
+            return pd.concat(records, ignore_index=True)
+
+        # LSEG bond RICs unavailable — fall back to Banxico SIE (authoritative source for
+        # CETES/MBONO yields and the same source used in Yahoo mode).
+        logger.warning(
+            "LSEG bond RICs returned no data for %s. Falling back to Banxico SIE.", tickers
+        )
+        _empty_bonds = pd.DataFrame(
+            columns=["date", "ticker", "asset_class", "price", "ytm", "duration", "credit_spread"]
+        )
+        try:
+            result = FREDBanxicoMacroProvider().fetch_bond_yields(start_date, end_date)
+        except Exception as exc:
+            logger.warning("Banxico SIE bond fallback failed (%s). Returning empty bonds.", exc)
+            return _empty_bonds
+        return result if not result.empty else _empty_bonds
 
 
 # ---------------------------------------------------------------------------

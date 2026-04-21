@@ -3,6 +3,66 @@ from __future__ import annotations
 import pandas as pd
 import numpy as np
 
+# Fundamental column names per asset class
+_EQUITY_FUND_COLS = [
+    "pe_ratio", "pb_ratio", "roe", "profit_margin",
+    "net_debt_to_ebitda", "ebitda_growth", "capex_to_sales",
+]
+_FIBRA_FUND_COLS = [
+    "cap_rate", "ffo_yield", "dividend_yield", "ltv", "vacancy_rate",
+]
+
+
+def _pit_merge_fundamentals(
+    feature_df: pd.DataFrame,
+    fundamentals: pd.DataFrame,
+    fund_cols: list,
+) -> pd.DataFrame:
+    """Point-in-time asof merge: each (date, ticker) row gets the most recent
+    fundamental on or before that date, eliminating look-ahead bias.
+
+    For Yahoo (single today-dated snapshot), all historical dates receive NaN,
+    which features.py then fills with neutral defaults — correct behavior.
+    For Refinitiv (quarterly history), each date gets its proper lagged value.
+    """
+    if fundamentals.empty:
+        return feature_df
+    available_cols = [c for c in fund_cols if c in fundamentals.columns]
+    if not available_cols:
+        return feature_df
+
+    fund_sorted = (
+        fundamentals[["date", "ticker"] + available_cols]
+        .dropna(subset=["date", "ticker"])
+        .copy()
+    )
+    fund_sorted["date"] = pd.to_datetime(fund_sorted["date"])
+    fund_sorted = fund_sorted.sort_values("date")
+
+    feat_dates = feature_df[["date", "ticker"]].copy()
+    feat_dates["date"] = pd.to_datetime(feat_dates["date"])
+
+    parts = []
+    for ticker, t_fund in fund_sorted.groupby("ticker", sort=False):
+        t_feat = feat_dates.loc[feat_dates["ticker"] == ticker].sort_values("date").reset_index(drop=True)
+        if t_feat.empty:
+            continue
+        merged = pd.merge_asof(
+            t_feat,
+            t_fund.drop(columns=["ticker"]).sort_values("date"),
+            on="date",
+            direction="backward",
+        )
+        merged["ticker"] = ticker
+        parts.append(merged)
+
+    if not parts:
+        return feature_df
+
+    pit = pd.concat(parts, ignore_index=True)
+    out = feature_df.drop(columns=[c for c in available_cols if c in feature_df.columns], errors="ignore")
+    return out.merge(pit[["date", "ticker"] + available_cols], on=["date", "ticker"], how="left")
+
 
 def calculate_returns(price_df: pd.DataFrame) -> pd.DataFrame:
     ratio = price_df / price_df.shift(1)
@@ -39,8 +99,9 @@ def build_signal_matrix(
     fibra_features = build_fibra_features(fibra_prices, fibra_fundamentals, macro, investable_universe[investable_universe["asset_class"] == "fibra"])
     fixed_features = build_fixed_income_features(bonds, macro)
 
-    # Concatenate all
-    all_features = pd.concat([equity_features, fibra_features, fixed_features], ignore_index=True)
+    # Concatenate all (exclude empty frames to avoid FutureWarning on all-NA dtype inference)
+    frames = [f for f in [equity_features, fibra_features, fixed_features] if not f.empty]
+    all_features = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     return all_features
 
 
@@ -51,10 +112,6 @@ def build_equity_features(prices: pd.DataFrame, fundamentals: pd.DataFrame, macr
     momentum_126 = rolling_momentum(prices, 126)
     volatility_63 = volatility_signal(returns, 63)
 
-    latest_fundamentals = (
-        fundamentals.sort_values(["ticker", "date"]).groupby("ticker").tail(1).set_index("ticker")
-    )
-    fundamentals_df = latest_fundamentals.reset_index().drop(columns=["date"])
     universe_df = universe[["ticker", "sector", "liquidity_score", "market_cap_mxn", "usd_exposure", "asset_class"]]
 
     daily_macro = (
@@ -74,9 +131,21 @@ def build_equity_features(prices: pd.DataFrame, fundamentals: pd.DataFrame, macr
         .merge(momentum_126_stack, on=["date", "ticker"], how="left")
         .merge(vol_stack, on=["date", "ticker"], how="left")
         .merge(universe_df, on="ticker", how="left")
-        .merge(fundamentals_df, on="ticker", how="left")
         .merge(daily_macro, on="date", how="left")
     )
+    # Point-in-time fundamentals: each date gets the latest quarterly value on or before
+    # that date. For Yahoo (single today snapshot), historical dates receive NaN and fall
+    # through to the default fill below — no future data leaks into the backtest.
+    feature_df = _pit_merge_fundamentals(feature_df, fundamentals, _EQUITY_FUND_COLS)
+    # Fill missing fundamentals with neutral defaults only for equity tickers.
+    # FIBRAs deliberately have no pe_ratio/pb_ratio here — they are handled by
+    # build_fibra_features and must remain NaN so the dropna below excludes them
+    # from this feature set (preventing duplicate rows in the signal matrix).
+    equity_mask = feature_df["asset_class"] == "equity"
+    for col, default in [("pe_ratio", 14.0), ("pb_ratio", 1.8), ("roe", 0.12),
+                         ("profit_margin", 0.08), ("net_debt_to_ebitda", 2.5),
+                         ("ebitda_growth", 0.05), ("capex_to_sales", 0.05)]:
+        feature_df.loc[equity_mask, col] = feature_df.loc[equity_mask, col].fillna(default)
     feature_df = feature_df.dropna(subset=["momentum_63", "volatility_63", "pe_ratio", "pb_ratio"])
 
     # Add legacy columns for compatibility
@@ -97,10 +166,6 @@ def build_fibra_features(prices: pd.DataFrame, fibra_fundamentals: pd.DataFrame,
     momentum_63 = rolling_momentum(prices, 63)
     volatility_63 = volatility_signal(returns, 63)
 
-    latest_fibra = (
-        fibra_fundamentals.sort_values(["ticker", "date"]).groupby("ticker").tail(1).set_index("ticker")
-    )
-    fibra_df = latest_fibra.reset_index().drop(columns=["date"])
     universe_df = universe[["ticker", "sector", "liquidity_score", "market_cap_mxn", "usd_exposure", "asset_class"]]
 
     daily_macro = (
@@ -118,9 +183,14 @@ def build_fibra_features(prices: pd.DataFrame, fibra_fundamentals: pd.DataFrame,
         .merge(momentum_stack, on=["date", "ticker"], how="left")
         .merge(vol_stack, on=["date", "ticker"], how="left")
         .merge(universe_df, on="ticker", how="left")
-        .merge(fibra_df, on="ticker", how="left")
         .merge(daily_macro, on="date", how="left")
     )
+    feature_df = _pit_merge_fundamentals(feature_df, fibra_fundamentals, _FIBRA_FUND_COLS)
+    # Fill missing FIBRA fundamentals with neutral defaults (same logic as equity above)
+    for col, default in [("cap_rate", 0.075), ("ffo_yield", 0.065), ("dividend_yield", 0.055),
+                         ("ltv", 0.35), ("vacancy_rate", 0.08)]:
+        if col in feature_df.columns:
+            feature_df[col] = feature_df[col].fillna(default)
     feature_df = feature_df.dropna(subset=["momentum_63", "volatility_63", "cap_rate"])
 
     # Macro sensitivity (simplified)
@@ -146,7 +216,12 @@ def build_fibra_features(prices: pd.DataFrame, fibra_fundamentals: pd.DataFrame,
 
 def build_fixed_income_features(bond_df: pd.DataFrame, macro: pd.DataFrame) -> pd.DataFrame:
     """Build features for fixed income assets."""
+    if bond_df.empty:
+        return pd.DataFrame()
     feature_df = bond_df.copy()
+    for col in ("duration", "price", "ytm", "credit_spread"):
+        if col not in feature_df.columns:
+            feature_df[col] = np.nan
     feature_df["dv01"] = feature_df["duration"] * feature_df["price"] * 0.0001  # rough dv01
     macro_daily = macro.set_index("date").reindex(feature_df["date"], method="ffill").reset_index()
     feature_df["carry"] = feature_df["ytm"] - macro_daily["banxico_rate"]

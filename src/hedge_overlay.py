@@ -181,6 +181,14 @@ def fx_directional_overlay(
         mxn_garch_vol: GARCH vol forecast anualizada para USD/MXN. Cuando se
             provee, regímenes de alta volatilidad incrementan el hedge ratio.
     """
+    
+    # If macro_df is empty, return empty result
+    if macro_df.empty or "date" not in macro_df.columns:
+        logger.warning("fx_directional_overlay: macro_df is empty — returning default hedge ratio")
+        return pd.DataFrame({
+            "date": signal_df["date"].unique(),
+            "hedge_ratio": min_hedge_ratio
+        })
 
     # Ensure us_fed_rate exists in macro_df
     if "us_fed_rate" not in macro_df.columns:
@@ -201,10 +209,13 @@ def fx_directional_overlay(
     macro_df["mxn_momentum"] = macro_df["usd_mxn_pct_change"]
 
     # Compute zscores
-    rd_zscore = (macro_df["rate_differential"] - macro_df["rate_differential"].mean()) / \
-                (macro_df["rate_differential"].std(ddof=0) + 1e-9)
-    mom_zscore = (macro_df["mxn_momentum"] - macro_df["mxn_momentum"].mean()) / \
-                 (macro_df["mxn_momentum"].std(ddof=0) + 1e-9)
+    rd_mean = macro_df["rate_differential"].expanding().mean()
+    rd_std = macro_df["rate_differential"].expanding().std(ddof=0).clip(lower=1e-9)
+    rd_zscore = (macro_df["rate_differential"] - rd_mean) / rd_std
+
+    mom_mean = macro_df["mxn_momentum"].expanding().mean()
+    mom_std = macro_df["mxn_momentum"].expanding().std(ddof=0).clip(lower=1e-9)
+    mom_zscore = (macro_df["mxn_momentum"] - mom_mean) / mom_std
 
     # FX signal score: high rate differential = more incentive to stay unhedged (carry trade)
     # Negative momentum in MXN (USD/MXN rising = MXN weakening) = increase hedge
@@ -213,7 +224,7 @@ def fx_directional_overlay(
     # Clip z-scores to [-3, 3] before sigmoid so the full [min, max] range is utilized
     clipped_score = macro_df["fx_signal_score"].clip(-3.0, 3.0) / 3.0  # normalize to [-1, 1]
     macro_df["hedge_ratio"] = min_hedge_ratio + (max_hedge_ratio - min_hedge_ratio) * \
-        expit(clipped_score * 6)  # scale so sigmoid is responsive  # noqa: E127
+        expit(np.asarray(clipped_score, dtype=float) * 6)  # scale so sigmoid is responsive  # noqa: E127
 
     # GARCH vol adjustment: alta vol de MXN → incrementar hedge ratio
     if mxn_garch_vol is not None and np.isfinite(mxn_garch_vol) and mxn_garch_vol > 0:
@@ -275,6 +286,8 @@ def run_hedge_backtest(
     risk_free_rate: float = 0.02,
     mxn_garch_vol: float | None = None,
     hedge_mode: str = "analytical",
+    borrow_cost_bps: float = 150.0,
+    leverage_cost_bps: float = 5.0,
 ) -> dict:
     """Full Layer 2 backtest combining all hedge components.
 
@@ -303,15 +316,16 @@ def run_hedge_backtest(
         _max_lev = max_leverage
         logger.info("Hedge overlay running in ANALYTICAL mode (uncapped, non-NAV).")
 
-    # Step 1: Build long_short_portfolio weights per rebalance date
-    # Use top_n/bottom_n per sector based on realistic universe size
+    # Step 1: Build long_short_portfolio weights per rebalance date.
+    # Normalize weights to 1.0 so dynamic_leverage (Step 3) is the sole leverage
+    # control — avoids double-counting the _net_target multiplier on top of leverage.
     long_short = long_short_portfolio(
         signal_for_hedge,
         top_n=8,
         bottom_n=0,
         sector_neutral=False,
-        net_target=_net_target,
-        gross_target=_gross_target,
+        net_target=1.0,
+        gross_target=1.0,
         weight_by_signal=True,
     )
 
@@ -358,8 +372,11 @@ def run_hedge_backtest(
 
     base_returns = (weights.shift(1) * returns).sum(axis=1)
 
-    # Step 3: Apply dynamic_leverage() to scale daily returns
-    leverage_series = dynamic_leverage(base_returns, max_leverage=_max_lev, cvar_limit=cvar_limit)
+    # Step 3: Apply dynamic_leverage() to scale daily returns.
+    # min_leverage=0.8 allows mild de-risking below 100% during stress periods.
+    leverage_series = dynamic_leverage(
+        base_returns, max_leverage=_max_lev, cvar_limit=cvar_limit, min_leverage=0.8
+    )
     leveraged_returns = base_returns * leverage_series
 
     # Step 4: Compute FX PnL from LAGGED hedge ratios and REALIZED (contemporaneous) FX changes
@@ -387,7 +404,14 @@ def run_hedge_backtest(
     gross_turnover = turnover * 2  # long and short
     transaction_costs = gross_turnover * transaction_cost
 
-    final_returns = leveraged_returns + fx_pnl - transaction_costs
+    # Short borrow cost: daily drag on absolute short exposure (~150 bps/year)
+    short_daily_weights = weights.shift(1).clip(upper=0)
+    daily_borrow_drag = short_daily_weights.abs().sum(axis=1) * (borrow_cost_bps / 10_000 / 252)
+
+    # Leverage change cost: charged when leverage is adjusted (margin/collateral friction)
+    leverage_change_cost = leverage_series.diff().abs().fillna(0.0) * (leverage_cost_bps / 10_000)
+
+    final_returns = leveraged_returns + fx_pnl - transaction_costs - daily_borrow_drag - leverage_change_cost
 
     # Step 6: Compute full risk metrics
     _ann_ret_h = np.exp(final_returns.sum() * (252 / max(len(final_returns), 1))) - 1

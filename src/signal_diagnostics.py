@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
@@ -46,10 +48,13 @@ def compute_signal_ic_diagnostics(
         ic_values: list[float] = []
         ic_dates: list[pd.Timestamp] = []
         for date, group in df.groupby("date"):
-            valid = group[[signal, "forward_return_21d"]].replace([np.inf, -np.inf], np.nan).dropna()
+            valid = group[[signal, "forward_return_21d"]].copy()
+            valid = valid.replace([np.inf, -np.inf], np.nan).infer_objects(copy=False).dropna()
             if len(valid) < 4:
                 continue
-            corr, _ = spearmanr(valid[signal], valid["forward_return_21d"])
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                corr, _ = spearmanr(valid[signal], valid["forward_return_21d"])
             if np.isfinite(corr):
                 ic_values.append(float(corr))
                 ic_dates.append(pd.Timestamp(date))

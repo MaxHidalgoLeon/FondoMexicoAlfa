@@ -450,6 +450,7 @@ def load_data(
         try:
             mcaps = provider.get_market_caps(equity_tickers + fibra_tickers)
             # Update universe market_cap_mxn for available tickers
+            universe["market_cap_mxn"] = universe["market_cap_mxn"].astype(float)
             universe.loc[universe["ticker"].isin(mcaps.index), "market_cap_mxn"] = (
                 universe.loc[universe["ticker"].isin(mcaps.index), "ticker"].map(mcaps)
             )

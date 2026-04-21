@@ -273,10 +273,11 @@ def run_pipeline(
 
     # FX overlay
     usd_exposure = universe.set_index("ticker")["usd_exposure"]
+    current_usdmxn = macro["usd_mxn"].iloc[-1] if not macro.empty and "usd_mxn" in macro.columns and len(macro) > 0 else 20.0
     adjusted_returns = apply_fx_overlay(
         bl_returns,
         usd_exposure,
-        macro["usd_mxn"].iloc[-1],
+        current_usdmxn,
         expected_usdmxn_return,
         hedge_ratio=float(cfg["fx_hedge_ratio_default"]),
     )
@@ -412,9 +413,13 @@ def run_pipeline(
     # Additional risk metrics
     returns = backtest_results["returns"]
     # Per-ticker daily returns aligned to the backtest period (for multivariate MC)
-    final_weights = backtest_results["weights"].loc[
-        backtest_results["weights"].abs().sum(axis=1) > 1e-9
-    ].iloc[-1] if not backtest_results["weights"].empty else None
+    if not backtest_results["weights"].empty:
+        filtered_weights = backtest_results["weights"].loc[
+            backtest_results["weights"].abs().sum(axis=1) > 1e-9
+        ]
+        final_weights = filtered_weights.iloc[-1] if not filtered_weights.empty else None
+    else:
+        final_weights = None
     raw_daily_returns = np.log(prices / prices.shift(1)).replace([np.inf, -np.inf], np.nan).dropna(how="all")
     garch_vol_series = rolling_garch_forecast(
         returns,
@@ -569,12 +574,14 @@ def run_pipeline(
             forecast_df,
             universe,
             macro,
-            max_leverage=2.0,
+            max_leverage=1.3,
             cvar_limit=0.04,
             transaction_cost=0.0010,
             risk_free_rate=risk_free_rate,
             mxn_garch_vol=mxn_garch_vol,
             hedge_mode=hedge_mode_config,
+            borrow_cost_bps=150.0,
+            leverage_cost_bps=5.0,
         )
 
         hedge_ret = hedge_results.get("returns")

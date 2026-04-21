@@ -25,3 +25,6 @@ data/
 
 # macOS
 .DS_Store
+
+# Generated reports (rebuilt on each pipeline run)
+reports/output/
