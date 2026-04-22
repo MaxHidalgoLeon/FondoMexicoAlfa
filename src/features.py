@@ -69,9 +69,16 @@ def calculate_returns(price_df: pd.DataFrame) -> pd.DataFrame:
     return np.log(ratio).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
 
-def rolling_momentum(price_df: pd.DataFrame, window: int = 126) -> pd.DataFrame:
-    ratio = price_df / price_df.shift(window)
-    return np.log(ratio).replace([np.inf, -np.inf], np.nan).shift(1)
+def rolling_momentum(price_df: pd.DataFrame, window: int = 126, skip: int = 1) -> pd.DataFrame:
+    """Log-return over `window` trading days, lagged by `skip` days.
+
+    skip=1  — standard for short-term signals (63-day).
+    skip=21 — excludes the most recent month, following the academic convention
+               for medium/long-term momentum (126-day+) to avoid short-term reversal.
+    On date t the signal reflects P_{t-skip} / P_{t-window-skip}.
+    """
+    ratio = price_df.shift(skip) / price_df.shift(window + skip)
+    return np.log(ratio).replace([np.inf, -np.inf], np.nan)
 
 
 def volatility_signal(return_df: pd.DataFrame, window: int = 63) -> pd.DataFrame:
@@ -108,8 +115,8 @@ def build_signal_matrix(
 def build_equity_features(prices: pd.DataFrame, fundamentals: pd.DataFrame, macro: pd.DataFrame, universe: pd.DataFrame) -> pd.DataFrame:
     """Build features for equity assets."""
     returns = calculate_returns(prices)
-    momentum_63 = rolling_momentum(prices, 63)
-    momentum_126 = rolling_momentum(prices, 126)
+    momentum_63 = rolling_momentum(prices, 63, skip=1)
+    momentum_126 = rolling_momentum(prices, 126, skip=21)
     volatility_63 = volatility_signal(returns, 63)
 
     universe_df = universe[["ticker", "sector", "liquidity_score", "market_cap_mxn", "usd_exposure", "asset_class"]]
