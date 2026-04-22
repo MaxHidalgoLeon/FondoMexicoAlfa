@@ -222,6 +222,10 @@ def build_dashboard_html(results: dict, hedge_mode, data_source: str) -> str:
         sections.append(_section_fx_overlay(hedge_overlay, hedge_leverage))
         sections.append(_section_layer_comparison(metrics, hedge_metrics, tail_hedge, hedge_is_analytical))
 
+    hyperopt_section = _section_hyperopt_dashboard(data_source)
+    if hyperopt_section:
+        sections.append(hyperopt_section)
+
     body = "\n".join(sections)
 
     # Optional sections inserted before Signal Quality shift later section numbers.
@@ -872,11 +876,10 @@ def _section_risk(returns, summary, hedge_returns=None, hedge_metrics=None, sett
                 + "</table>"
             )
 
+        det_block = f'<div class="card">{det_chart}</div>' if det_chart else ""
         covariance_block = f"""
-<div class="grid2">
-  <div class="card">{heatmap_chart}</div>
-  <div class="card">{det_chart}</div>
-</div>
+<div class="card">{heatmap_chart}</div>
+{det_block}
 <div class="grid2">
   <div class="card">{vol_compare}</div>
   <div class="card"><h3>Method Comparison</h3>{comparison_table}</div>
@@ -1813,7 +1816,74 @@ if (document.readyState === 'loading') {
 
 
 # ---------------------------------------------------------------------------
-# Hyperparameter optimization report
+# Hyperparameter optimization — dashboard summary section
+# ---------------------------------------------------------------------------
+
+def _section_hyperopt_dashboard(data_source: str) -> str:
+    """Compact hyperopt section for the main strategy dashboard.
+
+    Reads reports/output/hyperopt_results_{data_source}.json if it exists.
+    Returns empty string when no results are available for this source.
+    """
+    import json
+    from pathlib import Path
+
+    json_path = Path(__file__).resolve().parent.parent / f"reports/output/hyperopt_results_{data_source}.json"
+    if not json_path.exists():
+        return ""
+
+    try:
+        with open(json_path) as f:
+            payload = json.load(f)
+    except Exception:
+        return ""
+
+    best_params       = payload.get("best_params") or {}
+    best_value        = payload.get("best_value")
+    validation        = payload.get("validation_metrics") or {}
+    n_trials          = payload.get("n_trials_completed", 0)
+    elapsed           = payload.get("optimization_time_seconds", 0)
+    objective_metric  = payload.get("objective_metric", "sharpe_adj")
+    trial_history_raw = payload.get("trial_history") or []
+
+    if not best_params:
+        return ""
+
+    # ── Best params + validation metrics tables ────────────────────────────
+    param_rows = "".join(
+        f"<tr><td>{k}</td><td class='mono'>{round(v, 5) if isinstance(v, float) else v}</td></tr>"
+        for k, v in best_params.items()
+    )
+    metric_rows = "".join(
+        f"<tr><td>{k}</td><td class='mono'>{_num(v, 4)}</td></tr>"
+        for k, v in validation.items()
+    )
+    elapsed_min = f"{elapsed / 60:.1f} min" if elapsed else "N/A"
+    tables_html = (
+        f'<div class="grid2">'
+        f'<div class="card"><h3>Mejores parámetros — {objective_metric} = {_num(best_value, 4)}'
+        f'<span style="font-size:0.8rem; color:#8892b0; font-weight:normal;"> '
+        f'({n_trials} trials · {elapsed_min})</span></h3>'
+        f'<table><tbody>{param_rows}</tbody></table></div>'
+        f'<div class="card"><h3>Métricas de validación (walk-forward OOS)</h3>'
+        f'<table><tbody>{metric_rows}</tbody></table></div>'
+        f'</div>'
+    )
+
+    # ── Convergence chart ──────────────────────────────────────────────────
+    convergence_html = ""
+    if trial_history_raw:
+        history = pd.DataFrame(trial_history_raw)
+        convergence_html = _section_hyperopt_convergence(history, objective_metric)
+
+    return (
+        f'<h2>Hyperparameter Optimization — {data_source}</h2>'
+        f'{tables_html}'
+        f'{convergence_html}'
+    )
+
+
+# Hyperparameter optimization standalone report
 # ---------------------------------------------------------------------------
 
 def _section_hyperopt_parallel(history: pd.DataFrame, objective: str) -> str:

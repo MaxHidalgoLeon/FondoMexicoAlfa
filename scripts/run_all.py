@@ -37,6 +37,23 @@ DEFAULT_BENCHMARKS = ["IPC", "GBMCRE", "GBMNEAR", "GBMMOD", "GBMALFA"]
 SUPPORTED_SOURCES = ["mock", "yahoo", "bloomberg", "refinitiv"]
 DEFAULT_MULTI_PROVIDERS = ["yahoo", "refinitiv", "bloomberg"]
 
+# Keys that run_hyperopt.py is allowed to tune — must mirror DEFAULT_SEARCH_SPACE
+# (excluding REGULATORY_FIXED_KEYS). Only these are imported from config_optimized.yaml
+# so that operational settings (source, dates, hedge, etc.) are never overridden.
+HYPEROPT_TUNABLE_KEYS = frozenset({
+    "bl_risk_aversion",
+    "bl_tau",
+    "mv_risk_aversion",
+    "mv_turnover_penalty",
+    "mv_market_impact_eta",
+    "cvar_risk_aversion",
+    "ewma_lambda_cov",
+    "elasticnet_l1_ratios",
+    "regime_ewma_span",
+    "forecast_forward_days",
+    "adtv_ewma_lambda",
+})
+
 # ---------------------------------------------------------------------------
 # Cargar .env (credenciales) si existe
 # ---------------------------------------------------------------------------
@@ -77,6 +94,25 @@ def _load_config() -> dict:
     except ImportError:
         print("[AVISO] pyyaml no instalado — usando valores por defecto. Instala con: pip install pyyaml")
     return defaults
+
+
+def _apply_optimized_params(config: dict, source: str) -> dict:
+    """Overlay source-specific optimized hyperparams from config_optimized_{source}.yaml if it exists."""
+    optimized_path = ROOT / f"config_optimized_{source}.yaml"
+    if not optimized_path.exists():
+        return config
+    try:
+        import yaml
+        with open(optimized_path) as f:
+            opt_cfg = yaml.safe_load(f) or {}
+        applied = {k: v for k, v in opt_cfg.items() if k in HYPEROPT_TUNABLE_KEYS and v is not None}
+        if applied:
+            config = {**config, **applied}
+            print(f"[Hyperopt:{source}] Aplicando {len(applied)} parámetros optimizados "
+                  f"de config_optimized_{source}.yaml: {', '.join(sorted(applied))}")
+    except Exception as exc:
+        print(f"[AVISO] No se pudo leer config_optimized_{source}.yaml: {exc}")
+    return config
 
 # ---------------------------------------------------------------------------
 # Argumentos de la terminal (sobreescriben config.yaml)
@@ -261,6 +297,7 @@ def main() -> None:
     for source in sources:
         benchmark_tickers = _benchmarks_for_source(source)
         out_for_source = _output_path_for_source(out, source, multi_source)
+        source_settings = _apply_optimized_params(dict(pipeline_settings), source)
         print(
             f"\n[RUN] source={source} | benchmarks={', '.join(benchmark_tickers) if benchmark_tickers else 'N/A'} "
             f"| out={out_for_source}"
@@ -274,7 +311,7 @@ def main() -> None:
                 out_for_source,
                 optimizer,
                 benchmark_tickers,
-                settings=pipeline_settings,
+                settings=source_settings,
             )
             successful_sources.append(source)
         except Exception as exc:

@@ -6,6 +6,8 @@
 
 # Fuente de datos: "mock" | "yahoo" | "bloomberg" | "refinitiv"
 # Puede ser string (1 fuente) o lista YAML (múltiples fuentes).
+# Usado por run_all.py Y run_hyperopt.py — ambos scripts leen este campo.
+# run_hyperopt.py genera un config_optimized_{source}.yaml por cada fuente listada.
 source:
   - yahoo
   - refinitiv
@@ -147,7 +149,7 @@ enable_method_comparison: true
 # explicit process so that search-generated params never leak into
 # production by accident.
 hyperopt_enabled: true
-hyperopt_n_trials: 50
+hyperopt_n_trials: 50          # ← edita este número para controlar cuántos trials corre
 hyperopt_n_folds: 3
 hyperopt_purge_gap_days: 21
 hyperopt_objective: "sharpe_adj"          # "sharpe_adj" | "sortino" | "calmar"
