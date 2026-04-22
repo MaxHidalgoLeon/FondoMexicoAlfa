@@ -221,6 +221,9 @@ def run_report(
             provider_kwargs["app_key"] = app_key
         else:
             print("[AVISO] REFINITIV_APP_KEY no configurada en .env")
+    elif source == "bloomberg":
+        data_dir = os.environ.get("BLOOMBERG_DATA_DIR", "data/bloomberg")
+        provider_kwargs["data_dir"] = data_dir
 
     from src.pipeline import run_pipeline
     results = run_pipeline(
@@ -274,7 +277,7 @@ def main() -> None:
             return cli_bench
         if cfg_bench is not None:
             return cfg_bench
-        return DEFAULT_BENCHMARKS if current_source in ("yahoo", "refinitiv") else []
+        return DEFAULT_BENCHMARKS if current_source in ("yahoo", "refinitiv", "bloomberg") else []
 
     print(f"\nFondo Mexico — Pipeline completo")
     print(f"  Fuente(s)  : {', '.join(sources)}")

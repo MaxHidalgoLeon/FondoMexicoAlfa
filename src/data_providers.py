@@ -1472,6 +1472,91 @@ class FREDBanxicoMacroProvider:
 
 
 # ---------------------------------------------------------------------------
+# Bloomberg Local provider (reads pre-extracted parquet files, no blpapi)
+# ---------------------------------------------------------------------------
+
+class BloombergLocalProvider(BaseDataProvider):
+    """Reads Bloomberg data from parquet files extracted by scripts/extract_bloomberg_data.py."""
+
+    def __init__(self, data_dir: str | None = None) -> None:
+        from pathlib import Path
+        self.data_dir = Path(data_dir or "data/bloomberg")
+        if not self.data_dir.exists():
+            raise RuntimeError(
+                f"Bloomberg data directory not found: {self.data_dir}\n"
+                "Run scripts/extract_bloomberg_data.py on the Bloomberg Terminal PC first."
+            )
+
+    def _load(self, filename: str) -> pd.DataFrame:
+        path = self.data_dir / filename
+        if not path.exists():
+            logger.warning("Bloomberg local: archivo no encontrado: %s", path)
+            return pd.DataFrame()
+        return pd.read_parquet(path)
+
+    def get_prices(self, tickers: List[str], start_date: str, end_date: str) -> pd.DataFrame:
+        df = self._load("prices.parquet")
+        if df.empty:
+            return pd.DataFrame(index=pd.bdate_range(start_date, end_date), columns=tickers)
+        df.index = pd.DatetimeIndex(df.index)
+        df = df.loc[start_date:end_date]
+        cols = [c for c in tickers if c in df.columns]
+        return df[cols].ffill(limit=5)
+
+    def get_volume(self, tickers: List[str], start_date: str, end_date: str) -> pd.DataFrame:
+        df = self._load("volume.parquet")
+        if df.empty:
+            return pd.DataFrame(index=pd.bdate_range(start_date, end_date), columns=tickers)
+        df.index = pd.DatetimeIndex(df.index)
+        df = df.loc[start_date:end_date]
+        cols = [c for c in tickers if c in df.columns]
+        return df[cols].fillna(0.0)
+
+    def _load_long(self, filename: str, start_date: str, end_date: str, tickers: List[str]) -> pd.DataFrame:
+        df = self._load(filename)
+        if df.empty:
+            return df
+        df["date"] = pd.to_datetime(df["date"])
+        df = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
+        return df[df["ticker"].isin(tickers)]
+
+    def get_fundamentals(self, tickers: List[str], start_date: str, end_date: str, allow_defaults: bool = True) -> pd.DataFrame:
+        df = self._load_long("fundamentals.parquet", start_date, end_date, tickers)
+        if df.empty:
+            return pd.DataFrame(columns=["date", "ticker", "pe_ratio", "pb_ratio", "roe",
+                                         "profit_margin", "net_debt_to_ebitda", "ebitda_growth", "capex_to_sales"])
+        return df
+
+    def get_fibra_fundamentals(self, tickers: List[str], start_date: str, end_date: str, allow_defaults: bool = True) -> pd.DataFrame:
+        df = self._load_long("fibra_fundamentals.parquet", start_date, end_date, tickers)
+        if df.empty:
+            return pd.DataFrame(columns=["date", "ticker", "cap_rate", "ffo_yield",
+                                         "dividend_yield", "ltv", "vacancy_rate"])
+        return df
+
+    def get_bonds(self, tickers: List[str], start_date: str, end_date: str) -> pd.DataFrame:
+        df = self._load_long("bonds.parquet", start_date, end_date, tickers)
+        if df.empty:
+            return pd.DataFrame(columns=["date", "ticker", "asset_class", "price", "ytm", "duration", "credit_spread"])
+        return df
+
+    def get_macro(self, start_date: str, end_date: str) -> pd.DataFrame:
+        df = self._load("macro.parquet")
+        if df.empty:
+            return df
+        df["date"] = pd.to_datetime(df["date"])
+        return df[(df["date"] >= start_date) & (df["date"] <= end_date)]
+
+    def get_market_caps(self, tickers: List[str]) -> pd.Series:
+        df = self._load("market_caps.parquet")
+        if df.empty or "market_cap_mxn" not in df.columns:
+            return pd.Series(dtype=float)
+        if "ticker" in df.columns:
+            df = df.set_index("ticker")
+        return df["market_cap_mxn"].reindex(tickers)
+
+
+# ---------------------------------------------------------------------------
 # Factory function
 # ---------------------------------------------------------------------------
 
@@ -1496,7 +1581,7 @@ def get_provider(source: str, **kwargs) -> BaseDataProvider:
     elif source in ("yahoo", "yfinance"):
         return YahooFinanceProvider()
     elif source in ("bloomberg", "bbg"):
-        return BloombergProvider()
+        return BloombergLocalProvider(data_dir=kwargs.get("data_dir", "data/bloomberg"))
     elif source in ("refinitiv", "lseg", "eikon"):
         return RefinitivProvider()
     else:

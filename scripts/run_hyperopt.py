@@ -67,7 +67,7 @@ def _normalize_sources(raw: str | list) -> list[str]:
         candidates = [str(s).strip().lower() for s in raw if str(s).strip()]
     else:
         raw = str(raw).strip().lower()
-        candidates = ["yahoo", "refinitiv"] if raw == "all" else [s.strip() for s in raw.split(",") if s.strip()]
+        candidates = ["yahoo", "refinitiv", "bloomberg"] if raw == "all" else [s.strip() for s in raw.split(",") if s.strip()]
     invalid = [s for s in candidates if s not in SUPPORTED_SOURCES]
     if invalid:
         raise ValueError(f"Fuente(s) inválida(s): {', '.join(invalid)}. Válidas: {', '.join(SUPPORTED_SOURCES)}, all")
