@@ -442,8 +442,8 @@ def load_data(
             ].tolist()
         if dropped_tickers:
             logger.info(
-                "Dropping %d ticker(s) with insufficient Yahoo history (<%d business days or stale last price): %s",
-                len(dropped_tickers), min_price_history, dropped_tickers,
+                "Dropping %d ticker(s) with insufficient %s history (<%d business days or stale last price): %s",
+                len(dropped_tickers), source, min_price_history, dropped_tickers,
             )
 
     if source != "mock":

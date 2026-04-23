@@ -77,8 +77,6 @@ def _normalize_sources(raw: str | list) -> list[str]:
 
 
 def _output_for_source(base: str, source: str, multi: bool) -> str:
-    if not multi:
-        return base
     p = Path(base)
     return str(p.with_name(f"{p.stem}_{source}{p.suffix}"))
 

@@ -1828,7 +1828,7 @@ def _section_hyperopt_dashboard(data_source: str) -> str:
     import json
     from pathlib import Path
 
-    json_path = Path(__file__).resolve().parent.parent / f"reports/output/hyperopt_results_{data_source}.json"
+    json_path = Path(__file__).resolve().parent.parent / f"reports/hyperopt_data/hyperopt_results_{data_source}.json"
     if not json_path.exists():
         return ""
 

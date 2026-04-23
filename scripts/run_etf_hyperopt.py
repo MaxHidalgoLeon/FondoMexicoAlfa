@@ -92,7 +92,7 @@ def _run_single_source(
     seed: int,
     logger: logging.Logger,
 ) -> bool:
-    output_path = ROOT / f"reports/output/hyperopt_results_etf_{source}.json"
+    output_path = ROOT / f"reports/hyperopt_data/hyperopt_results_etf_{source}.json"
     config_out  = ROOT / f"config_optimized_etf_{source}.yaml"
     report_out  = ROOT / f"reports/output/hyperopt_report_etf_{source}.html"
     output_path.parent.mkdir(parents=True, exist_ok=True)

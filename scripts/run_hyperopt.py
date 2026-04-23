@@ -116,7 +116,7 @@ def _run_single_source(
     logger: logging.Logger,
 ) -> bool:
     """Run hyperopt for one source. Returns True on success."""
-    output_path = ROOT / f"reports/output/hyperopt_results_{source}.json"
+    output_path = ROOT / f"reports/hyperopt_data/hyperopt_results_{source}.json"
     config_out  = ROOT / f"config_optimized_{source}.yaml"
     report_out  = ROOT / f"reports/output/hyperopt_report_{source}.html"
     output_path.parent.mkdir(parents=True, exist_ok=True)

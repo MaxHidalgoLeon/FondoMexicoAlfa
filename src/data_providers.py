@@ -1513,7 +1513,7 @@ class BloombergLocalProvider(BaseDataProvider):
         df = self._load("prices.parquet")
         if df.empty:
             return pd.DataFrame(index=pd.bdate_range(start_date, end_date), columns=tickers)
-        df.index = pd.DatetimeIndex(df.index)
+        df.index = pd.DatetimeIndex(df.index).astype("datetime64[ns]")
         df = df.loc[start_date:end_date]
         cols = [c for c in tickers if c in df.columns]
         return df[cols].apply(pd.to_numeric, errors="coerce").ffill(limit=5)
@@ -1522,7 +1522,7 @@ class BloombergLocalProvider(BaseDataProvider):
         df = self._load("volume.parquet")
         if df.empty:
             return pd.DataFrame(index=pd.bdate_range(start_date, end_date), columns=tickers)
-        df.index = pd.DatetimeIndex(df.index)
+        df.index = pd.DatetimeIndex(df.index).astype("datetime64[ns]")
         df = df.loc[start_date:end_date]
         cols = [c for c in tickers if c in df.columns]
         return df[cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
@@ -1531,36 +1531,84 @@ class BloombergLocalProvider(BaseDataProvider):
         df = self._load(filename)
         if df.empty:
             return df
-        df["date"] = pd.to_datetime(df["date"])
+        df["date"] = pd.to_datetime(df["date"]).astype("datetime64[ns]")
         df = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
-        return df[df["ticker"].isin(tickers)]
+        if "ticker" in df.columns:
+            df = df[df["ticker"].isin(tickers)]
+        # Si el parquet viene en formato largo [date, ticker, field, value], pivotar a ancho
+        if "field" in df.columns and "value" in df.columns:
+            df["value"] = pd.to_numeric(df["value"], errors="coerce")
+            df = df.pivot_table(index=["date", "ticker"], columns="field", values="value", aggfunc="first").reset_index()
+            df.columns.name = None
+            df["date"] = df["date"].astype("datetime64[ns]")
+        return df
+
+    _FUND_RENAME = {
+        "PE_RATIO": "pe_ratio", "PX_TO_BOOK_RATIO": "pb_ratio", "RETURN_ON_EQUITY": "roe",
+        "PROF_MARGIN": "profit_margin", "NET_DEBT_TO_EBITDA": "net_debt_to_ebitda",
+        "EBITDA_GROWTH": "ebitda_growth", "CAPEX_TO_SALES": "capex_to_sales",
+    }
+    _FIBRA_RENAME = {
+        "CAP_RATE": "cap_rate", "FFO_YIELD": "ffo_yield", "DVD_SH_12M": "dividend_yield",
+        "LOAN_TO_VALUE": "ltv", "VACANCY_RATE": "vacancy_rate",
+    }
+    _BOND_RENAME = {
+        "PX_LAST": "price", "YLD_YTM_MID": "ytm", "DUR_MID": "duration", "Z_SPRD_MID": "credit_spread",
+    }
+    _MACRO_RENAME = {
+        "MMACTIVI Index": "IMAI", "MXIPYOY Index": "industrial_production_yoy",
+        "MXEXPORT Index": "exports_yoy", "USDMXN Curncy": "usd_mxn",
+        "MXONBRAN Index": "banxico_rate", "MXCPYOY Index": "inflation_yoy",
+        "IP YOY Index": "us_ip_yoy", "FDTR Index": "us_fed_rate",
+    }
+
+    @staticmethod
+    def _ensure_columns(df: pd.DataFrame, expected: list) -> pd.DataFrame:
+        for col in expected:
+            if col not in df.columns:
+                df[col] = np.nan
+        return df
 
     def get_fundamentals(self, tickers: List[str], start_date: str, end_date: str, allow_defaults: bool = True) -> pd.DataFrame:
+        expected = ["date", "ticker", "pe_ratio", "pb_ratio", "roe",
+                    "profit_margin", "net_debt_to_ebitda", "ebitda_growth", "capex_to_sales"]
         df = self._load_long("fundamentals.parquet", start_date, end_date, tickers)
         if df.empty:
-            return pd.DataFrame(columns=["date", "ticker", "pe_ratio", "pb_ratio", "roe",
-                                         "profit_margin", "net_debt_to_ebitda", "ebitda_growth", "capex_to_sales"])
-        return df
+            return pd.DataFrame(columns=expected)
+        return self._ensure_columns(df.rename(columns=self._FUND_RENAME), expected)
 
     def get_fibra_fundamentals(self, tickers: List[str], start_date: str, end_date: str, allow_defaults: bool = True) -> pd.DataFrame:
+        expected = ["date", "ticker", "cap_rate", "ffo_yield", "dividend_yield", "ltv", "vacancy_rate"]
         df = self._load_long("fibra_fundamentals.parquet", start_date, end_date, tickers)
         if df.empty:
-            return pd.DataFrame(columns=["date", "ticker", "cap_rate", "ffo_yield",
-                                         "dividend_yield", "ltv", "vacancy_rate"])
-        return df
+            return pd.DataFrame(columns=expected)
+        return self._ensure_columns(df.rename(columns=self._FIBRA_RENAME), expected)
 
     def get_bonds(self, tickers: List[str], start_date: str, end_date: str) -> pd.DataFrame:
+        expected = ["date", "ticker", "asset_class", "price", "ytm", "duration", "credit_spread"]
         df = self._load_long("bonds.parquet", start_date, end_date, tickers)
         if df.empty:
-            return pd.DataFrame(columns=["date", "ticker", "asset_class", "price", "ytm", "duration", "credit_spread"])
-        return df
+            return pd.DataFrame(columns=expected)
+        df = df.rename(columns=self._BOND_RENAME)
+        if "asset_class" not in df.columns:
+            df["asset_class"] = "fixed_income"
+        return self._ensure_columns(df, expected)
 
     def get_macro(self, start_date: str, end_date: str) -> pd.DataFrame:
+        expected = ["date", "IMAI", "industrial_production_yoy", "exports_yoy", "usd_mxn",
+                    "banxico_rate", "inflation_yoy", "us_ip_yoy", "us_fed_rate"]
         df = self._load("macro.parquet")
         if df.empty:
-            return df
-        df["date"] = pd.to_datetime(df["date"])
-        return df[(df["date"] >= start_date) & (df["date"] <= end_date)]
+            return pd.DataFrame(columns=expected)
+        df["date"] = pd.to_datetime(df["date"]).astype("datetime64[ns]")
+        df = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
+        # Si viene en formato largo [date, ticker, field, value], pivotar a ancho
+        if "field" in df.columns and "value" in df.columns and "ticker" in df.columns:
+            df["value"] = pd.to_numeric(df["value"], errors="coerce")
+            df = df.pivot_table(index="date", columns="ticker", values="value", aggfunc="first").reset_index()
+            df.columns.name = None
+            df = df.rename(columns=self._MACRO_RENAME)
+        return self._ensure_columns(df, expected)
 
     def get_market_caps(self, tickers: List[str]) -> pd.Series:
         df = self._load("market_caps.parquet")
