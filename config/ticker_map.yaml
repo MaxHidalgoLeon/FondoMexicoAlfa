@@ -57,7 +57,7 @@ OMAB:
 PINFRA:
   yahoo:     "PINFRA"
   lseg:      "PINFRA"
-  bloomberg: "PINFRA"  # BAD_SEC en market_caps — verificar si el ticker cambió
+  bloomberg: "PINFRA*"  # BAD_SEC en market_caps — verificar si el ticker cambió
 
 ORBIA:
   yahoo:     "ORBIA"
@@ -115,12 +115,12 @@ GBMNEAR:
 BBVANSH:
   yahoo:     null            # sin ticker en Yahoo
   lseg:      "BBVANSHPV.MX"          # PENDIENTE — agregar RIC de Refinitiv
-  bloomberg: null            # PENDIENTE — agregar ticker de Bloomberg
+  bloomberg: "BBVANSHE MM Equity"            # PENDIENTE — agregar ticker de Bloomberg
 
 ACTIED:
   yahoo:     "ACTIEDA"            # PENDIENTE — agregar ticker de Yahoo
   lseg:      "LP65041010"            # PENDIENTE — agregar RIC de Refinitiv
-  bloomberg: null            # PENDIENTE — agregar ticker de Bloomberg
+  bloomberg: "ACTIEDA MM Equity"            # PENDIENTE — agregar ticker de Bloomberg
 
 # ------------------------------------------------------------------
 # FIBRAs — Industrial / Logistics focus
@@ -209,5 +209,5 @@ MATERIALS:
 FIBRATC14:
   yahoo:           "FIBRATC14.MX"
   lseg:            "FIBRATC14"
-  bloomberg:       "FIBRATC14 MM Equity"
+  bloomberg:       "FIBRATC MM Equity"
 

@@ -9,8 +9,7 @@
 # Usado por run_all.py Y run_hyperopt.py — ambos scripts leen este campo.
 # run_hyperopt.py genera un config_optimized_{source}.yaml por cada fuente listada.
 source:
-  - refinitiv
-  - yahoo
+  - bloomberg
 
 # Periodo de análisis
 start_date: "2017-01-01"
