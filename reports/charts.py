@@ -2233,6 +2233,14 @@ def _section_hyperopt_parallel(history: pd.DataFrame, objective: str) -> str:
     if df.empty:
         return ""
 
+    # Drop columns whose cells are lists (e.g. fold_sharpes) — not plottable as numeric dims
+    param_cols = [
+        c for c in param_cols
+        if not (len(df) > 0 and isinstance(df[c].iloc[0], list))
+    ]
+    if not param_cols:
+        return ""
+
     dims = []
     for col in param_cols:
         series = df[col]
@@ -2285,7 +2293,8 @@ def _section_hyperopt_top_trials(history: pd.DataFrame, top_n: int = 10) -> str:
     df = history.dropna(subset=["value"]).sort_values("value", ascending=False).head(top_n)
     if df.empty:
         return ""
-    cols = ["trial_number", "value"] + [c for c in df.columns if c not in {"trial_number", "value", "state"}]
+    cols = ["trial_number", "value"] + [c for c in df.columns if c not in {"trial_number", "value", "state"}
+                                         and not (len(df) > 0 and isinstance(df[c].iloc[0], list))]
     rows = []
     for _, r in df.iterrows():
         tds = "".join(f"<td>{_num(r[c], 4) if isinstance(r[c], (int, float)) else r[c]}</td>" for c in cols)

@@ -25,7 +25,7 @@
     "cvar_95_mean": -0.019737300332843852
   },
   "n_trials_completed": 50,
-  "optimization_time_seconds": 1260.1122739315033,
+  "optimization_time_seconds": 1183.449891090393,
   "objective_metric": "sharpe_adj",
   "turnover_penalty": 0.5,
   "search_space": {
@@ -125,7 +125,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 37,
       "adtv_ewma_lambda": 0.9191105199610449,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.508166171807777,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 1,
@@ -141,7 +146,12 @@
       "regime_ewma_span": 10,
       "forecast_forward_days": 16,
       "adtv_ewma_lambda": 0.946281099457225,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332045,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 2,
@@ -157,7 +167,12 @@
       "regime_ewma_span": 7,
       "forecast_forward_days": 14,
       "adtv_ewma_lambda": 0.9445659219100143,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661726553219,
+        0.7740537471322667,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 3,
@@ -173,7 +188,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 29,
       "adtv_ewma_lambda": 0.9829686811520805,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730331147,
+        0.7740537471392622,
+        0.5586854377950099
+      ]
     },
     {
       "trial_number": 4,
@@ -189,7 +209,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 12,
       "adtv_ewma_lambda": 0.9888198242940466,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730280516,
+        0.7740537471392589,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 5,
@@ -205,7 +230,12 @@
       "regime_ewma_span": 9,
       "forecast_forward_days": 20,
       "adtv_ewma_lambda": 0.9057202515257421,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332048,
+        0.7740537471392622,
+        0.5586847053970446
+      ]
     },
     {
       "trial_number": 6,
@@ -221,7 +251,12 @@
       "regime_ewma_span": 7,
       "forecast_forward_days": 27,
       "adtv_ewma_lambda": 0.9384786916522695,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332045,
+        0.7740537471371222,
+        0.5586848791021282
+      ]
     },
     {
       "trial_number": 7,
@@ -237,7 +272,12 @@
       "regime_ewma_span": 3,
       "forecast_forward_days": 19,
       "adtv_ewma_lambda": 0.9145099158528605,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332045,
+        0.7740537471392622,
+        0.5586848790796176
+      ]
     },
     {
       "trial_number": 8,
@@ -253,7 +293,12 @@
       "regime_ewma_span": 4,
       "forecast_forward_days": 17,
       "adtv_ewma_lambda": 0.9384397009763631,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332047,
+        0.7740537471392623,
+        0.5586848791040128
+      ]
     },
     {
       "trial_number": 9,
@@ -269,7 +314,12 @@
       "regime_ewma_span": 10,
       "forecast_forward_days": 21,
       "adtv_ewma_lambda": 0.9874603874448864,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332047,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 10,
@@ -285,7 +335,12 @@
       "regime_ewma_span": 5,
       "forecast_forward_days": 34,
       "adtv_ewma_lambda": 0.96908916138453,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730916783,
+        0.7740537470439075,
+        0.5586848791040128
+      ]
     },
     {
       "trial_number": 11,
@@ -301,7 +356,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 42,
       "adtv_ewma_lambda": 0.9216727143750819,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081660836923573,
+        0.7740537471386898,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 12,
@@ -317,7 +377,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 42,
       "adtv_ewma_lambda": 0.9652164127368484,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730325251,
+        0.7740537471392622,
+        0.5586848791040128
+      ]
     },
     {
       "trial_number": 13,
@@ -333,7 +398,12 @@
       "regime_ewma_span": 9,
       "forecast_forward_days": 28,
       "adtv_ewma_lambda": 0.9264817440398609,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730412894,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 14,
@@ -349,7 +419,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 33,
       "adtv_ewma_lambda": 0.9620117416609246,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332045,
+        0.7740537471392622,
+        0.5586848791040125
+      ]
     },
     {
       "trial_number": 15,
@@ -365,7 +440,12 @@
       "regime_ewma_span": 10,
       "forecast_forward_days": 42,
       "adtv_ewma_lambda": 0.9021325870355249,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332045,
+        0.7740537471392637,
+        0.5586848791040228
+      ]
     },
     {
       "trial_number": 16,
@@ -381,7 +461,12 @@
       "regime_ewma_span": 8,
       "forecast_forward_days": 24,
       "adtv_ewma_lambda": 0.9779878638440791,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332047,
+        0.7740537471375709,
+        0.5586818289167073
+      ]
     },
     {
       "trial_number": 17,
@@ -397,7 +482,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 31,
       "adtv_ewma_lambda": 0.9535951491108894,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730365152,
+        0.7740537471392389,
+        0.5586848791040128
+      ]
     },
     {
       "trial_number": 18,
@@ -413,7 +503,12 @@
       "regime_ewma_span": 6,
       "forecast_forward_days": 38,
       "adtv_ewma_lambda": 0.9312321468424052,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332048,
+        0.7740537471392654,
+        0.5586848791040102
+      ]
     },
     {
       "trial_number": 19,
@@ -429,7 +524,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 38,
       "adtv_ewma_lambda": 0.9156508972955114,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332047,
+        0.7740537471392622,
+        0.5586848791040128
+      ]
     },
     {
       "trial_number": 20,
@@ -445,7 +545,12 @@
       "regime_ewma_span": 9,
       "forecast_forward_days": 24,
       "adtv_ewma_lambda": 0.9269643042118182,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332048,
+        0.7740537471236675,
+        0.5586848791040223
+      ]
     },
     {
       "trial_number": 21,
@@ -461,7 +566,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 38,
       "adtv_ewma_lambda": 0.9181530497728632,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730310696,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 22,
@@ -477,7 +587,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 35,
       "adtv_ewma_lambda": 0.9115162671369411,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730377791,
+        0.7740537471394173,
+        0.5586848791039962
+      ]
     },
     {
       "trial_number": 23,
@@ -493,7 +608,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 30,
       "adtv_ewma_lambda": 0.9221092411966553,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081659374276223,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 24,
@@ -509,7 +629,12 @@
       "regime_ewma_span": 10,
       "forecast_forward_days": 30,
       "adtv_ewma_lambda": 0.9555525964058031,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081665048374833,
+        0.774053747139262,
+        0.5586848791052171
+      ]
     },
     {
       "trial_number": 25,
@@ -525,7 +650,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 30,
       "adtv_ewma_lambda": 0.9324102459520179,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332038,
+        0.7740537471394103,
+        0.5586848791040153
+      ]
     },
     {
       "trial_number": 26,
@@ -541,7 +671,12 @@
       "regime_ewma_span": 8,
       "forecast_forward_days": 24,
       "adtv_ewma_lambda": 0.922272912589323,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730329928,
+        0.7740537471392622,
+        0.5586848791040124
+      ]
     },
     {
       "trial_number": 27,
@@ -557,7 +692,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 10,
       "adtv_ewma_lambda": 0.9073865581973473,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081614982093394,
+        0.7740537471392622,
+        0.5586848791040128
+      ]
     },
     {
       "trial_number": 28,
@@ -573,7 +713,12 @@
       "regime_ewma_span": 9,
       "forecast_forward_days": 26,
       "adtv_ewma_lambda": 0.909679116875337,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332047,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 29,
@@ -589,7 +734,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 32,
       "adtv_ewma_lambda": 0.9032766074728839,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332048,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 30,
@@ -605,7 +755,12 @@
       "regime_ewma_span": 10,
       "forecast_forward_days": 10,
       "adtv_ewma_lambda": 0.9809110274932205,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730384746,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 31,
@@ -621,7 +776,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 36,
       "adtv_ewma_lambda": 0.9087935526010836,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.508166173031335,
+        0.7740537471392622,
+        0.5586848794699074
+      ]
     },
     {
       "trial_number": 32,
@@ -637,7 +797,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 40,
       "adtv_ewma_lambda": 0.9249099391826172,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332045,
+        0.7740537471392527,
+        0.5586848437262671
+      ]
     },
     {
       "trial_number": 33,
@@ -653,7 +818,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 22,
       "adtv_ewma_lambda": 0.9193912401665757,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730309034,
+        0.7740537471392622,
+        0.5586848791040128
+      ]
     },
     {
       "trial_number": 34,
@@ -669,7 +839,12 @@
       "regime_ewma_span": 10,
       "forecast_forward_days": 14,
       "adtv_ewma_lambda": 0.9457046886849776,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081657404322866,
+        0.7740537471394782,
+        0.5586831313796266
+      ]
     },
     {
       "trial_number": 35,
@@ -685,7 +860,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 28,
       "adtv_ewma_lambda": 0.9352577863408577,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730555951,
+        0.7740537471392611,
+        0.5586848791179421
+      ]
     },
     {
       "trial_number": 36,
@@ -701,7 +881,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 29,
       "adtv_ewma_lambda": 0.9408340353830317,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730327683,
+        0.7740537471392622,
+        0.5586848791049192
+      ]
     },
     {
       "trial_number": 37,
@@ -717,7 +902,12 @@
       "regime_ewma_span": 10,
       "forecast_forward_days": 18,
       "adtv_ewma_lambda": 0.9500796071284846,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661729622038,
+        0.7740537471392622,
+        0.5586848791054595
+      ]
     },
     {
       "trial_number": 38,
@@ -733,7 +923,12 @@
       "regime_ewma_span": 8,
       "forecast_forward_days": 15,
       "adtv_ewma_lambda": 0.9073062521693895,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730281125,
+        0.7740537471392618,
+        0.5586848791040128
+      ]
     },
     {
       "trial_number": 39,
@@ -749,7 +944,12 @@
       "regime_ewma_span": 9,
       "forecast_forward_days": 11,
       "adtv_ewma_lambda": 0.9132670660622322,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661731398246,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 40,
@@ -765,7 +965,12 @@
       "regime_ewma_span": 6,
       "forecast_forward_days": 25,
       "adtv_ewma_lambda": 0.9002766851759132,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081750181645628,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 41,
@@ -781,7 +986,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 40,
       "adtv_ewma_lambda": 0.9189726212926014,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081692165487302,
+        0.7740537471392622,
+        0.5586848791040128
+      ]
     },
     {
       "trial_number": 42,
@@ -797,7 +1007,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 36,
       "adtv_ewma_lambda": 0.9290742336878482,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.50816617302823,
+        0.7740537471392622,
+        0.5586848791040637
+      ]
     },
     {
       "trial_number": 43,
@@ -813,7 +1028,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 40,
       "adtv_ewma_lambda": 0.9224225255521006,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730331688,
+        0.7740537471392622,
+        0.5586847334259991
+      ]
     },
     {
       "trial_number": 44,
@@ -829,7 +1049,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 33,
       "adtv_ewma_lambda": 0.9350289662829626,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332045,
+        0.7740537471392622,
+        0.5586848791040128
+      ]
     },
     {
       "trial_number": 45,
@@ -845,7 +1070,12 @@
       "regime_ewma_span": 10,
       "forecast_forward_days": 42,
       "adtv_ewma_lambda": 0.971543407639658,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730351528,
+        0.7740537471389894,
+        0.5586848791038822
+      ]
     },
     {
       "trial_number": 46,
@@ -861,7 +1091,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 27,
       "adtv_ewma_lambda": 0.9048683671591858,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730304895,
+        0.7740537471419721,
+        0.5586848791040128
+      ]
     },
     {
       "trial_number": 47,
@@ -877,7 +1112,12 @@
       "regime_ewma_span": 12,
       "forecast_forward_days": 21,
       "adtv_ewma_lambda": 0.9165744814779583,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730332045,
+        0.7740537471392622,
+        0.5586848791040127
+      ]
     },
     {
       "trial_number": 48,
@@ -893,7 +1133,12 @@
       "regime_ewma_span": 3,
       "forecast_forward_days": 37,
       "adtv_ewma_lambda": 0.9223343233199652,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730416454,
+        0.7740537471421185,
+        0.5586848790960031
+      ]
     },
     {
       "trial_number": 49,
@@ -909,7 +1154,12 @@
       "regime_ewma_span": 11,
       "forecast_forward_days": 34,
       "adtv_ewma_lambda": 0.9610387407000736,
-      "state": "TrialState.COMPLETE"
+      "state": "TrialState.COMPLETE",
+      "fold_sharpes": [
+        -0.5081661730331976,
+        0.7740537471392622,
+        0.5586848790865223
+      ]
     }
   ]
 }
