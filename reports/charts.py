@@ -226,7 +226,7 @@ def build_dashboard_html(results: dict, hedge_mode, data_source: str, reform: bo
     if reform_layer:
         sections.append(_section_lfi_reform_comparison(reform_layer, returns, len(sections) + 1))
 
-    hyperopt_section = _section_hyperopt_dashboard(data_source)
+    hyperopt_section = _section_hyperopt_dashboard(data_source, strategy_returns=returns)
     if hyperopt_section:
         sections.append(hyperopt_section)
 
@@ -1368,10 +1368,20 @@ def _section_lfi_reform_comparison(reform_layer: dict, trad_returns: pd.Series, 
         w = w.replace(0.0, np.nan).ffill().fillna(0.0)
         turn = w.diff().abs().sum(axis=1).fillna(0.0)
 
+        sector_frames = []
+        if not long_book.empty and "sector" in long_book.columns:
+            sector_frames.append(long_book[["ticker", "sector"]])
+        if not short_book.empty and "sector" in short_book.columns:
+            sector_frames.append(short_book[["ticker", "sector"]])
+        scenario_universe = (
+            pd.concat(sector_frames, ignore_index=True).drop_duplicates(subset=["ticker"])
+            if sector_frames else pd.DataFrame(columns=["ticker", "sector"])
+        )
+
         if has_shorts and (w < 0).any().any():
-            allocation_blocks += _build_longshort_block(w, turn, pd.DataFrame(columns=["ticker", "sector"]), label)
+            allocation_blocks += _build_longshort_block(w, turn, scenario_universe, label)
         else:
-            allocation_blocks += _build_portfolio_block(w, turn, label, include_fixed_income=False)
+            allocation_blocks += _build_portfolio_block(w, turn, label, universe=scenario_universe, include_fixed_income=False)
 
     return f"""
 <h2>{section_num}. LFI Reform Scenarios</h2>
@@ -2018,11 +2028,15 @@ if (document.readyState === 'loading') {
 # Hyperparameter optimization — dashboard summary section
 # ---------------------------------------------------------------------------
 
-def _section_hyperopt_dashboard(data_source: str) -> str:
-    """Compact hyperopt section for the main strategy dashboard.
+def _section_hyperopt_dashboard(data_source: str, strategy_returns: pd.Series | None = None) -> str:
+    """Hyperopt diagnostics block for the unified strategy dashboard.
 
-    Reads reports/output/hyperopt_results_{data_source}.json if it exists.
-    Returns empty string when no results are available for this source.
+    Reads reports/hyperopt_data/hyperopt_results_{data_source}.json (produced by
+    scripts/run_hyperopt.py). Renders best params + validation metrics, the
+    convergence/parallel/importance charts that previously lived in the
+    standalone hyperopt report, the top-10 trial table, and an overfitting
+    diagnostic panel (Deflated Sharpe Ratio + Probability of Backtest
+    Overfitting). Returns empty string when no results exist for this source.
     """
     import json
     from pathlib import Path
@@ -2069,16 +2083,137 @@ def _section_hyperopt_dashboard(data_source: str) -> str:
         f'</div>'
     )
 
-    # ── Convergence chart ──────────────────────────────────────────────────
-    convergence_html = ""
-    if trial_history_raw:
-        history = pd.DataFrame(trial_history_raw)
-        convergence_html = _section_hyperopt_convergence(history, objective_metric)
+    history = pd.DataFrame(trial_history_raw) if trial_history_raw else pd.DataFrame()
+
+    # ── Convergence + parallel coordinates ────────────────────────────────
+    convergence_html = _section_hyperopt_convergence(history, objective_metric)
+    parallel_html = _section_hyperopt_parallel(history, objective_metric)
+
+    # ── Importance (rebuild Optuna study from history) ────────────────────
+    importance_html = ""
+    try:
+        import optuna  # noqa: F401
+        from optuna.importance import get_param_importances
+
+        if not history.empty and "trial_number" in history.columns:
+            stub_result = type("_R", (), {
+                "trial_history": history,
+                "best_params": best_params,
+                "objective_metric": objective_metric,
+                "search_space": payload.get("search_space") or {},
+            })()
+            study = _rebuild_study_from_history(stub_result)
+            if study is not None and len(study.trials) >= 2:
+                importance = dict(get_param_importances(study))
+                importance_html = _section_hyperopt_importance(importance)
+    except Exception:
+        importance_html = ""
+
+    top_trials_html = _section_hyperopt_top_trials(history, top_n=10)
+    overfitting_html = _section_overfitting_diagnostics(
+        strategy_returns, history, n_trials_completed=n_trials,
+        objective_metric=objective_metric,
+    )
 
     return (
         f'<h2>Hyperparameter Optimization — {data_source}</h2>'
         f'{tables_html}'
+        f'{overfitting_html}'
         f'{convergence_html}'
+        f'{parallel_html}'
+        f'{importance_html}'
+        f'{top_trials_html}'
+    )
+
+
+def _section_overfitting_diagnostics(
+    strategy_returns: pd.Series | None,
+    trial_history: pd.DataFrame,
+    n_trials_completed: int,
+    objective_metric: str,
+) -> str:
+    """Render the Deflated Sharpe Ratio + Probability of Backtest Overfitting panel."""
+    import ast
+
+    from src.overfitting import deflated_sharpe_ratio, probability_of_backtest_overfitting
+
+    rows: list[tuple[str, str, str]] = []  # (metric, value, interpretation)
+
+    def _coerce_list(x):
+        if isinstance(x, list):
+            return x
+        if isinstance(x, str):
+            try:
+                parsed = ast.literal_eval(x)
+                return parsed if isinstance(parsed, list) else None
+            except Exception:
+                return None
+        return None
+
+    # ── Pre-compute per-trial mean OOS Sharpe (input to DSR's V and to PBO) ──
+    trial_mean_sharpes: list[float] = []
+    fold_matrix_rows: list[list[float]] = []
+    if not trial_history.empty and "fold_sharpes" in trial_history.columns:
+        for v in trial_history["fold_sharpes"].tolist():
+            lst = _coerce_list(v)
+            if lst and all(isinstance(x, (int, float)) for x in lst):
+                trial_mean_sharpes.append(float(np.mean(lst)))
+                fold_matrix_rows.append([float(x) for x in lst])
+
+    # ── DSR — applied to the best strategy's full backtest returns ─────────
+    if strategy_returns is not None and not strategy_returns.empty and n_trials_completed > 1:
+        dsr = deflated_sharpe_ratio(
+            strategy_returns,
+            n_trials=int(n_trials_completed),
+            trial_sharpes=trial_mean_sharpes if trial_mean_sharpes else None,
+        )
+        sr_obs = dsr["sharpe_annualized"]
+        sr_exp = dsr["expected_max_sharpe_annual"]
+        p = dsr["dsr_p_value"]
+        if np.isfinite(p):
+            verdict = (
+                "✓ Robusto (p > 0.95)" if p >= 0.95 else
+                "Probable (p > 0.75)"   if p >= 0.75 else
+                "Marginal (p > 0.50)"   if p >= 0.50 else
+                "✗ Posible overfitting (p < 0.50)"
+            )
+            rows.append(("Sharpe observado (anual)", f"{sr_obs:.2f}", ""))
+            rows.append(("E[max Sharpe] bajo H0 (anual)", f"{sr_exp:.2f}",
+                         f"con N={n_trials_completed} trials"))
+            rows.append(("Deflated Sharpe — P(SR > E[max])", f"{p:.3f}", verdict))
+
+    # ── PBO — combinatorial CV on per-fold trial sharpes ───────────────────
+    if len(fold_matrix_rows) >= 4:
+        n_folds = min(len(r) for r in fold_matrix_rows)
+        M = np.array([r[:n_folds] for r in fold_matrix_rows]).T  # (folds × trials)
+        pbo = probability_of_backtest_overfitting(M, n_chunks=n_folds)
+        if np.isfinite(pbo["pbo"]):
+            pbo_val = pbo["pbo"]
+            pbo_verdict = (
+                "✓ Bajo (< 0.20)"  if pbo_val < 0.20 else
+                "Aceptable (< 0.50)" if pbo_val < 0.50 else
+                "✗ Alto (≥ 0.50)"
+            )
+            rows.append(("Probability of Backtest Overfitting (PBO)",
+                         f"{pbo_val:.3f}",
+                         f"{pbo_verdict} · {pbo['n_splits']} splits, {pbo['n_trials']} trials"))
+
+    if not rows:
+        return ""
+
+    body = "".join(
+        f"<tr><td>{m}</td><td class='mono'>{v}</td><td style='color:#8892b0'>{i}</td></tr>"
+        for m, v, i in rows
+    )
+    return (
+        f'<div class="card"><h3>Diagnóstico de overfitting (Bailey & López de Prado)</h3>'
+        f'<table><thead><tr><th>Métrica</th><th>Valor</th><th>Interpretación</th></tr></thead>'
+        f'<tbody>{body}</tbody></table>'
+        f'<p style="color:#8892b0; font-size:0.85rem; margin-top:0.5rem;">'
+        f'DSR ajusta el Sharpe por skew/kurtosis y el número de configuraciones probadas; '
+        f'p &gt; 0.95 indica que el Sharpe es estadísticamente superior al máximo esperado '
+        f'bajo H0 de cero skill. PBO &lt; 0.20 indica baja probabilidad de overfitting (López de Prado 2016).'
+        f'</p></div>'
     )
 
 

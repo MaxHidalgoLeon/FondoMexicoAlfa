@@ -10,6 +10,8 @@
 # run_hyperopt.py genera un config_optimized_{source}.yaml por cada fuente listada.
 source:
   - bloomberg
+  - yahoo
+  - refinitiv
 
 # Periodo de análisis
 start_date: "2017-01-01"
@@ -19,7 +21,7 @@ end_date:   "2026-03-31"
 hedge: true
 
 # Activar comparativo de escenarios reforma LFI (4 estructuras: regulado, 130/30, market-neutral, 130/30 sector-neutral)
-reform: false
+reform: true
 
 # Optimizador de portafolio:
 #   "mv"     — media-varianza (SLSQP) con penalización de impacto de mercado

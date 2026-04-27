@@ -135,7 +135,10 @@ def run_report(
     )
 
     from reports.charts import build_dashboard_html
-    html = build_dashboard_html(results, hedge_mode=hedge, data_source=source)
+    # data_source uses the etf_ prefix so the hyperopt section in the report
+    # picks up reports/hyperopt_data/hyperopt_results_etf_{source}.json (the
+    # ETF-universe optimizer output) rather than the equity-universe one.
+    html = build_dashboard_html(results, hedge_mode=hedge, data_source=f"etf_{source}")
 
     out = ROOT / out_path
     out.parent.mkdir(parents=True, exist_ok=True)

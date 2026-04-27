@@ -183,7 +183,7 @@ MBONO3Y:
 # ETFs — versión por sector S&P/BMV IPC CompMX (modo ETF)
 # ------------------------------------------------------------------
 # INDUSTRIAL, CONSUMER, COMMUNICATION, MATERIALS: series de precio
-# cargadas desde archivos Excel locales (index/<Sector>.xls).
+# cargadas desde archivos CSV locales (index/<Sector>.csv).
 # No tienen ticker externo — se marcan con yahoo: null.
 
 INDUSTRIAL:

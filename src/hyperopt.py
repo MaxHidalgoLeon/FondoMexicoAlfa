@@ -300,6 +300,9 @@ def _build_trial_history(study) -> pd.DataFrame:
         for key, val in trial.params.items():
             row[key] = val
         row["state"] = str(trial.state)
+        fold_sharpes = trial.user_attrs.get("fold_sharpes") if hasattr(trial, "user_attrs") else None
+        if fold_sharpes:
+            row["fold_sharpes"] = list(fold_sharpes)
         rows.append(row)
     return pd.DataFrame.from_records(rows)
 
@@ -403,6 +406,8 @@ def run_hyperopt(
                 logger.warning("Fold %d failed: %s", fold.fold_idx, exc)
                 m = {"sharpe": 0.0, "sortino": 0.0, "max_drawdown": 0.0, "turnover": 0.0, "cvar_95": 0.0}
             metrics_per_fold.append(m)
+        # Persist per-fold OOS Sharpe for downstream CSCV-PBO computation
+        trial.set_user_attr("fold_sharpes", [float(m["sharpe"]) for m in metrics_per_fold])
         return _objective_score(metrics_per_fold, objective_metric, float(turnover_penalty))
 
     sampler = optuna.samplers.TPESampler(seed=int(seed))

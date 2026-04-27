@@ -26,8 +26,5 @@ data/
 # macOS
 .DS_Store
 
-# Generated reports (rebuilt on each pipeline run)
-reports/output/
-
 # Hyperopt-generated configs (rebuilt by run_hyperopt.py, source-specific)
 config_optimized_*.yaml

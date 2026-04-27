@@ -4,9 +4,13 @@ CLI: python scripts/run_hyperopt.py [--n-trials N] [--n-folds K]
                                     [--optimizer mv|cvar] [--output PATH]
 
 Runs Bayesian hyperparameter optimization (Optuna TPE) and writes:
-  - reports/output/hyperopt_results.json  — best params + trial history
-  - reports/output/hyperopt_report.html   — visual diagnostics
-  - config_optimized.yaml                 — ready-to-use config with best params
+  - reports/hyperopt_data/hyperopt_results_{source}.json — best params,
+    trial history (with per-fold OOS sharpes for CSCV-PBO), validation metrics
+  - config_optimized_{source}.yaml — ready-to-use config with best params
+
+The hyperopt diagnostics (convergence, parallel coords, importance, top trials,
+DSR, PBO) are rendered inside the main strategy report (run_all.py). No standalone
+HTML report is emitted.
 
 The optimizer searches over DEFAULT_SEARCH_SPACE (see src/hyperopt.py).
 Regulatory keys (max_position, issuer_concentration_limit, fx_overlay_notional_cap,
@@ -118,7 +122,6 @@ def _run_single_source(
     """Run hyperopt for one source. Returns True on success."""
     output_path = ROOT / f"reports/hyperopt_data/hyperopt_results_{source}.json"
     config_out  = ROOT / f"config_optimized_{source}.yaml"
-    report_out  = ROOT / f"reports/output/hyperopt_report_{source}.html"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info(
@@ -190,13 +193,6 @@ def _run_single_source(
             logger.info("[%s] Wrote optimized config: %s", source, config_out)
         except ImportError:
             logger.warning("PyYAML not available — skipping %s.", config_out)
-
-    try:
-        from reports.charts import generate_hyperopt_report
-        generate_hyperopt_report(result, output_path=report_out)
-        logger.info("[%s] Wrote hyperopt HTML report: %s", source, report_out)
-    except Exception as exc:
-        logger.warning("[%s] HTML report generation skipped: %s", source, exc)
 
     return True
 

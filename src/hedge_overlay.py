@@ -295,8 +295,12 @@ REFORM_SCENARIOS: dict[str, dict] = {
         "hedge_mode_override": "analytical",
     },
     "130_30_sector_neutral": {
+        # Sector-neutral overlay: top_n + bottom_n must fit the smallest investable
+        # sector. The MX universe has sectors with as few as 3 names (Logistics),
+        # so we use 2 longs + 1 short per sector. Gross/net targets are still
+        # applied via long_short_portfolio normalization.
         "label": "130/30 Sector-Neutral",
-        "top_n": 8, "bottom_n": 5, "sector_neutral": True,
+        "top_n": 2, "bottom_n": 1, "sector_neutral": True,
         "net_target": 1.00, "gross_target": 1.60, "max_leverage_cap": 1.60,
         "hedge_mode_override": "analytical",
     },
@@ -321,6 +325,7 @@ def run_hedge_backtest(
     net_target_override: float | None = None,
     gross_target_override: float | None = None,
     max_leverage_cap: float | None = None,
+    top_n: int = 8,
 ) -> dict:
     """Full Layer 2 backtest combining all hedge components.
 
@@ -365,7 +370,7 @@ def run_hedge_backtest(
     _ls_gross = _gross_target if bottom_n > 0 else 1.0
     long_short = long_short_portfolio(
         signal_for_hedge,
-        top_n=8,
+        top_n=top_n,
         bottom_n=bottom_n,
         sector_neutral=sector_neutral,
         net_target=_ls_net,
@@ -562,6 +567,7 @@ def run_reform_comparison(
                 net_target_override=params["net_target"],
                 gross_target_override=params["gross_target"],
                 max_leverage_cap=params["max_leverage_cap"],
+                top_n=params.get("top_n", 8),
             )
             scenario_result["scenario_label"] = params["label"]
             scenario_result["scenario_key"] = key

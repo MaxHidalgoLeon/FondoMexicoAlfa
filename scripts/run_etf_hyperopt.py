@@ -6,9 +6,11 @@ Optimiza los mismos hiperparámetros del modelo (risk_aversion, tau, EWMA, etc.)
 pero usando el universo ETF (EWW, INDS, IGF, ILF, EMLC) con señales price-only.
 
 Salidas:
-  reports/output/hyperopt_results_etf_{source}.json
-  reports/output/hyperopt_report_etf_{source}.html
+  reports/hyperopt_data/hyperopt_results_etf_{source}.json
   config_optimized_etf_{source}.yaml
+
+Las gráficas y métricas de hyperopt se renderizan dentro del reporte ETF
+principal (run_etf.py); este script ya no genera HTML standalone.
 
 Uso:
     python scripts/run_etf_hyperopt.py
@@ -94,7 +96,6 @@ def _run_single_source(
 ) -> bool:
     output_path = ROOT / f"reports/hyperopt_data/hyperopt_results_etf_{source}.json"
     config_out  = ROOT / f"config_optimized_etf_{source}.yaml"
-    report_out  = ROOT / f"reports/output/hyperopt_report_etf_{source}.html"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info("=== ETF [%s] trials=%d folds=%d objective=%s optimizer=%s ===",
@@ -170,13 +171,6 @@ def _run_single_source(
             logger.info("[ETF %s] Config optimizado: %s", source, config_out)
         except ImportError:
             logger.warning("PyYAML no disponible — omitiendo %s.", config_out)
-
-    try:
-        from reports.charts import generate_hyperopt_report
-        generate_hyperopt_report(result, output_path=report_out)
-        logger.info("[ETF %s] Reporte HTML: %s", source, report_out)
-    except Exception as exc:
-        logger.warning("[ETF %s] Reporte HTML omitido: %s", source, exc)
 
     return True
 

@@ -534,19 +534,19 @@ _ETF_SPECS: Dict[str, tuple] = {
     "MBONO3Y": ("Mbono 3yr", "Government", "fixed_income", 0.00, 0.15),
 }
 
-# Sector indices loaded from local Excel files (index/<Name>.xls) — no external ticker
+# Sector indices loaded from local CSV files (index/<Name>.csv) — no external ticker
 _ETF_INDEX_TICKERS = ["INDUSTRIAL", "CONSUMER", "COMMUNICATION", "MATERIALS"]
 # Tickers fetched live from external providers
 _ETF_PRICE_TICKERS = ["FIBRATC14"]
 # Bond tickers that go through get_bonds() / mock bonds
 _ETF_BOND_TICKERS  = ["CETES28", "CETES91", "MBONO3Y"]
 
-# Map index ticker → Excel filename (relative to project root)
+# Map index ticker → CSV filename (relative to project root)
 _ETF_INDEX_FILES: Dict[str, str] = {
-    "INDUSTRIAL":    "index/Industrial.xls",
-    "CONSUMER":      "index/Consumer.xls",
-    "COMMUNICATION": "index/Communication.xls",
-    "MATERIALS":     "index/Materials.xls",
+    "INDUSTRIAL":    "index/Industrial.csv",
+    "CONSUMER":      "index/Consumer.csv",
+    "COMMUNICATION": "index/Communication.csv",
+    "MATERIALS":     "index/Materials.csv",
 }
 
 
@@ -588,30 +588,25 @@ def get_etf_universe() -> pd.DataFrame:
     return df
 
 
-def _load_index_prices_from_excel(
+def _load_index_prices_from_csv(
     start_date: str, end_date: str
 ) -> pd.DataFrame:
-    """Load sector index price series from local Excel files.
+    """Load sector index price series from local CSV files.
 
-    Each file has columns [date, price] where date is an Excel serial number
-    and price is a rebased index (100 = first date). Returns a wide DataFrame
+    Each file has columns [date, price] where date is ISO (YYYY-MM-DD) and
+    price is a rebased index (100 = first date). Returns a wide DataFrame
     indexed by business-day DatetimeIndex with one column per sector ticker.
     """
-    import xlrd
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
     frames = {}
     for ticker, rel_path in _ETF_INDEX_FILES.items():
         path = root / rel_path
-        wb = xlrd.open_workbook(str(path))
-        sh = wb.sheets()[0]
-        rows = [sh.row_values(r) for r in range(1, sh.nrows)  # skip header
-                if isinstance(sh.cell_value(r, 0), (int, float))]
-        dates = [xlrd.xldate_as_datetime(r[0], wb.datemode).date() for r in rows]
-        prices = [float(r[1]) for r in rows]
-        s = pd.Series(prices, index=pd.DatetimeIndex(dates), name=ticker)
-        frames[ticker] = s
+        s = pd.read_csv(path, parse_dates=[0], index_col=0).iloc[:, 0]
+        s.name = ticker
+        s.index = pd.DatetimeIndex(s.index)
+        frames[ticker] = s.astype(float)
 
     df = pd.DataFrame(frames).sort_index()
     bdays = pd.bdate_range(start_date, end_date)
@@ -637,8 +632,8 @@ def load_etf_data(
 
     universe = get_etf_universe()
 
-    # Always load sector index prices from local Excel files
-    index_prices = _load_index_prices_from_excel(start_date, end_date)
+    # Always load sector index prices from local CSV files
+    index_prices = _load_index_prices_from_csv(start_date, end_date)
 
     if source == "mock":
         fibra_prices = generate_mock_price_series(
