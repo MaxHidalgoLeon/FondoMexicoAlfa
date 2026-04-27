@@ -40,6 +40,7 @@ def parse_args():
     p.add_argument("--start", default="2017-01-01")
     p.add_argument("--end", default="2026-03-31")
     p.add_argument("--hedge", action="store_true", help="Include Layer 2 hedge overlay.")
+    p.add_argument("--reform", action="store_true", help="Include LFI reform scenario comparison (4 structures).")
     p.add_argument("--optimizer", choices=["mv", "cvar", "robust", "both"], default="mv",
                    help="Portfolio optimizer (default: mv). Use 'both' to compare MV vs min-CVaR.")
     p.add_argument("--out", default=None)
@@ -89,10 +90,11 @@ def main():
             end_date=args.end,
             optimizer=args.optimizer,
             benchmark_tickers=bench,
+            hedge_reform=args.reform,
         )
 
         print("[2/3] Building dashboard ...")
-        html = build_dashboard_html(results, hedge_mode=args.hedge, data_source=source)
+        html = build_dashboard_html(results, hedge_mode=args.hedge, data_source=source, reform=args.reform)
 
         print(f"[3/3] Saving -> {out_path}")
         with open(out_path, "w", encoding="utf-8") as f:

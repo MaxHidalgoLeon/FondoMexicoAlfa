@@ -155,6 +155,7 @@ def run_pipeline(
     optimizer: str = "mv",
     benchmark_tickers: list[str] | None = None,
     hedge_mode_config: str = "analytical",
+    hedge_reform: bool = False,
     settings: dict | None = None,
     **provider_kwargs,
 ) -> dict[str, object]:
@@ -703,6 +704,24 @@ def run_pipeline(
 
         results["hedge_layer"] = hedge_results
 
+    # Reform comparison — independent of hedge_mode, runs all 4 LFI scenarios
+    if hedge_reform:
+        from .hedge_overlay import run_reform_comparison
+        reform_results = run_reform_comparison(
+            prices,
+            forecast_df,
+            universe,
+            macro,
+            max_leverage=1.3,
+            cvar_limit=0.04,
+            transaction_cost=0.0010,
+            risk_free_rate=risk_free_rate,
+            mxn_garch_vol=mxn_garch_vol,
+            borrow_cost_bps=150.0,
+            leverage_cost_bps=5.0,
+        )
+        results["reform_layer"] = reform_results
+
     return results
 
 
@@ -755,6 +774,7 @@ def run_etf_pipeline(
     optimizer: str = "mv",
     benchmark_tickers: list[str] | None = None,
     hedge_mode_config: str = "analytical",
+    hedge_reform: bool = False,
     settings: dict | None = None,
     **provider_kwargs,
 ) -> dict[str, object]:
@@ -994,6 +1014,28 @@ def run_etf_pipeline(
             })
 
         results["hedge_layer"] = hedge_results
+
+    # Reform comparison for ETF pipeline
+    if hedge_reform:
+        from .hedge_overlay import run_reform_comparison
+        try:
+            _reform_garch_vol = float(garch_vol_series.dropna().iloc[-1]) if not garch_vol_series.dropna().empty else None
+        except Exception:
+            _reform_garch_vol = None
+        reform_results = run_reform_comparison(
+            prices_opt,
+            forecast_opt,
+            opt_universe,
+            macro,
+            max_leverage=1.3,
+            cvar_limit=0.04,
+            transaction_cost=0.0010,
+            risk_free_rate=risk_free_rate,
+            mxn_garch_vol=_reform_garch_vol,
+            borrow_cost_bps=150.0,
+            leverage_cost_bps=5.0,
+        )
+        results["reform_layer"] = reform_results
 
     return results
 

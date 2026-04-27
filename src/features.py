@@ -223,6 +223,8 @@ def build_fibra_features(prices: pd.DataFrame, fibra_fundamentals: pd.DataFrame,
     # Macro sensitivity (simplified)
     feature_df["macro_sensitivity_usd"] = 0.5
     feature_df["macro_sensitivity_rate"] = -0.2
+    # Mexican FIBRA leases are typically INPC- or USD-indexed, so rents adjust with inflation.
+    feature_df["macro_sensitivity_inflation"] = 0.2
 
     # Add legacy columns
     feature_df["momentum"] = feature_df["momentum_63"]
@@ -233,9 +235,11 @@ def build_fibra_features(prices: pd.DataFrame, fibra_fundamentals: pd.DataFrame,
         feature_df["ffo_yield"] - feature_df["vacancy_rate"] - feature_df["ltv"] * 0.15
     )
     # FIBRA macro exposure: sensitive to rate moves and FX (via cap rate re-pricing)
+    # plus inflation pass-through from INPC-indexed lease contracts.
     feature_df["macro_exposure"] = (
         feature_df["macro_sensitivity_usd"].fillna(0.5) * feature_df.get("exports_yoy", pd.Series(0.0, index=feature_df.index)).fillna(0.0)
         - feature_df["macro_sensitivity_rate"].abs().fillna(0.2) * feature_df.get("banxico_rate", pd.Series(0.0, index=feature_df.index)).fillna(0.0)  # noqa: W503
+        + feature_df["macro_sensitivity_inflation"].fillna(0.2) * feature_df.get("inflation_yoy", pd.Series(0.0, index=feature_df.index)).fillna(0.0)  # noqa: W503
     )
 
     return feature_df

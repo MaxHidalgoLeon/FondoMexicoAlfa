@@ -18,6 +18,9 @@ end_date:   "2026-03-31"
 # Activar overlay de cobertura (hedge Layer 2)
 hedge: true
 
+# Activar comparativo de escenarios reforma LFI (4 estructuras: regulado, 130/30, market-neutral, 130/30 sector-neutral)
+reform: false
+
 # Optimizador de portafolio:
 #   "mv"     — media-varianza (SLSQP) con penalización de impacto de mercado
 #   "cvar"   — minimizar CVaR al 95 % con penalización de impacto de mercado

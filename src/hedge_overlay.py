@@ -275,6 +275,34 @@ def tail_risk_hedge(
     }
 
 
+REFORM_SCENARIOS: dict[str, dict] = {
+    "regulated": {
+        "label": "Regulado (LFI actual)",
+        "top_n": 8, "bottom_n": 0, "sector_neutral": False,
+        "net_target": 1.05, "gross_target": 1.15, "max_leverage_cap": 1.15,
+        "hedge_mode_override": "regulated",
+    },
+    "130_30": {
+        "label": "130/30",
+        "top_n": 8, "bottom_n": 5, "sector_neutral": False,
+        "net_target": 1.00, "gross_target": 1.60, "max_leverage_cap": 1.60,
+        "hedge_mode_override": "analytical",
+    },
+    "market_neutral": {
+        "label": "Market-Neutral",
+        "top_n": 8, "bottom_n": 8, "sector_neutral": False,
+        "net_target": 0.00, "gross_target": 1.00, "max_leverage_cap": 1.00,
+        "hedge_mode_override": "analytical",
+    },
+    "130_30_sector_neutral": {
+        "label": "130/30 Sector-Neutral",
+        "top_n": 8, "bottom_n": 5, "sector_neutral": True,
+        "net_target": 1.00, "gross_target": 1.60, "max_leverage_cap": 1.60,
+        "hedge_mode_override": "analytical",
+    },
+}
+
+
 def run_hedge_backtest(
     prices: pd.DataFrame,
     signal_df: pd.DataFrame,
@@ -288,6 +316,11 @@ def run_hedge_backtest(
     hedge_mode: str = "analytical",
     borrow_cost_bps: float = 150.0,
     leverage_cost_bps: float = 5.0,
+    bottom_n: int = 0,
+    sector_neutral: bool = False,
+    net_target_override: float | None = None,
+    gross_target_override: float | None = None,
+    max_leverage_cap: float | None = None,
 ) -> dict:
     """Full Layer 2 backtest combining all hedge components.
 
@@ -316,16 +349,27 @@ def run_hedge_backtest(
         _max_lev = max_leverage
         logger.info("Hedge overlay running in ANALYTICAL mode (uncapped, non-NAV).")
 
+    # Reform overrides — explicit parameters take precedence over hedge_mode logic
+    if net_target_override is not None:
+        _net_target = net_target_override
+    if gross_target_override is not None:
+        _gross_target = gross_target_override
+    if max_leverage_cap is not None:
+        _max_lev = min(_max_lev, max_leverage_cap)
+
     # Step 1: Build long_short_portfolio weights per rebalance date.
-    # Normalize weights to 1.0 so dynamic_leverage (Step 3) is the sole leverage
-    # control — avoids double-counting the _net_target multiplier on top of leverage.
+    # Long-only mode (bottom_n=0): normalize to 1.0 so dynamic_leverage is the sole
+    # leverage control. Long/short mode (bottom_n>0): pass actual targets so the
+    # portfolio already reflects the intended gross/net structure.
+    _ls_net = _net_target if bottom_n > 0 else 1.0
+    _ls_gross = _gross_target if bottom_n > 0 else 1.0
     long_short = long_short_portfolio(
         signal_for_hedge,
         top_n=8,
-        bottom_n=0,
-        sector_neutral=False,
-        net_target=1.0,
-        gross_target=1.0,
+        bottom_n=bottom_n,
+        sector_neutral=sector_neutral,
+        net_target=_ls_net,
+        gross_target=_ls_gross,
         weight_by_signal=True,
     )
 
@@ -481,3 +525,47 @@ def run_hedge_backtest(
         "long_book": long_short[long_short["side"] == "long"],
         "short_book": long_short[long_short["side"] == "short"],
     }
+
+
+def run_reform_comparison(
+    prices: pd.DataFrame,
+    signal_df: pd.DataFrame,
+    universe: pd.DataFrame,
+    macro_df: pd.DataFrame,
+    max_leverage: float = 1.3,
+    cvar_limit: float = 0.04,
+    transaction_cost: float = 0.0010,
+    risk_free_rate: float = 0.02,
+    mxn_garch_vol: float | None = None,
+    borrow_cost_bps: float = 150.0,
+    leverage_cost_bps: float = 5.0,
+) -> dict[str, dict]:
+    """Run all 4 LFI reform scenarios and return results keyed by scenario name."""
+    results: dict[str, dict] = {}
+    for key, params in REFORM_SCENARIOS.items():
+        try:
+            scenario_result = run_hedge_backtest(
+                prices,
+                signal_df,
+                universe,
+                macro_df,
+                max_leverage=max_leverage,
+                cvar_limit=cvar_limit,
+                transaction_cost=transaction_cost,
+                risk_free_rate=risk_free_rate,
+                mxn_garch_vol=mxn_garch_vol,
+                hedge_mode=params["hedge_mode_override"],
+                borrow_cost_bps=borrow_cost_bps,
+                leverage_cost_bps=leverage_cost_bps,
+                bottom_n=params["bottom_n"],
+                sector_neutral=params["sector_neutral"],
+                net_target_override=params["net_target"],
+                gross_target_override=params["gross_target"],
+                max_leverage_cap=params["max_leverage_cap"],
+            )
+            scenario_result["scenario_label"] = params["label"]
+            scenario_result["scenario_key"] = key
+            results[key] = scenario_result
+        except Exception as exc:
+            logger.error("Reform scenario '%s' failed: %s", key, exc)
+    return results

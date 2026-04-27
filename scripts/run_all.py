@@ -79,6 +79,7 @@ def _load_config() -> dict:
         "start_date": "2017-01-01",
         "end_date": "2026-03-31",
         "hedge": False,
+        "reform": False,
         "benchmark_tickers": [],
         "report_output": "reports/output/strategy_report.html",
         "abort_on_test_failure": True,
@@ -132,6 +133,7 @@ def _parse_args(config: dict) -> argparse.Namespace:
     p.add_argument("--start", default=None, help=f"Fecha inicio YYYY-MM-DD (config.yaml: {config['start_date']})")
     p.add_argument("--end",   default=None, help=f"Fecha fin   YYYY-MM-DD (config.yaml: {config['end_date']})")
     p.add_argument("--hedge", action="store_true", default=None, help="Activar hedge overlay (Layer 2)")
+    p.add_argument("--reform", action="store_true", default=None, help="Incluir comparativo de escenarios reforma LFI (4 estructuras)")
     p.add_argument("--out",   default=None, help="Ruta del reporte HTML de salida")
     p.add_argument(
         "--benchmarks",
@@ -208,6 +210,7 @@ def run_report(
     optimizer: str = "mv",
     benchmark_tickers: list[str] | None = None,
     settings: dict | None = None,
+    reform: bool = False,
 ) -> None:
     print("\n" + "=" * 60)
     print(f"PASO 2/3 — Corriendo pipeline  [{source}]  {start} → {end}")
@@ -233,6 +236,7 @@ def run_report(
         end_date=end,
         optimizer=optimizer,
         benchmark_tickers=benchmark_tickers,
+        hedge_reform=reform,
         settings=settings,
         **provider_kwargs,
     )
@@ -242,7 +246,7 @@ def run_report(
     print("=" * 60)
 
     from reports.charts import build_dashboard_html
-    html = build_dashboard_html(results, hedge_mode=hedge, data_source=source)
+    html = build_dashboard_html(results, hedge_mode=hedge, data_source=source, reform=reform)
 
     out = ROOT / out_path
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -262,6 +266,7 @@ def main() -> None:
     start   = args.start      or config["start_date"]
     end     = args.end        or config["end_date"]
     hedge   = args.hedge      if args.hedge else config["hedge"]
+    reform  = args.reform     if args.reform else config.get("reform", False)
     out     = args.out        or config["report_output"]
     abort     = config["abort_on_test_failure"]
     optimizer = args.optimizer or config.get("optimizer", "mv")
@@ -283,6 +288,7 @@ def main() -> None:
     print(f"  Fuente(s)  : {', '.join(sources)}")
     print(f"  Periodo    : {start} → {end}")
     print(f"  Hedge      : {hedge}")
+    print(f"  Reform LFI : {reform}")
     print(f"  Optimizador: {optimizer}")
     print(f"  Reporte    : {out}")
 
@@ -315,6 +321,7 @@ def main() -> None:
                 optimizer,
                 benchmark_tickers,
                 settings=source_settings,
+                reform=reform,
             )
             successful_sources.append(source)
         except Exception as exc:

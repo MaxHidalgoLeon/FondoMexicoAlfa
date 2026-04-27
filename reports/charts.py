@@ -171,7 +171,7 @@ def _ci_range_text(metric_stats: dict | None, fmt_fn) -> str:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def build_dashboard_html(results: dict, hedge_mode, data_source: str) -> str:
+def build_dashboard_html(results: dict, hedge_mode, data_source: str, reform: bool = False) -> str:
     import datetime
 
     hedge_active = bool(hedge_mode)  # True si es True, "analytical", o "regulated"
@@ -197,6 +197,7 @@ def build_dashboard_html(results: dict, hedge_mode, data_source: str) -> str:
     hedge_leverage = results["hedge_layer"]["leverage_series"] if hedge_active else None
     tail_hedge     = results["hedge_layer"]["tail_hedge"]   if hedge_active else None
     hedge_layer    = results.get("hedge_layer") if hedge_active else None
+    reform_layer   = results.get("reform_layer") if reform else None
     signal_diag    = results.get("signal_diagnostics", {})
     benchmark_alpha = (benchmarks or {}).get("alpha_significance", {}) if isinstance(benchmarks, dict) else {}
 
@@ -221,6 +222,9 @@ def build_dashboard_html(results: dict, hedge_mode, data_source: str) -> str:
     if hedge_active:
         sections.append(_section_fx_overlay(hedge_overlay, hedge_leverage))
         sections.append(_section_layer_comparison(metrics, hedge_metrics, tail_hedge, hedge_is_analytical))
+
+    if reform_layer:
+        sections.append(_section_lfi_reform_comparison(reform_layer, returns, len(sections) + 1))
 
     hyperopt_section = _section_hyperopt_dashboard(data_source)
     if hyperopt_section:
@@ -270,7 +274,8 @@ def build_dashboard_html(results: dict, hedge_mode, data_source: str) -> str:
   Data source: <strong>{data_source}</strong> &nbsp;|&nbsp;
   Period: <strong>{start_date}</strong> to <strong>{end_date}</strong> &nbsp;|&nbsp;
   Generated: <strong>{timestamp}</strong> &nbsp;|&nbsp;
-  Hedge overlay: <strong>{"Yes" if hedge_active else "No"}</strong>
+  Hedge overlay: <strong>{"Yes" if hedge_active else "No"}</strong> &nbsp;|&nbsp;
+  Reforma LFI: <strong>{"Yes" if reform_layer else "No"}</strong>
 </p>
 {body}
 <script>
@@ -1197,99 +1202,293 @@ def _section_universe_donuts(feature_df, universe_df=None) -> str:
 # Section 5: Portfolio Construction
 # ---------------------------------------------------------------------------
 
-def _section_portfolio(weights, turnover, universe, hedge_layer=None) -> str:
-    import pandas as pd
+def _build_longshort_block(weights: pd.DataFrame, turnover: pd.Series, universe: pd.DataFrame, title: str) -> str:
+    """Build portfolio block for long/short strategies with separate positive/negative stacks."""
+    monthly_w = weights.resample("ME").last()
+    long_tickers  = [t for t in monthly_w.columns if (monthly_w[t] > 0).any()]
+    short_tickers = [t for t in monthly_w.columns if (monthly_w[t] < 0).any()]
 
-    def _build_portfolio_block(block_weights, block_turnover, title, include_fixed_income=False):
-        block_weights = block_weights.copy()
+    fig = go.Figure()
+    for ticker in long_tickers[:8]:
+        fig.add_trace(go.Scatter(
+            x=monthly_w.index, y=(monthly_w[ticker].clip(lower=0) * 100),
+            name=f"{ticker} (L)", stackgroup="long",
+            line=dict(width=0.5), mode="lines",
+        ))
+    for ticker in short_tickers[:8]:
+        fig.add_trace(go.Scatter(
+            x=monthly_w.index, y=(monthly_w[ticker].clip(upper=0) * 100),
+            name=f"{ticker} (S)", stackgroup="short",
+            line=dict(width=0.5, dash="dot"), mode="lines",
+        ))
+    fig.add_hline(y=0, line=dict(color=C_GRAY, width=1))
+    fig.update_layout(**LAYOUT, title=f"{title} Long/Short Allocation Over Time",
+                      xaxis_title="Date", yaxis_title="Weight (%)")
+    _add_time_controls(fig)
+    chart_alloc = _fig_to_div(fig)
 
-        monthly_w = block_weights.resample("ME").last()
+    monthly_turn = turnover.resample("ME").sum() * 100
+    mean_turn = float(monthly_turn.mean()) if len(monthly_turn) else 0.0
+    fig2 = go.Figure()
+    fig2.add_trace(go.Bar(x=monthly_turn.index, y=monthly_turn.values,
+                          marker_color=C_AMBER, name="Turnover"))
+    fig2.add_hline(y=mean_turn, line=dict(color=C_GRAY, dash="dash", width=1),
+                   annotation_text=f"Mean: {mean_turn:.1f}%")
+    fig2.update_layout(**LAYOUT, title=f"{title} Monthly Turnover",
+                       xaxis_title="Date", yaxis_title="Turnover (%)")
+    _add_time_controls(fig2)
+    chart_turn = _fig_to_div(fig2)
 
-        # For Traditional, always include fixed-income sleeves in the allocation stack.
-        if include_fixed_income and "asset_class" in universe.columns:
-            fi_tickers = universe.loc[universe["asset_class"] == "fixed_income", "ticker"].tolist()
-            for t in fi_tickers:
-                if t not in block_weights.columns:
-                    block_weights[t] = 0.0
-            monthly_w = block_weights.resample("ME").last()
-            top_core = [t for t in monthly_w.mean().nlargest(8).index.tolist() if t not in fi_tickers]
-            selected = top_core + fi_tickers
-        else:
-            selected = monthly_w.mean().nlargest(8).index.tolist()
+    chart_sector = ""
+    if "sector" in universe.columns:
+        last_weights = weights.iloc[-1]
+        merged = universe.set_index("ticker")["sector"]
+        long_w  = last_weights.clip(lower=0).groupby(merged).sum().sort_values() * 100
+        short_w = last_weights.clip(upper=0).groupby(merged).sum().sort_values() * 100
+        all_sectors = sorted(set(long_w.index) | set(short_w.index))
+        fig3 = go.Figure()
+        fig3.add_trace(go.Bar(
+            x=[long_w.get(s, 0) for s in all_sectors], y=all_sectors,
+            orientation="h", name="Long", marker_color=C_BLUE,
+        ))
+        fig3.add_trace(go.Bar(
+            x=[short_w.get(s, 0) for s in all_sectors], y=all_sectors,
+            orientation="h", name="Short", marker_color=C_RED,
+        ))
+        fig3.update_layout(**LAYOUT, barmode="relative",
+                           title=f"{title} Current Sector Exposure",
+                           xaxis_title="Weight (%)", yaxis_title="Sector")
+        chart_sector = _fig_to_div(fig3)
 
-        selected = [t for t in selected if t in monthly_w.columns]
-        if not selected:
-            selected = monthly_w.columns.tolist()[:8]
-
-        fig = go.Figure()
-        for ticker in selected:
-            fig.add_trace(go.Scatter(
-                x=monthly_w.index, y=monthly_w[ticker] * 100,
-                name=ticker, stackgroup="one",
-                line=dict(width=0.5),
-                mode="lines",
-            ))
-        fig.update_layout(**LAYOUT, title=f"{title} Allocation Over Time",
-                          xaxis_title="Date", yaxis_title="Weight (%)")
-        _add_time_controls(fig)
-        chart_alloc = _fig_to_div(fig)
-
-        monthly_turn = block_turnover.resample("ME").sum() * 100
-        mean_turn = float(monthly_turn.mean()) if len(monthly_turn) else 0.0
-        fig2 = go.Figure()
-        fig2.add_trace(go.Bar(x=monthly_turn.index, y=monthly_turn.values,
-                              marker_color=C_AMBER, name="Turnover"))
-        fig2.add_hline(y=mean_turn, line=dict(color=C_GRAY, dash="dash", width=1),
-                       annotation_text=f"Mean: {mean_turn:.1f}%")
-        fig2.update_layout(**LAYOUT, title=f"{title} Monthly Turnover",
-                           xaxis_title="Date", yaxis_title="Turnover (%)")
-        _add_time_controls(fig2)
-        chart_turn = _fig_to_div(fig2)
-
-        if "sector" in universe.columns:
-            last_weights = block_weights.iloc[-1]
-            merged = universe.set_index("ticker")["sector"]
-            sector_w = last_weights.groupby(merged).sum().sort_values(ascending=True) * 100
-            fig3 = go.Figure(go.Bar(
-                x=sector_w.values,
-                y=sector_w.index.tolist(),
-                orientation="h",
-                marker_color=C_BLUE,
-            ))
-            fig3.update_layout(**LAYOUT, title=f"{title} Current Sector Allocation",
-                               xaxis_title="Weight (%)", yaxis_title="Sector")
-            chart_sector = _fig_to_div(fig3)
-        else:
-            chart_sector = ""
-
-        return f"""
+    return f"""
 <div class=\"card\"><h3>{title}</h3>{chart_alloc}</div>
 <div class=\"grid2\">
   <div class=\"card\">{chart_turn}</div>
   <div class=\"card\">{chart_sector}</div>
 </div>"""
 
+
+def _section_lfi_reform_comparison(reform_layer: dict, trad_returns: pd.Series, section_num: int) -> str:
+    """Compare all 4 LFI reform scenarios: equity curves + metrics table."""
+    if not reform_layer:
+        return ""
+
+    scenario_colors = {
+        "regulated":             C_GRAY,
+        "130_30":                C_BLUE,
+        "market_neutral":        C_GREEN,
+        "130_30_sector_neutral": C_AMBER,
+    }
+
+    # ── Equity curves ────────────────────────────────────────────────────────
+    fig = go.Figure()
+    for key, res in reform_layer.items():
+        ret = res.get("returns")
+        if ret is None or ret.empty:
+            continue
+        cum = (1 + ret).cumprod()
+        fig.add_trace(go.Scatter(
+            x=cum.index, y=cum.values,
+            name=res.get("scenario_label", key),
+            line=dict(color=scenario_colors.get(key, C_PURPLE), width=2),
+            mode="lines",
+        ))
+    fig.add_hline(y=1.0, line=dict(color=C_GRAY, dash="dot", width=1))
+    fig.update_layout(**LAYOUT,
+                      title="LFI Reform Scenarios — Cumulative Return",
+                      xaxis_title="Date", yaxis_title="Cumulative Return")
+    _add_time_controls(fig)
+    chart_html = _fig_to_div(fig)
+
+    # ── Metrics table ─────────────────────────────────────────────────────────
+    metric_keys = [
+        ("Retorno anual", "annualized_return", True, _pct),
+        ("Volatilidad anual", "annualized_vol", False, _pct),
+        ("Sharpe", "sharpe", True, lambda v: _num(v, 2)),
+        ("Sortino", "sortino", True, lambda v: _num(v, 2)),
+        ("Max Drawdown", "max_drawdown", False, _pct),
+        ("CVaR 95% (diario)", "cvar_95", False, _pct),
+        ("Turnover promedio", "turnover", False, _pct),
+    ]
+    scenario_order = ["regulated", "130_30", "market_neutral", "130_30_sector_neutral"]
+    present = [k for k in scenario_order if k in reform_layer]
+
+    header_cells = "".join(
+        f"<th style='color:{scenario_colors.get(k, C_PURPLE)}'>{reform_layer[k].get('scenario_label', k)}</th>"
+        for k in present
+    )
+    header = f"<tr><th>Métrica</th>{header_cells}</tr>"
+
+    rows_html = ""
+    for label, mkey, higher_is_better, fmt in metric_keys:
+        vals = [reform_layer[k].get("metrics", {}).get(mkey) for k in present]
+        numeric = [v for v in vals if v is not None and np.isfinite(v)]
+        best = (max(numeric) if higher_is_better else min(numeric)) if numeric else None
+        cells = ""
+        for v in vals:
+            if v is None or not np.isfinite(v):
+                cells += "<td class='mono'>N/A</td>"
+                continue
+            is_best = best is not None and abs(v - best) < 1e-9
+            style = " style='color:#2ecc71; font-weight:700'" if is_best else ""
+            cells += f"<td class='mono'{style}>{fmt(v)}</td>"
+        rows_html += f"<tr><td>{label}</td>{cells}</tr>"
+
+    table_html = f"<table><thead>{header}</thead><tbody>{rows_html}</tbody></table>"
+
+    # ── Long/short allocation per scenario with shorts ─────────────────────────
+    allocation_blocks = ""
+    for key in present:
+        res = reform_layer[key]
+        long_book  = res.get("long_book",  pd.DataFrame())
+        short_book = res.get("short_book", pd.DataFrame())
+        ret_idx    = res.get("returns")
+        label      = res.get("scenario_label", key)
+        if ret_idx is None or ret_idx.empty:
+            continue
+        has_shorts = not short_book.empty
+
+        all_tickers = sorted(
+            set(long_book["ticker"].unique() if not long_book.empty else [])
+            | set(short_book["ticker"].unique() if not short_book.empty else [])
+        )
+        if not all_tickers:
+            continue
+
+        idx = ret_idx.index
+        w = pd.DataFrame(0.0, index=idx, columns=all_tickers)
+        if not long_book.empty:
+            reb = long_book.pivot_table(index="date", columns="ticker", values="net_weight", aggfunc="sum").fillna(0.0)
+            w.update(reb)
+        if not short_book.empty:
+            reb_s = short_book.pivot_table(index="date", columns="ticker", values="net_weight", aggfunc="sum").fillna(0.0)
+            for col in reb_s.columns:
+                if col in w.columns:
+                    w[col] = w[col] + reb_s[col]
+        w = w.replace(0.0, np.nan).ffill().fillna(0.0)
+        turn = w.diff().abs().sum(axis=1).fillna(0.0)
+
+        if has_shorts and (w < 0).any().any():
+            allocation_blocks += _build_longshort_block(w, turn, pd.DataFrame(columns=["ticker", "sector"]), label)
+        else:
+            allocation_blocks += _build_portfolio_block(w, turn, label, include_fixed_income=False)
+
+    return f"""
+<h2>{section_num}. LFI Reform Scenarios</h2>
+<div class=\"card\">{chart_html}</div>
+<div class=\"card\"><h3>Comparativo de métricas</h3>{table_html}</div>
+{allocation_blocks}"""
+
+
+def _build_portfolio_block(block_weights, block_turnover, title, universe=None, include_fixed_income=False):
+    """Build a long-only allocation block (area chart + turnover + sector bar)."""
+    block_weights = block_weights.copy()
+    if universe is None:
+        universe = pd.DataFrame(columns=["ticker", "asset_class", "sector"])
+
+    monthly_w = block_weights.resample("ME").last()
+
+    if include_fixed_income and "asset_class" in universe.columns:
+        fi_tickers = universe.loc[universe["asset_class"] == "fixed_income", "ticker"].tolist()
+        for t in fi_tickers:
+            if t not in block_weights.columns:
+                block_weights[t] = 0.0
+        monthly_w = block_weights.resample("ME").last()
+        top_core = [t for t in monthly_w.mean().nlargest(8).index.tolist() if t not in fi_tickers]
+        selected = top_core + fi_tickers
+    else:
+        selected = monthly_w.mean().nlargest(8).index.tolist()
+
+    selected = [t for t in selected if t in monthly_w.columns]
+    if not selected:
+        selected = monthly_w.columns.tolist()[:8]
+
+    fig = go.Figure()
+    for ticker in selected:
+        fig.add_trace(go.Scatter(
+            x=monthly_w.index, y=monthly_w[ticker] * 100,
+            name=ticker, stackgroup="one",
+            line=dict(width=0.5),
+            mode="lines",
+        ))
+    fig.update_layout(**LAYOUT, title=f"{title} Allocation Over Time",
+                      xaxis_title="Date", yaxis_title="Weight (%)")
+    _add_time_controls(fig)
+    chart_alloc = _fig_to_div(fig)
+
+    monthly_turn = block_turnover.resample("ME").sum() * 100
+    mean_turn = float(monthly_turn.mean()) if len(monthly_turn) else 0.0
+    fig2 = go.Figure()
+    fig2.add_trace(go.Bar(x=monthly_turn.index, y=monthly_turn.values,
+                          marker_color=C_AMBER, name="Turnover"))
+    fig2.add_hline(y=mean_turn, line=dict(color=C_GRAY, dash="dash", width=1),
+                   annotation_text=f"Mean: {mean_turn:.1f}%")
+    fig2.update_layout(**LAYOUT, title=f"{title} Monthly Turnover",
+                       xaxis_title="Date", yaxis_title="Turnover (%)")
+    _add_time_controls(fig2)
+    chart_turn = _fig_to_div(fig2)
+
+    if "sector" in universe.columns and not universe.empty:
+        last_weights = block_weights.iloc[-1]
+        merged = universe.set_index("ticker")["sector"]
+        sector_w = last_weights.groupby(merged).sum().sort_values(ascending=True) * 100
+        fig3 = go.Figure(go.Bar(
+            x=sector_w.values,
+            y=sector_w.index.tolist(),
+            orientation="h",
+            marker_color=C_BLUE,
+        ))
+        fig3.update_layout(**LAYOUT, title=f"{title} Current Sector Allocation",
+                           xaxis_title="Weight (%)", yaxis_title="Sector")
+        chart_sector = _fig_to_div(fig3)
+    else:
+        chart_sector = ""
+
+    return f"""
+<div class=\"card\"><h3>{title}</h3>{chart_alloc}</div>
+<div class=\"grid2\">
+  <div class=\"card\">{chart_turn}</div>
+  <div class=\"card\">{chart_sector}</div>
+</div>"""
+
+
+def _section_portfolio(weights, turnover, universe, hedge_layer=None) -> str:
+    import pandas as pd
+
     traditional_block = _build_portfolio_block(
-        weights, turnover, "Traditional", include_fixed_income=True
+        weights, turnover, "Traditional", universe=universe, include_fixed_income=True
     )
 
     hedge_block = ""
     if hedge_layer is not None and hedge_layer.get("long_book") is not None and hedge_layer.get("returns") is not None:
         long_book = hedge_layer["long_book"].copy()
+        short_book = hedge_layer.get("short_book", pd.DataFrame())
         hedge_index = hedge_layer["returns"].index
-        hedge_cols = sorted(set(weights.columns).union(set(long_book["ticker"].unique())))
-        hedge_weights = pd.DataFrame(0.0, index=hedge_index, columns=hedge_cols)
+        all_tickers = sorted(
+            set(weights.columns)
+            .union(set(long_book["ticker"].unique()) if not long_book.empty else set())
+            .union(set(short_book["ticker"].unique()) if not short_book.empty else set())
+        )
+        hedge_weights = pd.DataFrame(0.0, index=hedge_index, columns=all_tickers)
 
         if not long_book.empty:
             reb = long_book.pivot_table(index="date", columns="ticker", values="net_weight", aggfunc="sum").fillna(0.0)
-            reb = reb.reindex(columns=hedge_cols, fill_value=0.0)
+            reb = reb.reindex(columns=all_tickers, fill_value=0.0)
             hedge_weights.update(reb)
-            hedge_weights = hedge_weights.replace(0.0, np.nan).ffill().fillna(0.0)
+        if not short_book.empty:
+            reb_s = short_book.pivot_table(index="date", columns="ticker", values="net_weight", aggfunc="sum").fillna(0.0)
+            reb_s = reb_s.reindex(columns=all_tickers, fill_value=0.0)
+            hedge_weights.update(hedge_weights + reb_s)
+        hedge_weights = hedge_weights.replace(0.0, np.nan).ffill().fillna(0.0)
 
         hedge_turnover = hedge_weights.diff().abs().sum(axis=1).fillna(0.0)
-        hedge_block = _build_portfolio_block(
-            hedge_weights, hedge_turnover, "Hedge", include_fixed_income=False
-        )
+        has_shorts = not short_book.empty and (hedge_weights < 0).any().any()
+        if has_shorts:
+            hedge_block = _build_longshort_block(hedge_weights, hedge_turnover, universe, "Hedge")
+        else:
+            hedge_block = _build_portfolio_block(
+                hedge_weights, hedge_turnover, "Hedge", universe=universe, include_fixed_income=False
+            )
 
     return f"""
 <h2>7. Portfolio Construction</h2>
