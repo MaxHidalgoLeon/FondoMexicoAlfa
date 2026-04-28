@@ -23,7 +23,13 @@ def _sign_p_value(point: float, distribution: np.ndarray) -> float:
 
 
 def bootstrap_block_size_selector(returns: pd.Series) -> int:
-    """Estimate a stationary-bootstrap block length using arch's PW-style selector."""
+    """Estima el tamaño óptimo de bloque para el bootstrap estacionario.
+
+    Usa el selector de Patton-Politis-White (PPW) implementado en la librería arch.
+    El tamaño de bloque controla cuánta autocorrelación serial se preserva en las
+    muestras bootstrap: bloques más grandes = más dependencia temporal preservada.
+    Resultado acotado en [5, 60] días como guardarraíles de sentido común.
+    """
     clean = _as_clean_series(returns)
     if len(clean) < 10:
         return 20
@@ -45,7 +51,18 @@ def bootstrap_metric(
     confidence: float = 0.95,
     seed: int = 42,
 ) -> dict:
-    """Bootstrap a scalar metric with the stationary bootstrap of Politis-Romano."""
+    """Calcula una métrica escalar con intervalos de confianza bootstrap estacionario.
+
+    El bootstrap estacionario (Politis-Romano 1994) remuestrea bloques de longitud
+    aleatoria (geométrica con media=block_size) para preservar la autocorrelación
+    de los retornos financieros, a diferencia del bootstrap i.i.d. clásico.
+
+    Devuelve:
+      point        → valor observado de la métrica.
+      ci_low/high  → intervalo de confianza percentílico al nivel 'confidence'.
+      se           → error estándar bootstrap de la distribución.
+      distribution → array de n_reps valores bootstrap de la métrica.
+    """
     clean = _as_clean_series(returns)
     point = float(metric_fn(clean)) if len(clean) else np.nan
     if len(clean) < 5:
@@ -93,7 +110,15 @@ def bootstrap_paired_difference(
     confidence: float = 0.95,
     seed: int = 42,
 ) -> dict:
-    """Bootstrap a paired fund-vs-benchmark metric while preserving time alignment."""
+    """Bootstrap por pares de la diferencia fondo-benchmark preservando alineación temporal.
+
+    En cada réplica remuestrea los mismos índices para el fondo y el benchmark,
+    manteniendo el emparejamiento correcto de fechas.  Esto es crucial para el alpha
+    de Jensen, el IR y el tracking error, donde el timing de cada retorno importa.
+
+    Devuelve lo mismo que bootstrap_metric() más 'p_value' (fracción de réplicas
+    donde la métrica toma el signo opuesto — test de significancia unilateral).
+    """
     aligned = pd.concat(
         [pd.Series(returns_fund, dtype=float), pd.Series(returns_benchmark, dtype=float)],
         axis=1,

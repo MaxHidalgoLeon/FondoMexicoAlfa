@@ -93,7 +93,16 @@ def build_signal_matrix(
     macro: pd.DataFrame,
     universe: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Unified signal matrix builder for all asset classes."""
+    """Construye la matriz de señales unificada para todas las clases de activo.
+
+    Combina tres sub-matrices:
+      - Equities: momentum 63d, momentum 126d, volatilidad 63d + fundamentales (P/E, P/B, ROE…).
+      - FIBRAs: momentum 63d, volatilidad 63d + fundamentales inmobiliarios (cap rate, FFO…).
+      - Renta fija: carry (YTM - Banxico), duración, DV01, sensibilidad a Banxico.
+
+    El resultado tiene una fila por (fecha, ticker) con todas las features disponibles.
+    Esta matriz es el input de score_cross_section() y forecast_returns().
+    """
     investable_universe = universe[universe["investable"]]
     equity_tickers = investable_universe.loc[investable_universe["asset_class"] == "equity", "ticker"].tolist()
     fibra_tickers = investable_universe.loc[investable_universe["asset_class"] == "fibra", "ticker"].tolist()
@@ -113,7 +122,16 @@ def build_signal_matrix(
 
 
 def build_equity_features(prices: pd.DataFrame, fundamentals: pd.DataFrame, macro: pd.DataFrame, universe: pd.DataFrame) -> pd.DataFrame:
-    """Build features for equity assets."""
+    """Construye features para acciones de capital (equities).
+
+    Features de precio: momentum 63d (1 mes de lag), momentum 126d (21 días de lag
+    para evitar reversal de corto plazo), volatilidad 63d.
+    Features fundamentales (merge point-in-time para evitar look-ahead):
+      P/E, P/B, ROE, margen de utilidad, deuda neta/EBITDA, crecimiento EBITDA, CapEx/ventas.
+    Features macro: IP yoy, exportaciones yoy, USD/MXN.
+    Features derivados: value_score = -(P/E + P/B)/2, quality_score = ROE + margen - deuda,
+      macro_exposure = IP + 0.5×exportaciones.
+    """
     returns = calculate_returns(prices)
     momentum_63 = rolling_momentum(prices, 63, skip=1)
     momentum_126 = rolling_momentum(prices, 126, skip=21)
@@ -182,7 +200,16 @@ def build_equity_features(prices: pd.DataFrame, fundamentals: pd.DataFrame, macr
 
 
 def build_fibra_features(prices: pd.DataFrame, fibra_fundamentals: pd.DataFrame, macro: pd.DataFrame, universe: pd.DataFrame) -> pd.DataFrame:
-    """Build features for FIBRA assets."""
+    """Construye features para FIBRAs (Fideicomisos de Infraestructura y Bienes Raíces).
+
+    Features de precio: momentum 63d, volatilidad 63d.
+    Features fundamentales FIBRA (merge point-in-time):
+      Cap rate (NOI/valor), FFO yield, dividend yield, LTV (loan-to-value), vacancy rate.
+    Value score = cap_rate (mayor cap rate = activo más barato).
+    Quality score = FFO yield - vacancy rate - LTV×0.15.
+    Macro exposure: sensibilidad a tasa Banxico (negativa), USD y inflación (las rentas
+    de FIBRAs industriales están típicamente indexadas a INPC o USD).
+    """
     returns = calculate_returns(prices)
     momentum_63 = rolling_momentum(prices, 63)
     volatility_63 = volatility_signal(returns, 63)
@@ -246,7 +273,16 @@ def build_fibra_features(prices: pd.DataFrame, fibra_fundamentals: pd.DataFrame,
 
 
 def build_fixed_income_features(bond_df: pd.DataFrame, macro: pd.DataFrame) -> pd.DataFrame:
-    """Build features for fixed income assets."""
+    """Construye features para instrumentos de renta fija (CETES, MBONO).
+
+    Features:
+      - DV01: sensibilidad del precio a 1bp de cambio en tasa (Duration × Precio × 0.0001).
+      - Carry: YTM - tasa Banxico (spread sobre libre de riesgo).
+      - Banxico sensitivity: impacto de un movimiento de 25bp en tasa sobre el precio.
+    Value score = carry (mayor spread = mayor valor relativo).
+    Quality score = -credit_spread - 0.02×duration (más seguro con spread bajo y corta duración).
+    Los bonos tienen liquidity_score=1.0 (siempre plenamente líquidos en el modelo).
+    """
     if bond_df.empty:
         return pd.DataFrame()
     feature_df = bond_df.copy()

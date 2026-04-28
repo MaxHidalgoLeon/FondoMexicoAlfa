@@ -23,7 +23,12 @@ logger = logging.getLogger(__name__)
 
 
 def get_rebalance_dates(prices: pd.DataFrame, freq: str = "ME") -> pd.DatetimeIndex:
-    """Return the last available trading date in each rebalancing period."""
+    """Devuelve las fechas de rebalanceo: el último día de mercado de cada período.
+
+    Por defecto rebalancea mensualmente ('ME' = month-end).  Hace un snap al
+    día hábil anterior más cercano dentro del índice de precios para evitar
+    look-ahead bias (usar un precio que aún no existía en esa fecha).
+    """
     resampled = prices.resample(freq).last().dropna(how="all")
     # Snap to the nearest actual trading day that exists in prices.index
     snapped = []
@@ -114,7 +119,19 @@ def build_covariance_matrix(
     settings: dict | None = None,
     return_diagnostics: bool = False,
 ) -> pd.DataFrame | tuple[pd.DataFrame, dict[str, Any]]:
-    """Hybrid EWMA -> Ledoit-Wolf covariance with PSD fallback to rolling LW."""
+    """Calcula la matriz de covarianza para la fecha de rebalanceo.
+
+    Método híbrido:
+      1. Calcula covarianza EWMA-Ledoit-Wolf (más reactiva a cambios recientes).
+      2. Si el resultado no es semidefinida positiva (PSD) o hay pocos datos,
+         cae al rolling Ledoit-Wolf estándar (ventana fija de 'window' días).
+      3. Ledoit-Wolf aplica shrinkage hacia la identidad para matrices con pocas
+         observaciones relativas al número de activos (N >> T), reduciendo ruido.
+
+    El parámetro covariance_method en settings controla qué método usar:
+      'ewma_ledoit_wolf'  → método híbrido (default).
+      'rolling_ledoit_wolf' → rolling puro sin EWMA.
+    """
     cfg = resolve_settings(settings)
     rolling_cov = _rolling_ledoit_wolf_covariance(returns, date, window)
     requested_method = str(cfg["covariance_method"]).lower().strip()
@@ -190,8 +207,24 @@ def run_backtest(
     issuer_consolidated_limits: Optional[Dict[str, list]] = None,
     max_position_overrides: Optional[Dict[str, float]] = None,
     settings: dict | None = None,
+    sector_constraints: Optional[Dict[str, Dict[str, float]]] = None,
 ) -> Dict[str, pd.DataFrame]:
-    """Run backtest.
+    """Ejecuta el backtest walk-forward con rebalanceo periódico.
+
+    Lógica principal (por cada fecha de rebalanceo):
+      1. Extrae los retornos esperados del signal_df para esa fecha.
+      2. Calcula la covarianza EWMA-Ledoit-Wolf sobre el histórico hasta esa fecha.
+      3. Detecta el régimen macro actual (expansión/tightening/stress) y ajusta
+         las restricciones de clase de activo según el régimen.
+      4. Si el régimen cambia con baja confianza, hace una transición gradual
+         (blend lineal entre restricciones del régimen anterior y el nuevo).
+      5. Optimiza el portafolio (MV, CVaR o Michaud según 'optimizer').
+      6. Actualiza los pesos para el período siguiente.
+
+    Los retornos del portafolio se calculan como suma ponderada de retornos log,
+    menos el costo de transacción aplicado en las fechas de rebalanceo.
+
+    Run backtest.
 
     optimizer: "mv"      — mean-variance (SLSQP) only
                "cvar"   — mean-CVaR only
@@ -345,6 +378,7 @@ def run_backtest(
                     adtv_scores=adtv_scores,
                     issuer_consolidated_limits=issuer_consolidated_limits,
                     max_position_overrides=max_position_overrides,
+                    sector_constraints=sector_constraints,
                 )
             except RuntimeError as exc:
                 logger.warning("MV optimization failed on %s: %s — carrying previous weights.", date, exc)
@@ -371,6 +405,7 @@ def run_backtest(
                     adtv_scores=adtv_scores,
                     issuer_consolidated_limits=issuer_consolidated_limits,
                     max_position_overrides=max_position_overrides,
+                    sector_constraints=sector_constraints,
                 )
             except RuntimeError as exc:
                 logger.warning("CVaR optimization failed on %s: %s — carrying previous weights.", date, exc)
@@ -394,6 +429,7 @@ def run_backtest(
                     adtv_scores=adtv_scores,
                     issuer_consolidated_limits=issuer_consolidated_limits,
                     max_position_overrides=max_position_overrides,
+                    sector_constraints=sector_constraints,
                 )
             except RuntimeError as exc:
                 logger.warning("Robust optimization failed on %s: %s — carrying previous weights.", date, exc)

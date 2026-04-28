@@ -1,4 +1,26 @@
-"""Hedge overlay module - Layer 2 market-neutral and FX positioning."""
+"""Módulo de hedge overlay — Capa 2: posicionamiento market-neutral y FX.
+
+Este módulo implementa la Capa 2 de la estrategia, que se construye sobre el
+portafolio base (Capa 1) y añade tres componentes adicionales:
+
+1. Long/Short (market-neutral): genera posiciones largas en los tickers con mayor
+   señal esperada y cortas en los de menor señal, dentro de cada sector
+   (sector-neutral) para eliminar el beta sectorial.
+
+2. Overlay direccional de FX: ajusta dinámicamente el ratio de cobertura USD/MXN
+   más allá del 50% estático de la Capa 1, basado en momentum del MXN y volatilidad
+   GARCH.  Rango: [10%, 95%] de cobertura.
+
+3. Tail risk hedge: analiza si comprar puts sobre el índice (IPC) es justificable
+   basado en el VaR histórico al 99% y el costo diario de la prima, bajo 4 escenarios
+   de régimen de volatilidad (tranquilo, normal, elevado, crisis).
+
+4. Leverage escalar dinámico: ajusta el apalancamiento (max 1.3x) inversamente al
+   CVaR rolling — más riesgo → menos apalancamiento (control de riesgo de la capa).
+
+5. Reform comparison: corre los 4 escenarios de la Ley de Fondos de Inversión (LFI):
+   Regulado (actual), 130/30, Market-Neutral, 130/30 Sector-Neutral.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +44,17 @@ def long_short_portfolio(
     gross_target: float = 1.0,
     weight_by_signal: bool = True,
 ) -> pd.DataFrame:
-    """Build a market-neutral long/short book within each sector."""
+    """Construye el libro long/short market-neutral por sector.
+
+    Para cada fecha y sector:
+      - Largo en los top_n tickers con mayor retorno esperado (señal positiva).
+      - Corto en los bottom_n tickers con menor retorno esperado (señal negativa).
+      - Pesos proporcionales a la fuerza de la señal (opcional via weight_by_signal).
+      - Normaliza para que el neto = net_target y el bruto = gross_target.
+
+    Con sector_neutral=True, cancela el beta sectorial al operar longs y shorts
+    dentro del mismo sector.  Exposure neta = 0 → sin beta de mercado.
+    """
     results = []
 
     for date in signal_df["date"].unique():
@@ -139,7 +171,15 @@ def dynamic_leverage(
     alpha: float = 0.95,
     window: int = 63,
 ) -> pd.Series:
-    """Compute a daily leverage scalar in [min_leverage, max_leverage]."""
+    """Calcula el escalar de apalancamiento dinámico diario basado en CVaR rolling.
+
+    Lógica:
+      - CVaR rolling sobre ventana de 'window' días.
+      - Si |CVaR| > cvar_limit: el riesgo es alto → reduce apalancamiento hacia min_leverage.
+      - Si |CVaR| ≤ cvar_limit/2: el riesgo es bajo → usa apalancamiento máximo.
+      - Zona intermedia: interpolación lineal entre min_leverage y max_leverage.
+    El leverage se suaviza con EMA de 5 días para evitar cambios bruscos diarios.
+    """
     leverage = pd.Series(1.0, index=portfolio_returns.index)
 
     for i in range(window, len(portfolio_returns)):

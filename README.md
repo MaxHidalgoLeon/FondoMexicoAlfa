@@ -6,6 +6,9 @@ A Mexico-focused long-biased industrial strategy blending macro, fundamental, an
 
 - **Multi-provider data** — Yahoo Finance (live), LSEG/Refinitiv (institutional), Bloomberg (institutional), with automatic fallbacks to FRED and Banxico SIE for macro and bond data.
 - **Layer 1 portfolio** — Mean-variance, min-CVaR, and Michaud robust optimizers with bootstrap-based statistical significance testing, alpha measurement vs GBMALFA / GBMCRE / GBMMOD / GBMNEAR / IPC, and signal IC diagnostics.
+- **Black–Litterman views** — Per-ticker views from the ElasticNetCV forecast plus sector-level macro views (industrial production, exports, banxico rate, USD/MXN momentum, US IP, inflation), confidence-weighted via the BL posterior. Macro confidence defaults to 0.20 so it nudges, not dominates.
+- **TMEC stress scenario** — Deterministic and distributional shock simulating USMCA tariff / supply-chain disruption, sized by industrial + USD-export exposure of the live portfolio.
+- **ETF → equity bridge** — Optional soft sector anchoring that propagates the ETF run's sector vector into the equity optimizer with a tunable band (default ±15 pp). Wide band keeps the optimizer free; narrow band replicates the ETF allocation. Hyperopt-tunable.
 - **Layer 2 hedge overlay** — FX directional overlay (expanding z-score, GARCH vol adjustment), dynamic leverage, short borrow and leverage change cost model.
 - **LFI reform scenarios** — Comparative backtest across 4 structures (regulated, 130/30, market-neutral, 130/30 sector-neutral) when `reform: true`.
 - **ETF variant** — Parallel pipeline over an EWW / INDS / IGF / ILF / EMLC universe with price-only signals (momentum + volatility).
@@ -89,6 +92,25 @@ All pipeline settings live in `config.yaml`. Key parameters:
 | `reform` | Enable LFI reform scenario comparison (4 structures) |
 | `hyperopt_n_trials` | Number of Optuna trials per source |
 | `hyperopt_n_folds` | Walk-forward folds with purge gap |
+| `bl_views.use_macro` | Toggle macro views in Black–Litterman |
+| `bl_views.macro_view_confidence` | Confidence applied to macro views (default 0.20) |
+| `etf_sector_anchor.enabled` | Activate the ETF→normal sector anchor |
+| `etf_sector_anchor.band` | ±half-width of the soft sector band (default 0.15) |
+| `etf_sector_anchor.source` | Which ETF run to read for the sector vector |
+
+### ETF anchor mode
+
+The ETF universe lives in a different basket than the equity universe; the anchor lets you propagate the **sector allocation** of the ETF run into the equity optimizer as soft constraints, without forcing replication.
+
+```bash
+# 1. Run the ETF pipeline first — it persists reports/output/etf_sector_weights_{source}.json
+python scripts/run_etf.py --source bloomberg
+
+# 2. Enable the anchor in config.yaml (etf_sector_anchor.enabled: true) and run normal mode
+python scripts/run_all.py --source bloomberg
+```
+
+The new HTML section "Puente ETF → Normal" shows the source ETF weights, the realized normal-mode bucket weights, and a `band binding` table that flags any sector that hit a constraint edge (a sign the band is too tight). All `free` rows means the anchor did not degrade the unanchored optimum.
 
 Regulatory parameters (`max_position`, `issuer_concentration_limit`, `fx_overlay_notional_cap`, `liquidity_sleeve_*`) are fixed at CNBV/prospectus-compliant values and excluded from the hyperopt search space.
 

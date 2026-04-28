@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 from sklearn.covariance import LedoitWolf
@@ -11,6 +15,7 @@ from .signal_diagnostics import compute_signal_ic_diagnostics
 from .features import build_signal_matrix
 from .signals import score_cross_section, forecast_returns
 from .portfolio import black_litterman, apply_fx_overlay
+from .bl_views import build_elastic_net_views, build_macro_views, combine_views, views_breakdown
 from .risk import (
     compute_macro_regime_history,
     distributional_stress_test,
@@ -25,6 +30,123 @@ from .risk import (
 from .settings import resolve_settings
 
 logger = logging.getLogger(__name__)
+
+
+# Sectors of the ETF universe that have analog tickers in the normal universe.
+# Industrial includes Logistics+Infrastructure+Materials in normal mode (these
+# don't exist as standalone sectors in the ETF universe). FIBRA maps directly.
+# Government is omitted on purpose: normal-mode FI is governed by the regime
+# liquidity sleeve, not by the ETF anchor.
+_ETF_TO_NORMAL_SECTOR_GROUPS: dict[str, set[str]] = {
+    "Industrial":    {"Industrial", "Logistics", "Infrastructure", "Materials", "Consumer", "Communication"},
+    "FIBRA":         {"FIBRA"},
+}
+
+
+def _etf_sector_weights_path(data_source: str) -> str:
+    base = os.path.join("reports", "output")
+    os.makedirs(base, exist_ok=True)
+    return os.path.join(base, f"etf_sector_weights_{data_source}.json")
+
+
+def _persist_etf_sector_weights(
+    backtest_results: dict,
+    universe: pd.DataFrame,
+    data_source: str,
+) -> None:
+    """Aggregate ETF backtest final weights to a sector-weight dict and persist."""
+    weights = backtest_results.get("weights")
+    if weights is None or weights.empty:
+        return
+    nz = weights.loc[weights.abs().sum(axis=1) > 1e-9]
+    if nz.empty:
+        return
+    final = nz.iloc[-1]
+    sector_map = universe.set_index("ticker")["sector"].to_dict()
+    sector_w: dict[str, float] = {}
+    for ticker, w in final.items():
+        sector = sector_map.get(ticker)
+        if sector is None or sector == "Government":
+            continue
+        sector_w[sector] = sector_w.get(sector, 0.0) + float(w)
+
+    payload = {
+        "as_of": str(nz.index[-1].date()) if hasattr(nz.index[-1], "date") else str(nz.index[-1]),
+        "source": data_source,
+        "sector_weights": sector_w,
+    }
+    path = _etf_sector_weights_path(data_source)
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)
+    logger.info("ETF anchor: wrote sector weights to %s", path)
+
+
+def _load_etf_sector_targets(
+    cfg: dict,
+    universe: pd.DataFrame,
+) -> tuple[Optional[dict[str, dict[str, float]]], Optional[dict]]:
+    """Load ETF sector weights JSON and translate into a sector_constraints dict.
+
+    Returns (sector_constraints, payload). sector_constraints follows the
+    same structure used by the optimizer (with "__sector_map__" sub-key).
+    Returns (None, None) when the anchor is disabled, the JSON is missing,
+    or the target maps to no normal-mode tickers.
+    """
+    anchor = cfg.get("etf_sector_anchor") or {}
+    if not bool(anchor.get("enabled", False)):
+        return None, None
+
+    source = str(anchor.get("source", "bloomberg"))
+    band = float(anchor.get("band", 0.15))
+    fallback = bool(anchor.get("fallback_to_unanchored", True))
+
+    path = _etf_sector_weights_path(source)
+    if not os.path.exists(path):
+        msg = f"ETF anchor enabled but {path} not found — run scripts/run_etf.py first."
+        if fallback:
+            logger.warning("%s Falling back to unanchored optimization.", msg)
+            return None, None
+        raise FileNotFoundError(msg)
+
+    with open(path) as f:
+        payload = json.load(f)
+
+    raw_targets: dict[str, float] = payload.get("sector_weights", {})
+    if not raw_targets:
+        return None, payload
+
+    # Aggregate ETF sectors to normal-mode sector groups
+    aggregated: dict[str, float] = {}
+    for etf_sector, w in raw_targets.items():
+        for normal_sector, group in _ETF_TO_NORMAL_SECTOR_GROUPS.items():
+            if etf_sector in group:
+                aggregated[normal_sector] = aggregated.get(normal_sector, 0.0) + float(w)
+                break
+
+    if not aggregated:
+        return None, payload
+
+    # Normalize so the targets sum to ≤1 (they should already, but guard).
+    total = sum(aggregated.values())
+    if total > 1.0:
+        aggregated = {k: v / total for k, v in aggregated.items()}
+
+    sector_map = universe.set_index("ticker")["sector"].to_dict()
+    # Map normal universe sectors back to one of our anchor groups
+    ticker_to_anchor: dict[str, str] = {}
+    for ticker, sector in sector_map.items():
+        for anchor_sector, group in _ETF_TO_NORMAL_SECTOR_GROUPS.items():
+            if sector in group:
+                ticker_to_anchor[ticker] = anchor_sector
+                break
+
+    sector_constraints: dict[str, dict[str, float]] = {"__sector_map__": ticker_to_anchor}
+    for sector, target in aggregated.items():
+        sector_constraints[sector] = {
+            "min": max(0.0, target - band),
+            "max": min(1.0, target + band),
+        }
+    return sector_constraints, payload
 
 
 def _load_benchmark_returns(
@@ -159,6 +281,25 @@ def run_pipeline(
     settings: dict | None = None,
     **provider_kwargs,
 ) -> dict[str, object]:
+    """Orquesta el pipeline completo de la estrategia para el universo normal (acciones + FIBRAs + renta fija).
+
+    Pasos principales:
+      1. Carga de datos (precios, fundamentales, macro, bonos).
+      2. Filtro dinámico de liquidez: elimina los tickers en el percentil 20 de ADTV.
+      3. Construcción de señales (features → score → retorno esperado).
+      4. Black-Litterman: combina CAPM + vistas ElasticNet + vistas macro.
+      5. Overlay de tipo de cambio (USD/MXN) sobre retornos esperados.
+      6. Detección de régimen macro → dimensionamiento del sleeve de liquidez (CETES).
+      7. Optimización de portafolio (MV / CVaR / Michaud) con restricciones CNBV.
+      8. Backtest walk-forward con rebalanceo mensual y costos de transacción.
+      9. Métricas de riesgo: GARCH-GJR, VaR dinámico, Monte Carlo, GEV, stress test.
+     10. Significancia alpha vs. benchmarks + diagnósticos IC de señal.
+     11. (Opcional) Capa 2: hedge overlay de FX + tail hedge + apalancamiento.
+     12. (Opcional) Comparación de escenarios de reforma LFI.
+
+    Devuelve un diccionario con todos los resultados ('data', 'backtest', 'summary',
+    'signal_diagnostics', 'benchmarks', opcionalmente 'hedge_layer' y 'reform_layer').
+    """
     from .data_loader import load_data, compute_adtv_liquidity_scores
     from .risk import detect_macro_regime
     cfg = resolve_settings(settings)
@@ -283,14 +424,15 @@ def run_pipeline(
     else:
         cov_matrix = pd.DataFrame(dtype=float)
 
-    views = forecast_df_opt.groupby("ticker")["expected_return"].mean().to_dict()
-    # Data-driven view confidences: scale |expected_return| to [0.30, 0.70]
-    abs_views = pd.Series(views).abs()
-    view_range = abs_views.max() - abs_views.min()
-    if view_range > 1e-9:
-        view_confidences = (0.30 + 0.40 * (abs_views - abs_views.min()) / view_range).to_dict()
-    else:
-        view_confidences = {t: 0.50 for t in views}
+    en_views, en_conf = build_elastic_net_views(forecast_df_opt)
+    macro_views, macro_conf = build_macro_views(macro, universe, cfg)
+    views, view_confidences = combine_views(
+        (en_views, en_conf), (macro_views, macro_conf)
+    )
+    bl_breakdown = views_breakdown([
+        ("elastic_net", en_views, en_conf),
+        ("macro", macro_views, macro_conf),
+    ])
 
     # Align market_weights to the covariance matrix's ticker set before BL
     market_weights = market_weights.reindex(cov_matrix.columns).fillna(0.0)
@@ -402,6 +544,11 @@ def run_pipeline(
             if pd.notna(row.get("max_position_override")):
                 max_position_overrides[row["ticker"]] = row["max_position_override"]
 
+    sector_constraints, anchor_payload = _load_etf_sector_targets(cfg, optimizable_universe)
+    if sector_constraints is not None:
+        logger.info("ETF anchor active — sector targets: %s",
+                    {k: v for k, v in sector_constraints.items() if k != "__sector_map__"})
+
     backtest_results = run_backtest(
         prices_opt, forecast_df_opt, optimizable_universe,
         risk_free_rate=risk_free_rate,
@@ -412,6 +559,7 @@ def run_pipeline(
         issuer_consolidated_limits=issuer_consolidated_limits,
         max_position_overrides=max_position_overrides,
         settings=cfg,
+        sector_constraints=sector_constraints,
     )
 
     # Store sleeve and regime info for reporting
@@ -441,18 +589,26 @@ def run_pipeline(
         _banxico_exp = float(np.clip(_fi_w * 3.0 + (1.0 - _fi_w) * 0.25, 0.15, 0.75))
         # US-slowdown exposure: USD-linked / export names move most
         _us_exp = float(np.clip(_usd_w * 1.2, 0.15, 0.80))
+        # TMEC-disruption exposure: industriales/exportadores + USD-linked names sufren
+        _industrial_sectors = {"Industrial", "Logistics", "Materials", "Infrastructure"}
+        _sector_map = universe.set_index("ticker")["sector"]
+        _industrial_tickers = [t for t in _final_w.index if _sector_map.get(t, "") in _industrial_sectors]
+        _industrial_w = float(_final_w.reindex(_industrial_tickers).fillna(0.0).sum())
+        _tmec_exp = float(np.clip((_industrial_w * 0.6 + _usd_w * 0.4) * 1.3, 0.20, 0.85))
     else:
-        _peso_exp, _banxico_exp, _us_exp = 0.6, 0.5, 0.4
+        _peso_exp, _banxico_exp, _us_exp, _tmec_exp = 0.6, 0.5, 0.4, 0.5
 
     exposures = {
         "banxico_shock": _banxico_exp,
         "peso_depreciation": _peso_exp,
         "us_slowdown": _us_exp,
+        "tmec_disruption": _tmec_exp,
     }
     scenario_shocks = {
         "banxico_shock": -0.03,
         "peso_depreciation": -0.05,
         "us_slowdown": -0.04,
+        "tmec_disruption": -0.07,
     }
     stress_deterministic = stress_test(
         backtest_results["returns"],
@@ -579,6 +735,13 @@ def run_pipeline(
         "regime_diagnostics": backtest_results.get("regime_diagnostics"),
         "regime_history": backtest_results.get("regime_history"),
         "method_comparison": method_comparison,
+        "bl_views_breakdown": bl_breakdown,
+        "etf_anchor_active": sector_constraints is not None,
+        "etf_anchor_payload": anchor_payload,
+        "etf_anchor_targets": (
+            {k: v for k, v in sector_constraints.items() if k != "__sector_map__"}
+            if sector_constraints is not None else None
+        ),
     }
 
     benchmark_returns = _load_benchmark_returns(
@@ -726,6 +889,11 @@ def run_pipeline(
 
 
 def print_summary(results: dict[str, object], hedge_mode: bool = False) -> None:
+    """Imprime en consola un resumen tabular de métricas de la estrategia.
+
+    En modo hedge (Layer 2) muestra una tabla comparativa Capa 1 vs Capa 2.
+    En modo normal muestra las métricas de Layer 1 y los resultados del stress test.
+    """
     summary = results["summary"]
     print("=== Strategy Pipeline Summary ===")
     print(f"Universe size: {summary['universe_size']}")
@@ -778,7 +946,12 @@ def run_etf_pipeline(
     settings: dict | None = None,
     **provider_kwargs,
 ) -> dict[str, object]:
-    """Pipeline for the ETF version of the strategy.
+    """Pipeline equivalente a run_pipeline() pero para el universo de ETFs internacionales.
+
+    Universe: EWW (45-65%) | INDS (20-35%) | IGF (5-15%) | ILF (0-10%)
+              + CETES28 / CETES91 / MBONO3Y (manga de liquidez, max 30% combinado)
+
+    Pipeline for the ETF version of the strategy.
 
     Universe: EWW (45-65%) | INDS (20-35%) | IGF (5-15%) | ILF (0-10%)
               + CETES28 / CETES91 / MBONO3Y (FI sleeve, complement ≤30% combined)
@@ -858,6 +1031,15 @@ def run_etf_pipeline(
         backtest_results["returns"], scenario_shocks, exposures,
         risk_free_rate=risk_free_rate, shock_days=21, event_spacing_days=126,
     )
+
+    # ---- ETF→normal anchor: persist last-rebalance sector vector ----
+    # Aggregates ETF weights to the sectors used by the equity universe
+    # (Industrial, FIBRA). Consumed by run_pipeline when
+    # cfg["etf_sector_anchor"]["enabled"] is True.
+    try:
+        _persist_etf_sector_weights(backtest_results, universe, data_source)
+    except Exception:  # noqa: BLE001
+        logger.exception("ETF anchor: failed to persist sector weights — non-fatal, continuing.")
 
     # ---- Risk metrics ----
     ret = backtest_results["returns"]

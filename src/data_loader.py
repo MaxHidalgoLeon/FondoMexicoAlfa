@@ -16,7 +16,19 @@ def compute_adtv_liquidity_scores(
     ewma_lambda: float = 0.97,
     min_periods: int = 60,
 ) -> pd.Series:
-    """
+    """Calcula scores de liquidez normalizados basados en el ADTV real.
+
+    ADTV (Average Daily Traded Value) = promedio(precio_cierre × volumen) en los
+    últimos 'window' días hábiles.  Un ADTV alto → activo muy líquido.
+
+    Métodos de promedio:
+      'uniform' → media simple sobre la ventana.
+      'ewma'    → media ponderada exponencialmente (lambda=0.97 da más peso a días recientes).
+
+    Los scores se normalizan min-max a [0, 1] dentro del universo equity/FIBRA.
+    Se usan como denominador en el término de impacto de mercado del optimizador:
+    η·σ_i / ADTV_i — activos ilíquidos (ADTV bajo) tienen mayor costo estimado de trade.
+
     Compute liquidity scores from real ADTV (Average Daily Traded Value).
 
     ADTV = mean(close_price * volume) over the last `window` trading days.
@@ -175,6 +187,15 @@ def generate_mock_price_series(
     end_date: str = "2026-03-31",
     freq: str = "B",
 ) -> pd.DataFrame:
+    """Genera series de precios simuladas con movimiento geométrico browniano (GBM).
+
+    Para cada ticker genera retornos log-normales independientes:
+      drift ~ Uniform(2%, 12%) anual
+      volatilidad ~ Uniform(18%, 35%) anual
+
+    Los precios son sintéticos (solo para pruebas/desarrollo) — no representan
+    ningún activo real.  La semilla fija (seed=42) garantiza reproducibilidad.
+    """
     dates = pd.date_range(start_date, end_date, freq=freq)
     n = len(dates)
     prices = {}
@@ -319,6 +340,18 @@ def build_mock_bonds(dates: pd.DatetimeIndex) -> pd.DataFrame:
 
 
 def build_mock_macro_series(start_date: str = "2017-01-01", end_date: str = "2026-03-31") -> pd.DataFrame:
+    """Genera series de datos macroeconómicos simulados de frecuencia mensual.
+
+    Variables incluidas:
+      - IMAI: Índice Mensual de Actividad Industrial (simulado con drift positivo).
+      - industrial_production_yoy: Producción industrial año contra año (~4% promedio).
+      - exports_yoy: Crecimiento de exportaciones (~6% promedio, refleja nearshoring).
+      - usd_mxn: Tipo de cambio USD/MXN (proceso random walk desde 19.5).
+      - banxico_rate: Tasa de política monetaria Banxico (random walk acotada 4-12%).
+      - inflation_yoy: Inflación anual (rango 2-9%).
+      - us_ip_yoy: Producción industrial USA (~3% promedio).
+      - us_fed_rate: Tasa Fed Funds (5.25% hasta Q2 2024, luego baja 25bps/trimestre).
+    """
     dates = pd.date_range(start_date, end_date, freq="ME")
     np.random.seed(9)
 
@@ -378,23 +411,25 @@ def load_data(
     fundamentals_lag_days: int = 90,
     **provider_kwargs,
 ) -> Dict[str, pd.DataFrame]:
-    """
-    Load strategy data from the specified source.
+    """Carga todos los datos necesarios para el pipeline desde la fuente especificada.
 
-    Args:
-        source: Data source — "mock", "yahoo", "bloomberg", or "refinitiv".
-        start_date: Backtest start date (YYYY-MM-DD).
-        end_date: Backtest end date (YYYY-MM-DD).
-        strict_data_mode: If True, do NOT silently fall back to mock data
-            when real data fails. Instead, log an error and return empty
-            DataFrames. This ensures data integrity for production runs.
-        fundamentals_lag_days: Number of calendar days to lag fundamentals
-            data to prevent look-ahead bias (default: 90).
-        **provider_kwargs: Passed to the provider constructor (e.g., api keys).
+    Fuentes soportadas:
+      'mock'      → datos sintéticos generados internamente (sin API key, para desarrollo).
+      'yahoo'     → precios históricos via yfinance + fundamentales básicos.
+      'bloomberg' → datos completos via Bloomberg BDH/BDS (requiere terminal Bloomberg).
+      'refinitiv' → datos históricos via Refinitiv Eikon/LSEG (requiere API key).
 
-    Returns:
-        Dict with keys: universe, prices, fundamentals, fibra_fundamentals, bonds, macro.
-        Same schema as load_mock_data().
+    El diccionario devuelto tiene siempre las mismas claves:
+      'universe'           → DataFrame con todos los tickers y sus metadatos.
+      'prices'             → DataFrame wide (fecha × ticker) de precios de cierre.
+      'fundamentals'       → Fundamentales trimestrales de acciones (P/E, P/B, ROE…).
+      'fibra_fundamentals' → Fundamentales de FIBRAs (cap rate, FFO, LTV…).
+      'bonds'              → Datos de renta fija (YTM, duración, precio).
+      'macro'              → Indicadores macroeconómicos mensuales (IP, FX, Banxico…).
+
+    fundamentals_lag_days=90 garantiza que en el backtest se usen fundamentales
+    reportados al menos 90 días antes de la fecha de rebalanceo (evita look-ahead bias
+    de reportes trimestrales que se publican ~45-60 días después del cierre del trimestre).
     """
     from .data_providers import get_provider
 

@@ -1,8 +1,24 @@
 """
-Dashboard chart builder for Fondo Mexico strategy reports.
+Constructor del dashboard de reportes de la estrategia Fondo México.
 
-All charts use plotly with a dark theme. The main entry point is
-build_dashboard_html(), which assembles a fully standalone HTML page.
+Genera un HTML completamente autónomo (standalone) con todos los charts de Plotly
+embebidos.  El punto de entrada principal es build_dashboard_html(), que recibe el
+diccionario de resultados de run_pipeline() y genera la página completa.
+
+Secciones del reporte generado:
+  1. Desempeño: curva de valor acumulado, Sharpe/Sortino/Max Drawdown, sub-períodos.
+  2. Benchmarks: comparación vs. IPC y fondos GBM con alpha de Jensen.
+  3. Riesgo: VaR/CVaR (4 métodos), GARCH vol, stress test determinístico/distribucional.
+  4. Significancia estadística: bootstrap IC para alpha, IR, tracking error.
+  5. Señales: IC de la señal, mapa de calor de factores, distribución de vistas BL.
+  6. Universo: donuts de composición por clase de activo y sector.
+  7. Portafolio: pesos históricos, rotación, concentración.
+  8. Overlay FX y apalancamiento dinámico (Layer 2, si hedge_mode=True).
+  9. Comparación Layer 1 vs. Layer 2.
+ 10. Reforma LFI: comparación de 4 escenarios regulatorios.
+ 11. Hiperparámetros: historial de Optuna, importancia fANOVA, DSR y PBO.
+
+All charts use plotly with a dark theme.
 """
 from __future__ import annotations
 
@@ -40,6 +56,8 @@ C_PURPLE = "#9b59b6"
 C_GRAY   = "#666677"
 C_BG     = "#0f1117"
 C_CARD   = "#1a1d27"
+
+PALETTE = [C_BLUE, C_GREEN, C_AMBER, C_PURPLE, C_RED, "#1abc9c", "#e67e22", "#3498db", "#95a5a6", "#f1c40f"]
 
 STYLE = """
 <style>
@@ -215,9 +233,11 @@ def build_dashboard_html(results: dict, hedge_mode, data_source: str, reform: bo
         sections.append(_section_optimizer_comparison(backtest, summary, hedge_mode=hedge_active))
     if hedge_active and hedge_layer is not None:
         sections.append(_section_hedge_engine_breakdown(hedge_layer, metrics, hedge_metrics))
-    sections.append(_section_signals(feature_df, forecast_df, signal_diag))
+    sections.append(_section_signals(feature_df, forecast_df, signal_diag, bl_views_breakdown=summary.get("bl_views_breakdown")))
     sections.append(_section_universe_donuts(feature_df, universe))
     sections.append(_section_portfolio(weights, turnover, universe, hedge_layer=hedge_layer))
+    if summary.get("etf_anchor_active"):
+        sections.append(_section_etf_anchor(summary, weights, universe))
     sections.append(_section_stress(summary["stress"], hedge_stress_df=hedge_stress, stress_distributional=summary.get("stress_test_distributional")))
     if hedge_active:
         sections.append(_section_fx_overlay(hedge_overlay, hedge_leverage))
@@ -970,7 +990,7 @@ def _section_statistical_significance(summary, benchmark_alpha, signal_diagnosti
 # Section 5: Signal Quality
 # ---------------------------------------------------------------------------
 
-def _section_signals(feature_df, forecast_df=None, signal_diagnostics=None) -> str:
+def _section_signals(feature_df, forecast_df=None, signal_diagnostics=None, bl_views_breakdown=None) -> str:
     scored = feature_df.copy()
     if forecast_df is not None and not forecast_df.empty:
         expected_lookup = forecast_df[["date", "ticker", "expected_return"]].drop_duplicates(["date", "ticker"])
@@ -1055,11 +1075,33 @@ def _section_signals(feature_df, forecast_df=None, signal_diagnostics=None) -> s
             + "</table></div>"
         )
 
+    bl_views_table = ""
+    if bl_views_breakdown is not None and hasattr(bl_views_breakdown, "empty") and not bl_views_breakdown.empty:
+        bv = bl_views_breakdown.copy()
+        bv = bv[bv["view_pct"].abs() > 1e-9]
+        bv = bv.sort_values(["source", "view_pct"], ascending=[True, False])
+        rows = []
+        for _, r in bv.iterrows():
+            sign_color = C_GREEN if r["view_pct"] >= 0 else C_RED
+            rows.append(
+                f"<tr><td>{r['source']}</td><td>{r['target']}</td>"
+                f"<td class='mono' style='color:{sign_color}'>{r['view_pct']*100:+.2f}%</td>"
+                f"<td class='mono'>{r['confidence']:.2f}</td></tr>"
+            )
+        bl_views_table = (
+            "<div class='card'><h3>Active Black–Litterman Views</h3>"
+            "<p style='color:#666;font-size:0.9em'>Vistas activas alimentando el posterior BL. "
+            "ElasticNet aporta vistas per-ticker; macro aporta tilt sectorial con baja confianza.</p>"
+            "<table><tr><th>Source</th><th>Target</th><th>View</th><th>Confidence</th></tr>"
+            + "".join(rows) + "</table></div>"
+        )
+
     return f"""
 <h2>5. Signal Quality</h2>
 <div class="card">{chart_corr}</div>
 <div class="card">{chart_disp}</div>
-{diag_table}"""
+{diag_table}
+{bl_views_table}"""
 
 
 # ---------------------------------------------------------------------------
@@ -1460,6 +1502,93 @@ def _build_portfolio_block(block_weights, block_turnover, title, universe=None, 
   <div class=\"card\">{chart_turn}</div>
   <div class=\"card\">{chart_sector}</div>
 </div>"""
+
+
+def _section_etf_anchor(summary: dict, weights, universe) -> str:
+    """Comparison panel: ETF sector targets vs realized normal-mode sector weights."""
+    import pandas as pd
+
+    payload = summary.get("etf_anchor_payload") or {}
+    targets = summary.get("etf_anchor_targets") or {}
+    if not targets:
+        return ""
+
+    raw_etf = payload.get("sector_weights", {})
+    as_of = payload.get("as_of", "n/a")
+    source = payload.get("source", "n/a")
+
+    # Realized normal-mode sector weights from last rebalance
+    realized: dict[str, float] = {}
+    if weights is not None and not weights.empty and universe is not None:
+        nz = weights.loc[weights.abs().sum(axis=1) > 1e-9]
+        if not nz.empty:
+            final = nz.iloc[-1]
+            sec_map = universe.set_index("ticker")["sector"].to_dict()
+            anchor_groups = {
+                "Industrial": {"Industrial", "Logistics", "Infrastructure", "Materials", "Consumer", "Communication"},
+                "FIBRA": {"FIBRA"},
+            }
+            for ticker, w in final.items():
+                sector = sec_map.get(ticker)
+                for anchor_sector, group in anchor_groups.items():
+                    if sector in group:
+                        realized[anchor_sector] = realized.get(anchor_sector, 0.0) + float(w)
+                        break
+
+    # Donut: ETF source weights (raw)
+    if raw_etf:
+        labels = list(raw_etf.keys())
+        values = [raw_etf[k] for k in labels]
+        fig_etf = go.Figure(go.Pie(labels=labels, values=values, hole=0.55,
+                                    marker=dict(colors=PALETTE[:len(labels)])))
+        fig_etf.update_layout(**LAYOUT, title=f"ETF source weights — {source} ({as_of})", height=320)
+        chart_etf = _fig_to_div(fig_etf)
+    else:
+        chart_etf = ""
+
+    # Donut: realized normal-mode bucket weights
+    if realized:
+        labels_r = list(realized.keys())
+        values_r = [realized[k] for k in labels_r]
+        fig_r = go.Figure(go.Pie(labels=labels_r, values=values_r, hole=0.55,
+                                  marker=dict(colors=PALETTE[:len(labels_r)])))
+        fig_r.update_layout(**LAYOUT, title="Realized normal-mode bucket weights", height=320)
+        chart_real = _fig_to_div(fig_r)
+    else:
+        chart_real = ""
+
+    # Bands table
+    rows = []
+    for sector, bands in targets.items():
+        lo, hi = float(bands.get("min", 0.0)), float(bands.get("max", 1.0))
+        target = (lo + hi) / 2
+        actual = realized.get(sector, 0.0)
+        binds_low = actual <= lo + 1e-3
+        binds_high = actual >= hi - 1e-3
+        bind_flag = "🔻 lower" if binds_low else ("🔺 upper" if binds_high else "free")
+        rows.append(
+            f"<tr><td>{sector}</td>"
+            f"<td class='mono'>{target*100:.1f}%</td>"
+            f"<td class='mono'>[{lo*100:.1f}%, {hi*100:.1f}%]</td>"
+            f"<td class='mono'>{actual*100:.1f}%</td>"
+            f"<td>{bind_flag}</td></tr>"
+        )
+    band_table = (
+        "<div class='card'><h3>Sector band binding</h3>"
+        "<p style='color:#666;font-size:0.9em'>‘free’ = el optimizador no se topó con la banda. "
+        "Si todas son ‘free’, el anclaje no degrada el óptimo libre.</p>"
+        "<table><tr><th>Sector</th><th>Target</th><th>Band</th><th>Realized</th><th>Status</th></tr>"
+        + "".join(rows) + "</table></div>"
+    )
+
+    return f"""
+<h2>Puente ETF → Normal (anclaje sectorial blando)</h2>
+<div class="grid-2">
+  <div class="card">{chart_etf}</div>
+  <div class="card">{chart_real}</div>
+</div>
+{band_table}
+"""
 
 
 def _section_portfolio(weights, turnover, universe, hedge_layer=None) -> str:

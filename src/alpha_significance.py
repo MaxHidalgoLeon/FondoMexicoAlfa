@@ -55,9 +55,22 @@ def compute_benchmark_alpha_significance(
     settings: dict | None = None,
     risk_free_rate: float = 0.04,
 ) -> dict[str, dict]:
-    """Compute paired stationary-bootstrap significance diagnostics vs benchmarks.
+    """Calcula la significancia estadística del alpha vs. benchmarks con bootstrap.
 
-    Alpha is Jensen's alpha (beta-adjusted), not raw excess return.
+    Para cada benchmark (IPC, fondos GBM, etc.):
+      1. Alinea las series de retornos del fondo y el benchmark.
+      2. Calcula el beta OLS (β) con regresión en retornos diarios.
+      3. Alpha de Jensen = R_p - [R_f + β·(R_m - R_f)] (anualizado).
+      4. Aplica bootstrap estacionario por pares para obtener IC al 95% del alpha
+         y un p-value: ¿es el alpha significativamente distinto de cero?
+      5. También calcula Information Ratio (retorno activo / tracking error) y
+         Tracking Error (desviación estándar del exceso de retorno anualizado).
+
+    Usa bootstrap de bloques (Politis-Romano) con tamaño de bloque auto-seleccionado
+    (selector de Patton-Politis-White si block_size='auto') para manejar la
+    autocorrelación serial de los retornos financieros.
+
+    Compute paired stationary-bootstrap significance diagnostics vs benchmarks.
     """
     cfg = resolve_settings(settings)
     if benchmark_returns is None or benchmark_returns.empty or not cfg["bootstrap_enabled"]:

@@ -50,6 +50,15 @@ def _end_of_month_dates(dates: pd.DatetimeIndex) -> np.ndarray:
 
 
 def score_cross_section(feature_df: pd.DataFrame) -> pd.DataFrame:
+    """Calcula scores de corte transversal (cross-sectional) y el score compuesto.
+
+    Para cada fecha, transforma los factores (momentum, value, quality, liquidity)
+    a rangos percentilares (rank/pct) dentro del universo — esto hace que cada señal
+    sea comparable entre activos sin importar las diferencias de escala.
+
+    Score compuesto = promedio simple de los rangos de los factores disponibles.
+    Un score cercano a 1 = mejor del universo; cercano a 0 = peor.
+    """
     scores = feature_df.copy()
     # features.py produces momentum_63 and momentum_126; use momentum_63 as the base momentum signal
     candidate_columns = [
@@ -73,7 +82,21 @@ def forecast_returns(
     returns: pd.DataFrame,
     settings: dict | None = None,
 ) -> pd.DataFrame:
-    """
+    """Pronostica retornos futuros usando ElasticNetCV con ventana expansiva.
+
+    Para cada clase de activo (equity, fibra) y cada fecha de rebalanceo:
+      1. Construye el conjunto de entrenamiento: todos los (fecha, ticker) históricos
+         con retorno realizado disponible (forward return sin look-ahead bias).
+      2. Normaliza las features con StandardScaler (media 0, desv estándar 1).
+      3. Ajusta ElasticNet con CV para seleccionar automáticamente λ y α (L1/L2).
+      4. Predice el retorno esperado para todos los tickers en esa fecha.
+
+    El retorno objetivo es el retorno logarítmico a forecast_forward_days días
+    adelante, calculado con _compute_forward_returns() sin look-ahead.
+
+    Al final, estandariza las predicciones cross-sectionalmente (z-score por fecha)
+    para que sean comparables entre activos y fechas.
+
     Forecast returns using an expanding-window Elastic Net per asset class.
 
     Training target: forward forecast_forward_days return computed WITHOUT look-ahead.

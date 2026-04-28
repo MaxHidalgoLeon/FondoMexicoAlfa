@@ -40,7 +40,13 @@ _EULER_MASCHERONI = 0.5772156649015328606
 
 
 def expected_max_sharpe(n_trials: int) -> float:
-    """E[max SR over N independent trials] under H0 of zero true Sharpe (per-period)."""
+    """Sharpe máximo esperado bajo H0 (Sharpe real = 0) si se prueban N configuraciones.
+
+    Cuantas más configuraciones se prueban (N más grande), mayor es la probabilidad
+    de encontrar un Sharpe alto por azar puro (data snooping).  Esta función computa
+    el benchmark de comparación: el SR que cualquier estrategia aleatoria debería
+    superar solo por haber explorado N alternativas.
+    """
     if n_trials <= 1:
         return 0.0
     inv = 1.0 / n_trials

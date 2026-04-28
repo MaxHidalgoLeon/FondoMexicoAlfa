@@ -10,8 +10,6 @@
 # run_hyperopt.py genera un config_optimized_{source}.yaml por cada fuente listada.
 source:
   - bloomberg
-  - yahoo
-  - refinitiv
 
 # Periodo de análisis
 start_date: "2017-01-01"
@@ -141,6 +139,30 @@ ic_bootstrap_block_size: 6
 
 stress_distributional_enabled: true
 stress_window_days: 21
+
+# ==========================================================================
+# Black–Litterman views
+# ==========================================================================
+# Macro views se construyen a nivel sector con baja confianza para
+# complementar (no dominar) las vistas per-ticker del ElasticNet.
+bl_views:
+  use_macro: true
+  macro_view_confidence: 0.20
+  macro_view_max_magnitude: 0.015
+
+# ==========================================================================
+# Puente ETF → Asset Allocation Normal
+# ==========================================================================
+# Anclaje sectorial blando: el optimizador del modo normal recibe los pesos
+# sectoriales agregados del último rebalance del modo ETF como objetivo, con
+# tolerancia ±band. Banda ancha → optimizador casi libre (cero impacto al
+# Sharpe). Banda estrecha → réplica del vector ETF.
+# Para activarlo: 1) correr run_etf.py para generar el JSON; 2) poner enabled: true.
+etf_sector_anchor:
+  enabled: true
+  band: 0.15
+  source: bloomberg
+  fallback_to_unanchored: true
 
 enable_method_comparison: true
 

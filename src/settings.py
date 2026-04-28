@@ -6,7 +6,11 @@ from typing import Any
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     # ------------------------------------------------------------------
-    # Covariance / EWMA
+    # Parámetros de configuración global del pipeline.
+    # Cada sección controla un módulo diferente del sistema.
+    # Para sobreescribir, pasar un dict con las claves a modificar a resolve_settings().
+    # ------------------------------------------------------------------
+    # Covarianza / EWMA
     # ------------------------------------------------------------------
     "covariance_method": "ewma_ledoit_wolf",
     "rolling_cov_window": 63,
@@ -55,6 +59,23 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "stress_distributional_enabled": True,
     "stress_window_days": 21,
     # ------------------------------------------------------------------
+    # Black-Litterman views
+    # ------------------------------------------------------------------
+    "bl_views": {
+        "use_macro": True,
+        "macro_view_confidence": 0.20,
+        "macro_view_max_magnitude": 0.015,
+    },
+    # ------------------------------------------------------------------
+    # ETF → normal anchor (soft sector budget propagated from ETF run)
+    # ------------------------------------------------------------------
+    "etf_sector_anchor": {
+        "enabled": False,
+        "band": 0.15,
+        "source": "bloomberg",
+        "fallback_to_unanchored": True,
+    },
+    # ------------------------------------------------------------------
     # Reporting / comparisons
     # ------------------------------------------------------------------
     "enable_method_comparison": True,
@@ -98,7 +119,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 
 
 def resolve_settings(settings: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Return a copy of the project settings merged over the defaults."""
+    """Devuelve una copia de DEFAULT_SETTINGS con las claves de 'settings' aplicadas encima.
+
+    Permite que cada función del pipeline reciba parámetros personalizados sin
+    romper los defaults. Las claves None en 'settings' se ignoran (no sobreescriben).
+    """
     merged = deepcopy(DEFAULT_SETTINGS)
     if settings:
         for key, value in settings.items():

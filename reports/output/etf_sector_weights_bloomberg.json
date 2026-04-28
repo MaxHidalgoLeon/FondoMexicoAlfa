@@ -1,0 +1,11 @@
+{
+  "as_of": "2026-03-31",
+  "source": "bloomberg",
+  "sector_weights": {
+    "Industrial": 0.1125,
+    "Consumer": 0.1125,
+    "Communication": 0.1125,
+    "Materials": 0.1125,
+    "FIBRA": 0.1125
+  }
+}

@@ -13,12 +13,19 @@ _EPS_SMOOTH = 1e-8
 
 
 def _smooth_abs(x: np.ndarray) -> np.ndarray:
-    """Differentiable approximation of |x|: sqrt(x^2 + eps)."""
+    """Aproximación diferenciable de |x|: sqrt(x² + ε).
+
+    Se usa en lugar de np.abs() para que SLSQP pueda calcular gradientes analíticos
+    sin discontinuidades en x=0, lo que mejora la convergencia del optimizador.
+    """
     return np.sqrt(x * x + _EPS_SMOOTH)
 
 
 def _smooth_sign(x: np.ndarray) -> np.ndarray:
-    """Smooth approximation of sign(x): x / sqrt(x^2 + eps)."""
+    """Aproximación suave de sign(x): x / sqrt(x² + ε).
+
+    Derivada de _smooth_abs; se usa en el gradiente analítico del objetivo.
+    """
     return x / np.sqrt(x * x + _EPS_SMOOTH)
 
 
@@ -82,6 +89,35 @@ def _build_feasible_x0(
         w = np.full(n, target_net_exposure / n)
 
     return w
+
+
+def _append_sector_constraints(
+    constraints: list,
+    sector_constraints: Optional[Dict[str, Dict[str, float]]],
+    tickers: list[str],
+) -> None:
+    """Append sector min/max ineq constraints (ETF→normal soft anchor)."""
+    if not sector_constraints:
+        return
+    sec_map: Dict[str, str] = sector_constraints.get("__sector_map__", {})
+    if not sec_map:
+        return
+    for sector, bounds_dict in sector_constraints.items():
+        if sector == "__sector_map__":
+            continue
+        sec_tickers = [t for t in tickers if sec_map.get(t) == sector]
+        if not sec_tickers:
+            continue
+        idx = [tickers.index(t) for t in sec_tickers]
+        sec_min = max(0.0, float(bounds_dict.get("min", 0.0)))
+        sec_max = min(1.0, float(bounds_dict.get("max", 1.0)))
+        sec_min = min(sec_min, sec_max)
+        constraints.append(
+            {"type": "ineq", "fun": lambda x, i=idx, mn=sec_min: np.sum(x[i]) - mn + 1e-8}
+        )
+        constraints.append(
+            {"type": "ineq", "fun": lambda x, i=idx, mx=sec_max: mx - np.sum(x[i]) + 1e-8}
+        )
 
 
 def _sanitize_asset_class_constraints(
@@ -274,6 +310,15 @@ def _portfolio_objective(
     prev_weights: np.ndarray,
     market_impact: np.ndarray | None = None,
 ) -> float:
+    """Función objetivo a minimizar por SLSQP (media-varianza con penalidades).
+
+    Objetivo = -w'μ  +  λ·w'Σw  +  κ·escala_er·Σ|Δw_i|  +  Σ(η_i·|Δw_i|)
+
+    - Primer término: maximizar retorno esperado (negativo porque minimizamos).
+    - Segundo término: penalizar varianza con aversión al riesgo λ.
+    - Tercer término: penalizar rotación (turnover) escalada por magnitud de retornos.
+    - Cuarto término: costo de impacto de mercado Almgren-Chriss (η·σ_i/ADTV_i).
+    """
     expected_cost = -weights.dot(expected_returns)
     variance = risk_aversion * weights.dot(cov_matrix).dot(weights)
     # Scale turnover penalty by expected return magnitude so it doesn't dominate
@@ -302,6 +347,7 @@ def optimize_portfolio(
     market_impact_eta: float = 0.1,
     issuer_consolidated_limits: Optional[Dict[str, list]] = None,
     max_position_overrides: Optional[Dict[str, float]] = None,
+    sector_constraints: Optional[Dict[str, Dict[str, float]]] = None,
 ) -> pd.Series:
     """Mean-variance optimizer (SLSQP).
 
@@ -407,6 +453,8 @@ def optimize_portfolio(
                      "fun": lambda x, gi=group_idx: 0.10 - np.sum(np.abs(x[gi])) + 1e-8}
                 )
 
+    _append_sector_constraints(constraints, sector_constraints, tickers)
+
     result = _run_slsqp(
         _portfolio_objective,
         x0,
@@ -447,6 +495,7 @@ def optimize_portfolio_cvar(
     market_impact_eta: float = 0.1,
     issuer_consolidated_limits: Optional[Dict[str, list]] = None,
     max_position_overrides: Optional[Dict[str, float]] = None,
+    sector_constraints: Optional[Dict[str, Dict[str, float]]] = None,
 ) -> pd.Series:
     """Mean-CVaR portfolio optimization.
 
@@ -554,6 +603,8 @@ def optimize_portfolio_cvar(
                      "fun": lambda x, gi=group_idx: 0.10 - np.sum(np.abs(x[gi])) + 1e-8}
                 )
 
+    _append_sector_constraints(constraints, sector_constraints, tickers)
+
     result = _run_slsqp(
         _objective,
         x0,
@@ -593,6 +644,7 @@ def optimize_portfolio_robust(
     random_seed: int = 42,
     issuer_consolidated_limits: Optional[Dict[str, list]] = None,
     max_position_overrides: Optional[Dict[str, float]] = None,
+    sector_constraints: Optional[Dict[str, Dict[str, float]]] = None,
 ) -> pd.Series:
     """Michaud Resampled Efficiency optimizer.
 
@@ -652,6 +704,7 @@ def optimize_portfolio_robust(
                 market_impact_eta=market_impact_eta,
                 issuer_consolidated_limits=issuer_consolidated_limits,
                 max_position_overrides=max_position_overrides,
+                sector_constraints=sector_constraints,
             )
             accumulated += w_sim.values
             successes += 1
@@ -680,8 +733,19 @@ def black_litterman(
     risk_aversion: float = 2.5,
     tau: float = 0.05,
 ) -> pd.Series:
-    """Black-Litterman posterior expected returns."""
-    pi = risk_aversion * cov_matrix.dot(market_weights)  # CAPM equilibrium returns
+    """Calcula los retornos esperados posteriores de Black-Litterman.
+
+    Fórmula (He & Litterman, 1999):
+      π   = δ · Σ · w_mkt         (retornos de equilibrio CAPM implícitos)
+      Ω   = diag(1/conf · τ)      (incertidumbre de las vistas — mayor conf → menor Ω)
+      M   = P · τΣ · P' + Ω       (varianza total de la vista)
+      π_BL = π + τΣP' · M⁻¹ · (Q - Pπ)   (posterior = prior + ajuste ponderado)
+
+    P: matriz de selección (1 en la posición del ticker de la vista).
+    Q: vector de retornos esperados por las vistas (del modelo ElasticNet o macro).
+    τ (tau): escalar de incertidumbre del prior; típicamente 0.01–0.10.
+    """
+    pi = risk_aversion * cov_matrix.dot(market_weights)  # retornos de equilibrio CAPM
     P = np.zeros((len(views), len(market_weights)))
     Q = np.zeros(len(views))
     omega = np.zeros((len(views), len(views)))
@@ -719,7 +783,15 @@ def apply_fx_overlay(
     expected_usdmxn_return: float,
     hedge_ratio: float = 0.5,
 ) -> pd.Series:
-    """Apply FX overlay to expected returns."""
+    """Ajusta los retornos esperados por el riesgo cambiario USD/MXN.
+
+    Para cada activo con exposición en dólares (usd_exposure ∈ [0,1]):
+      ajuste_FX = usd_exposure · (1 - hedge_ratio) · retorno_esperado_USDMXN
+
+    Si el MXN se deprecia (retorno_USDMXN > 0) y el activo tiene alta exposición USD,
+    sus retornos en pesos suben → ajuste positivo.
+    hedge_ratio = fracción de la exposición cubierta con forwards (Layer 1 default: 0.5).
+    """
     fx_adjustment = usd_exposure * (1 - hedge_ratio) * expected_usdmxn_return
     adjusted = expected_returns + fx_adjustment
     return adjusted

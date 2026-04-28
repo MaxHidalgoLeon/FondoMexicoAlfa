@@ -1,3 +1,9 @@
+"""Tests de integración del pipeline completo.
+
+Verifica que run_pipeline() con source='mock' devuelve la estructura correcta
+de resultados (backtest, summary, señales, benchmarks) y que las métricas
+principales son numéricamente válidas (no NaN/Inf, rangos razonables).
+"""
 import unittest
 import numpy as np
 import pandas as pd

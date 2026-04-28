@@ -53,12 +53,22 @@ def blend_regime_constraints(previous: dict, current: dict, alpha: float) -> dic
 
 
 def compute_sharpe(returns: pd.Series, risk_free_rate: float = 0.02) -> float:
+    """Ratio de Sharpe anualizado: (μ_exceso / σ_exceso) × √252.
+
+    Mide el retorno obtenido por unidad de riesgo total.  La tasa libre de riesgo
+    se divide entre 252 para convertirla a diaria antes de restar.
+    """
     excess = returns - risk_free_rate / 252
     return np.sqrt(252) * excess.mean() / (excess.std(ddof=0) + 1e-9)
 
 
 def compute_sortino(returns: pd.Series, required_return: float = 0.0) -> float:
-    downside = returns[returns < required_return] - required_return  # excess loss below MAR
+    """Ratio de Sortino anualizado: (μ - MAR) / semidesvación_negativa × √252.
+
+    A diferencia del Sharpe, solo penaliza la volatilidad a la baja (downside deviation),
+    ignorando la dispersión de los retornos positivos.  MAR = Minimum Acceptable Return.
+    """
+    downside = returns[returns < required_return] - required_return  # exceso de pérdida bajo MAR
     # Lower partial moment (standard semideviation)
     downside_std = np.sqrt((downside ** 2).mean()) if len(downside) > 1 else 0.0
     excess_mean = returns.mean() - required_return
@@ -66,6 +76,12 @@ def compute_sortino(returns: pd.Series, required_return: float = 0.0) -> float:
 
 
 def max_drawdown(returns: pd.Series) -> float:
+    """Máxima caída desde un pico previo (Max Drawdown), como fracción negativa.
+
+    Calcula el valor acumulado (índice de riqueza), identifica el pico histórico
+    en cada punto y devuelve la caída porcentual máxima desde cualquier pico.
+    Típicamente negativo, p.ej. -0.25 = caída máxima del 25%.
+    """
     cumulative = np.exp(returns.fillna(0.0).cumsum())
     peak = cumulative.cummax()
     drawdown = (cumulative - peak) / peak
@@ -73,10 +89,21 @@ def max_drawdown(returns: pd.Series) -> float:
 
 
 def compute_var(returns: pd.Series, alpha: float = 0.95) -> float:
+    """VaR histórico al nivel de confianza alpha (p.ej. 95%).
+
+    Devuelve el percentil (1-alpha) de los retornos: el retorno que solo se supera
+    hacia abajo el (1-alpha)% de los días.  Típicamente un número negativo.
+    """
     return np.percentile(returns.dropna(), 100 * (1 - alpha))
 
 
 def compute_cvar(returns: pd.Series, alpha: float = 0.95) -> float:
+    """CVaR (Expected Shortfall) al nivel alpha: promedio de los retornos en la cola.
+
+    Es el promedio de todos los retornos menores o iguales al VaR.
+    Más conservador que el VaR porque considera la magnitud de las pérdidas extremas,
+    no solo la frontera.
+    """
     var_level = compute_var(returns, alpha)
     tail = returns[returns <= var_level]
     if len(tail) == 0:
@@ -94,6 +121,17 @@ def stress_test(
     shock_days: int = 5,
     event_spacing_days: int = 126,
 ) -> pd.DataFrame:
+    """Stress test determinístico: aplica shocks de escenario al historial de retornos.
+
+    Para cada escenario (banxico_shock, peso_depreciation, us_slowdown, tmec_disruption):
+      - Shock efectivo por día = shock_total × exposure / shock_days
+      - Se aplica en ventanas de shock_days días repetidas cada event_spacing_days
+        para mantener los escenarios comparables en las métricas agregadas.
+
+    Devuelve un DataFrame con retorno promedio, volatilidad, Sharpe y Max Drawdown
+    bajo cada escenario.  Las exposiciones (0-1) escalan el impacto del shock según
+    qué tan expuesto está el portafolio a ese factor de riesgo.
+    """
     scenario_results = []
     n = max(int(shock_days), 1)
     spacing = max(int(event_spacing_days), n)
@@ -120,7 +158,16 @@ def stress_test(
 
 
 def fit_garch(returns: pd.Series, model: str = "GJR") -> arch_model:
-    """Fit a GARCH model to returns."""
+    """Ajusta un modelo GARCH a la serie de retornos.
+
+    Modelo por defecto: GJR-GARCH(1,1) — captura el efecto asimétrico de leverage:
+    las caídas del mercado generan más volatilidad que las subidas de igual magnitud.
+
+    Ecuación de varianza:  σ²_t = ω + α·ε²_{t-1} + γ·ε²_{t-1}·I_{ε<0} + β·σ²_{t-1}
+    donde γ (gamma) > 0 captura el efecto asimétrico (el "GJ" de GJR = Glosten-Jagannathan-Runkle).
+
+    Si GJR no converge, cae al GARCH(1,1) estándar (sin asimetría) como fallback.
+    """
     import warnings
 
     if model == "GARCH":
@@ -147,7 +194,12 @@ def fit_garch(returns: pd.Series, model: str = "GJR") -> arch_model:
 
 
 def garch_forecast_vol(fitted_result, horizon: int = 21) -> float:
-    """Forecast annualized volatility for given horizon."""
+    """Proyecta la volatilidad anualizada para un horizonte de 'horizon' días hábiles.
+
+    Extrae la varianza condicional pronosticada (h pasos adelante) del modelo GARCH,
+    promedia sobre el horizonte y anualiza multiplicando por 252.
+    Default horizon=21 ≈ 1 mes de trading.
+    """
     forecast = fitted_result.forecast(horizon=horizon)
     horizon_var = forecast.variance.iloc[-1].values
     mean_daily_var = float(np.nanmean(horizon_var))
@@ -199,7 +251,15 @@ def rolling_garch_forecast(
 
 
 def dynamic_var(returns: pd.Series, alpha: float = 0.95, method: str = "garch") -> pd.Series:
-    """Rolling 1-day VaR."""
+    """VaR dinámico (condicional): usa la volatilidad GARCH como escala de riesgo.
+
+    En lugar de un percentil estático, estima VaR_t = σ_t × z_α donde:
+      - σ_t es la volatilidad condicional del modelo GJR-GARCH(1,1).
+      - z_α es el percentil (1-α) de los residuos estandarizados históricos.
+
+    Esto permite que el VaR se adapte a regímenes de alta/baja volatilidad,
+    siendo más conservador en crisis y menos restrictivo en períodos tranquilos.
+    """
     if method == "garch":
         r = returns.dropna()
         if len(r) < 60:
@@ -273,7 +333,17 @@ def monte_carlo_var(
 
 
 def gev_var(returns: pd.Series, alpha: float = 0.95) -> tuple[float, float]:
-    """VaR and CVaR using GEV distribution on left tail."""
+    """VaR y CVaR usando la distribución GEV (Valores Extremos Generalizados).
+
+    Ajusta una distribución GEV a la cola izquierda de los retornos (pérdidas).
+    La GEV modela mejor los extremos del mercado que la normal, capturando colas
+    pesadas (fat tails) características de activos financieros en crisis.
+
+    Incluye prueba de bondad de ajuste K-S (Kolmogorov-Smirnov):
+    si p-valor < 0.05, rechaza GEV y usa el cuantil empírico como fallback.
+
+    Devuelve (VaR, CVaR) como números negativos (pérdida = número negativo).
+    """
     tail = -returns[returns < 0]
     if len(tail) < 20:
         # Not enough tail observations — fall back to empirical
@@ -300,7 +370,22 @@ def compute_macro_regime_history(
     macro: Optional[pd.DataFrame],
     settings: dict | None = None,
 ) -> pd.DataFrame:
-    """Build a regime history using either the legacy thresholds or the EWMA score."""
+    """Construye la historia de regímenes macro a lo largo del tiempo.
+
+    Dos métodos (configurado via settings['regime_method']):
+
+    'threshold_discrete':
+      - Reglas fijas: stress si IP < 0 o MXN se depreció >5% en 3 meses.
+                      tightening si Banxico subió >25 bps en 3 meses.
+                      expansion en otro caso.
+      - Simple y transparente, pero sin suavización → muchos cambios de régimen.
+
+    'ewma_composite' (default):
+      - Construye un score = z(IP) - z(FX) - z(Banxico) donde z = z-score expansivo.
+      - Suaviza el score con EWMA (span configurable).
+      - Aplica umbrales al score suavizado (expansion_threshold / stress_threshold).
+      - Requiere confianza mínima para aceptar un cambio de régimen (evita ruido).
+    """
     cfg = resolve_settings(settings)
     df = _as_macro_frame(macro)
     if df.empty:
@@ -412,7 +497,20 @@ def distributional_stress_test(
     window_days: int = 21,
     seed: int = 42,
 ) -> dict[str, dict]:
-    """Bootstrap historical stress windows into a distribution of portfolio P&L."""
+    """Stress test distribucional: bootstrapea ventanas históricas de crisis.
+
+    En lugar del shock determinístico de stress_test(), este enfoque:
+      1. Identifica ventanas de window_days días donde ocurrió cada tipo de crisis
+         (usando datos macro reales: Banxico, FX, IP industrial, S&P500).
+      2. Calcula el P&L del portafolio actual en cada ventana histórica real.
+      3. Bootstrapea n_reps muestras de esas ventanas para generar la distribución
+         del P&L bajo cada escenario (percentiles p5, p25, p50, p75, p95).
+      4. Para escenarios con < 3 ventanas históricas, usa fallbacks con fechas de
+         crisis conocidas (COVID-19 2020, tightening 2022, tarifas 2025, etc.).
+
+    Devuelve distribuciones de P&L por escenario con CVaR al 95% para cuantificar
+    la pérdida esperada en la cola de cada tipo de estrés.
+    """
     if asset_returns is None or asset_returns.empty or current_weights is None or current_weights.empty:
         return {}
 
@@ -435,17 +533,25 @@ def distributional_stress_test(
     else:
         sp500_mom = pd.Series(np.nan, index=returns.index, dtype=float)
     us_ip = pd.Series(macro_daily.get("us_ip_yoy", np.nan), index=returns.index, dtype=float)
+    if "exports_yoy" in macro_daily.columns:
+        exports_yoy = pd.Series(macro_daily["exports_yoy"], index=returns.index, dtype=float)
+        tmec_mask = (fx_mom > 0.04) & (us_ip < 1.0) & (exports_yoy < 0.0)
+    else:
+        tmec_mask = (fx_mom > 0.04) & (us_ip < 1.0)
 
     scenario_masks = {
         "banxico_shock": banxico_delta.abs() > 0.01,
         "peso_depreciation": fx_mom > 0.05,
         "us_slowdown": (us_ip < 0.0) & (sp500_mom < -0.08),
+        "tmec_disruption": tmec_mask,
     }
 
     fallback_windows = [
         ("2020-03-02", "2020-03-31", "2020-03 COVID shock"),
         ("2022-10-03", "2022-10-31", "2022-10 global tightening"),
         ("2025-02-03", "2025-02-24", "2025-02 tariff shock"),
+        ("2018-05-30", "2018-06-29", "2018-06 NAFTA acero/aluminio tariffs"),
+        ("2019-05-30", "2019-06-07", "2019-06 amenaza arancel migratorio MX"),
     ]
 
     def _window_pnl(start: pd.Timestamp, end: pd.Timestamp) -> tuple[float, str] | None:
