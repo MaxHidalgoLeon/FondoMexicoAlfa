@@ -18,8 +18,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s | %(name)s | %(message)s")
 
+import yaml
+
 from src.pipeline import run_pipeline
 from reports.charts import build_dashboard_html
+
+
+def _load_config() -> dict:
+    """Load config.yaml from repo root, returning empty dict on failure."""
+    cfg_path = Path(__file__).resolve().parent.parent / "config.yaml"
+    try:
+        with open(cfg_path) as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return {}
 
 
 SUPPORTED_SOURCES = ["mock", "yahoo", "bloomberg", "lseg", "refinitiv"]
@@ -77,6 +89,15 @@ def main():
     Path(out_base).parent.mkdir(parents=True, exist_ok=True)
     multi_source = len(sources) > 1
 
+    config = _load_config()
+    # Forward config.yaml keys that run_pipeline() reads via resolve_settings()
+    pipeline_settings = {
+        "etf_sector_anchor": config.get("etf_sector_anchor", {"enabled": True, "source": "bloomberg", "band": 0.15}),
+        "bl_views":          config.get("bl_views",          {}),
+        "bootstrap_n_reps":  config.get("bootstrap_n_reps",  5000),
+        "bootstrap_enabled": config.get("bootstrap_enabled",  True),
+    }
+
     total_sources = len(sources)
     for idx, source in enumerate(sources, start=1):
         out_path = _output_path_for_source(out_base, source, multi_source)
@@ -91,6 +112,7 @@ def main():
             optimizer=args.optimizer,
             benchmark_tickers=bench,
             hedge_reform=args.reform,
+            settings=pipeline_settings,
         )
 
         print("[2/3] Building dashboard ...")

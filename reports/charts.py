@@ -1505,7 +1505,7 @@ def _build_portfolio_block(block_weights, block_turnover, title, universe=None, 
 
 
 def _section_etf_anchor(summary: dict, weights, universe) -> str:
-    """Comparison panel: ETF sector targets vs realized normal-mode sector weights."""
+    """Puente ETF → Normal: donut ETF + grouped bar ETF vs Inicio vs Fin + band table."""
     import pandas as pd
 
     payload = summary.get("etf_anchor_payload") or {}
@@ -1513,80 +1513,252 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
     if not targets:
         return ""
 
-    raw_etf = payload.get("sector_weights", {})
-    as_of = payload.get("as_of", "n/a")
-    source = payload.get("source", "n/a")
+    raw_etf_in = payload.get("sector_weights", {})
+    as_of   = payload.get("as_of",   "n/a")
+    source  = payload.get("source",  "n/a")
 
-    # Realized normal-mode sector weights from last rebalance
-    realized: dict[str, float] = {}
-    if weights is not None and not weights.empty and universe is not None:
+    # Remapeo de labels del ETF → labels reales de la cartera.
+    # El universo del ETF clasifica con una taxonomía distinta a la cartera
+    # normal; estos pares igualan los nombres antes de comparar.
+    ETF_LABEL_REMAP = {
+        "Communication": "Logistics",
+        "Materials":     "Energy",
+        "Consumer":      "Infrastructure",
+    }
+    raw_etf: dict[str, float] = {}
+    for k, v in raw_etf_in.items():
+        new_k = ETF_LABEL_REMAP.get(k, k)
+        raw_etf[new_k] = raw_etf.get(new_k, 0.0) + float(v)
+
+    # Sectores canónicos del puente (consistente con pipeline.py)
+    INDUSTRIAL_SECTORS = {
+        "Industrial", "Logistics", "Infrastructure", "Energy",
+        "Materials", "Consumer", "Communication",
+    }
+    BUCKETS = ["Industrial", "FIBRA", "Government"]
+
+    def _bucketize(w_series, sec_map: dict) -> dict[str, float]:
+        out: dict[str, float] = {b: 0.0 for b in BUCKETS}
+        for ticker, w in w_series.items():
+            sector = sec_map.get(ticker)
+            if sector in INDUSTRIAL_SECTORS:
+                out["Industrial"] += float(w)
+            elif sector == "FIBRA":
+                out["FIBRA"] += float(w)
+            elif sector == "Government":
+                out["Government"] += float(w)
+        return out
+
+    def _by_sector(w_series, sec_map: dict) -> dict[str, float]:
+        out: dict[str, float] = {}
+        for ticker, w in w_series.items():
+            sector = sec_map.get(ticker)
+            if sector is None:
+                continue
+            out[sector] = out.get(sector, 0.0) + float(w)
+        return out
+
+    # Pesos sectoriales del portafolio: primer y último rebalanceo real
+    ini_b: dict[str, float] = {b: 0.0 for b in BUCKETS}
+    fin_b: dict[str, float] = {b: 0.0 for b in BUCKETS}
+    ini_s: dict[str, float] = {}
+    fin_s: dict[str, float] = {}
+    t_ini_label, t_fin_label = "inicio", "fin"
+
+    if weights is not None and not weights.empty and universe is not None and "sector" in universe.columns:
         nz = weights.loc[weights.abs().sum(axis=1) > 1e-9]
         if not nz.empty:
-            final = nz.iloc[-1]
             sec_map = universe.set_index("ticker")["sector"].to_dict()
-            anchor_groups = {
-                "Industrial": {"Industrial", "Logistics", "Infrastructure", "Materials", "Consumer", "Communication"},
-                "FIBRA": {"FIBRA"},
-            }
-            for ticker, w in final.items():
-                sector = sec_map.get(ticker)
-                for anchor_sector, group in anchor_groups.items():
-                    if sector in group:
-                        realized[anchor_sector] = realized.get(anchor_sector, 0.0) + float(w)
-                        break
+            ini_b = _bucketize(nz.iloc[0],  sec_map)
+            fin_b = _bucketize(nz.iloc[-1], sec_map)
+            ini_s = _by_sector(nz.iloc[0],  sec_map)
+            fin_s = _by_sector(nz.iloc[-1], sec_map)
+            t_ini_label = str(pd.Timestamp(nz.index[0]).date())
+            t_fin_label = str(pd.Timestamp(nz.index[-1]).date())
 
-    # Donut: ETF source weights (raw)
+    # Pesos ETF por bucket (mismo mapeo que el portafolio)
+    etf_b: dict[str, float] = {b: 0.0 for b in BUCKETS}
+    for k, v in raw_etf.items():
+        if k in INDUSTRIAL_SECTORS:
+            etf_b["Industrial"] += float(v)
+        elif k == "FIBRA":
+            etf_b["FIBRA"] += float(v)
+        elif k == "Government":
+            etf_b["Government"] += float(v)
+
+    # Pesos ETF por sector individual (sin agregar)
+    etf_s: dict[str, float] = {k: float(v) for k, v in raw_etf.items() if float(v) > 1e-9}
+
+    # Banda informativa por sector (derivada del bucket Industrial; default 0.15)
+    bucket_bands = []
+    for _b, _bands in targets.items():
+        _lo = float(_bands.get("min", 0.0)); _hi = float(_bands.get("max", 1.0))
+        bucket_bands.append((_hi - _lo) / 2.0)
+    band = max(bucket_bands) if bucket_bands else 0.15
+
+    # ── Donut: composición sectorial del ETF (detallado, antes de agregar) ────
+    chart_etf = ""
     if raw_etf:
-        labels = list(raw_etf.keys())
-        values = [raw_etf[k] for k in labels]
-        fig_etf = go.Figure(go.Pie(labels=labels, values=values, hole=0.55,
-                                    marker=dict(colors=PALETTE[:len(labels)])))
-        fig_etf.update_layout(**LAYOUT, title=f"ETF source weights — {source} ({as_of})", height=320)
+        etf_labels = [k for k, v in raw_etf.items() if float(v) > 1e-6]
+        etf_values = [float(raw_etf[k]) * 100 for k in etf_labels]
+        fig_etf = go.Figure(go.Pie(
+            labels=etf_labels, values=etf_values, hole=0.55,
+            marker=dict(colors=PALETTE[:len(etf_labels)]),
+            textinfo="label+percent",
+        ))
+        fig_etf.update_layout(
+            **LAYOUT,
+            title=f"Pesos ETF por sector — {source} ({as_of})",
+            height=340,
+        )
         chart_etf = _fig_to_div(fig_etf)
-    else:
-        chart_etf = ""
 
-    # Donut: realized normal-mode bucket weights
-    if realized:
-        labels_r = list(realized.keys())
-        values_r = [realized[k] for k in labels_r]
-        fig_r = go.Figure(go.Pie(labels=labels_r, values=values_r, hole=0.55,
-                                  marker=dict(colors=PALETTE[:len(labels_r)])))
-        fig_r.update_layout(**LAYOUT, title="Realized normal-mode bucket weights", height=320)
-        chart_real = _fig_to_div(fig_r)
-    else:
-        chart_real = ""
+    # ── Grouped bar: ETF vs Inicio vs Fin por sector individual ──────────────
+    # Unión de sectores presentes en ETF y portafolio, ordenados por peso ETF desc
+    sectors_axis = sorted(
+        set(etf_s) | set(ini_s) | set(fin_s),
+        key=lambda s: (-etf_s.get(s, 0.0), s),
+    )
 
-    # Bands table
-    rows = []
+    # Banda informativa por sector individual: target ± band, clipping en [0,1]
+    sector_band_lo = {s: max(0.0, etf_s.get(s, 0.0) - band) for s in sectors_axis}
+    sector_band_hi = {s: min(1.0, etf_s.get(s, 0.0) + band) for s in sectors_axis}
+
+    fig_aa = go.Figure()
+    # Banda informativa como sombra (rectángulos por sector)
+    for i, s in enumerate(sectors_axis):
+        fig_aa.add_shape(
+            type="rect",
+            x0=i - 0.4, x1=i + 0.4,
+            y0=sector_band_lo[s] * 100, y1=sector_band_hi[s] * 100,
+            line=dict(width=0),
+            fillcolor="rgba(243,156,18,0.10)",
+            layer="below",
+        )
+    fig_aa.add_trace(go.Bar(
+        name=f"ETF — {source} ({as_of})",
+        x=sectors_axis, y=[etf_s.get(s, 0.0) * 100 for s in sectors_axis],
+        marker_color=C_AMBER, opacity=0.85,
+    ))
+    fig_aa.add_trace(go.Bar(
+        name=f"Portafolio inicio ({t_ini_label})",
+        x=sectors_axis, y=[ini_s.get(s, 0.0) * 100 for s in sectors_axis],
+        marker_color=C_BLUE, opacity=0.85,
+    ))
+    fig_aa.add_trace(go.Bar(
+        name=f"Portafolio fin ({t_fin_label})",
+        x=sectors_axis, y=[fin_s.get(s, 0.0) * 100 for s in sectors_axis],
+        marker_color=C_GREEN, opacity=0.90,
+    ))
+    fig_aa.update_layout(
+        **LAYOUT,
+        barmode="group",
+        title=(
+            "Impacto del puente ETF — Asset Allocation por sector "
+            f"(banda informativa ±{band*100:.0f}%)"
+        ),
+        xaxis_title="Sector",
+        yaxis_title="Peso (%)",
+        height=400,
+    )
+    chart_aa = _fig_to_div(fig_aa)
+
+    # ── Tabla: delta inicio→fin y distancia al ancla ETF ─────────────────────
+    impact_rows = []
+    for b in BUCKETS:
+        delta_port = fin_b[b] - ini_b[b]
+        delta_etf  = fin_b[b] - etf_b[b]
+        d_port_cls = "good" if abs(delta_port) < 0.02 else "neutral"
+        d_etf_cls  = "good" if abs(delta_etf)  < 0.03 else "bad"
+        impact_rows.append(
+            f"<tr><td>{b}</td>"
+            f"<td class=’mono’>{etf_b[b]*100:.1f}%</td>"
+            f"<td class=’mono’>{ini_b[b]*100:.1f}%</td>"
+            f"<td class=’mono’>{fin_b[b]*100:.1f}%</td>"
+            f"<td class=’{d_port_cls} mono’>{delta_port*100:+.1f}%</td>"
+            f"<td class=’{d_etf_cls} mono’>{delta_etf*100:+.1f}%</td></tr>"
+        )
+    impact_table = (
+        "<div class=’card’>"
+        "<h3>Asset Allocation: ETF vs Portafolio (inicio → fin)</h3>"
+        "<table>"
+        "<tr><th>Bucket</th>"
+        f"<th>ETF ({as_of})</th>"
+        f"<th>Inicio ({t_ini_label})</th>"
+        f"<th>Fin ({t_fin_label})</th>"
+        "<th>Δ Fin−Inicio</th><th>Δ Fin−ETF</th></tr>"
+        + "".join(impact_rows)
+        + "</table></div>"
+    )
+
+    # ── Tabla informativa por sector individual ───────────────────────────────
+    sector_rows = []
+    sectors_table = sorted(
+        set(etf_s) | set(fin_s),
+        key=lambda s: (-etf_s.get(s, 0.0), s),
+    )
+    for s in sectors_table:
+        target = etf_s.get(s, 0.0)
+        lo = max(0.0, target - band)
+        hi = min(1.0, target + band)
+        actual = fin_s.get(s, 0.0)
+        if   actual <= lo + 1e-3: flag = "🔻 cota inferior"
+        elif actual >= hi - 1e-3: flag = "🔺 cota superior"
+        else:                     flag = "✓ dentro de banda"
+        sector_rows.append(
+            f"<tr><td>{s}</td>"
+            f"<td class=’mono’>{target*100:.1f}%</td>"
+            f"<td class=’mono’>[{lo*100:.1f}%, {hi*100:.1f}%]</td>"
+            f"<td class=’mono’>{actual*100:.1f}%</td>"
+            f"<td>{flag}</td></tr>"
+        )
+    sector_table = (
+        "<div class=’card’><h3>Detalle por sector individual (informativo)</h3>"
+        "<p style=’color:#666;font-size:0.9em’>"
+        f"Banda informativa = target ETF ± {band*100:.0f}%. "
+        "Estos sectores no son constraint directo del optimizador — "
+        "se agregan al bucket correspondiente para el anclaje real."
+        "</p>"
+        "<table><tr><th>Sector</th><th>Target ETF</th><th>Banda</th>"
+        "<th>Realizado (fin)</th><th>Estado</th></tr>"
+        + "".join(sector_rows) + "</table></div>"
+    )
+
+    # ── Tabla de band binding (buckets, constraint real del optimizador) ──────
+    band_rows = []
     for sector, bands in targets.items():
-        lo, hi = float(bands.get("min", 0.0)), float(bands.get("max", 1.0))
-        target = (lo + hi) / 2
-        actual = realized.get(sector, 0.0)
-        binds_low = actual <= lo + 1e-3
-        binds_high = actual >= hi - 1e-3
-        bind_flag = "🔻 lower" if binds_low else ("🔺 upper" if binds_high else "free")
-        rows.append(
+        lo, hi  = float(bands.get("min", 0.0)), float(bands.get("max", 1.0))
+        mid     = (lo + hi) / 2
+        actual  = fin_b.get(sector, 0.0)
+        if   actual <= lo + 1e-3: flag = "🔻 cota inferior activa"
+        elif actual >= hi - 1e-3: flag = "🔺 cota superior activa"
+        else:                     flag = "libre"
+        band_rows.append(
             f"<tr><td>{sector}</td>"
-            f"<td class='mono'>{target*100:.1f}%</td>"
-            f"<td class='mono'>[{lo*100:.1f}%, {hi*100:.1f}%]</td>"
-            f"<td class='mono'>{actual*100:.1f}%</td>"
-            f"<td>{bind_flag}</td></tr>"
+            f"<td class=’mono’>{mid*100:.1f}%</td>"
+            f"<td class=’mono’>[{lo*100:.1f}%, {hi*100:.1f}%]</td>"
+            f"<td class=’mono’>{actual*100:.1f}%</td>"
+            f"<td>{flag}</td></tr>"
         )
     band_table = (
-        "<div class='card'><h3>Sector band binding</h3>"
-        "<p style='color:#666;font-size:0.9em'>‘free’ = el optimizador no se topó con la banda. "
-        "Si todas son ‘free’, el anclaje no degrada el óptimo libre.</p>"
-        "<table><tr><th>Sector</th><th>Target</th><th>Band</th><th>Realized</th><th>Status</th></tr>"
-        + "".join(rows) + "</table></div>"
+        "<div class=’card’><h3>Band binding por bucket (constraint real)</h3>"
+        "<p style=’color:#666;font-size:0.9em’>"
+        "Buckets que el optimizador efectivamente constriñe. "
+        "’libre’ = el optimizador no se topó con la banda; "
+        "el ancla ETF no degradó el óptimo libre.</p>"
+        "<table><tr><th>Bucket</th><th>Target</th><th>Banda</th>"
+        "<th>Realizado</th><th>Estado</th></tr>"
+        + "".join(band_rows) + "</table></div>"
     )
 
     return f"""
 <h2>Puente ETF → Normal (anclaje sectorial blando)</h2>
-<div class="grid-2">
+<div class="grid2">
   <div class="card">{chart_etf}</div>
-  <div class="card">{chart_real}</div>
+  <div class="card">{chart_aa}</div>
 </div>
+{impact_table}
+{sector_table}
 {band_table}
 """
 
