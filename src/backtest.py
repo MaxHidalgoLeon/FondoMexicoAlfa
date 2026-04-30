@@ -451,7 +451,10 @@ def run_backtest(
             "cvar_95": compute_cvar(port_ret, alpha=0.95),
             "annualized_return": ann_ret,
             "annualized_vol": port_ret.std() * np.sqrt(252),
-            "turnover": tv.mean(),
+            # Per-rebalance monthly turnover with the standard 1/2 factor:
+            # turnover_t = 0.5 * sum_i |w_i,t - w_i,t-1|, averaged over rebalance months.
+            # tv has 0s on non-rebalance days; filtering to >0 gives one entry per rebalance.
+            "turnover": float(0.5 * tv[tv > 0].mean()) if (tv > 0).any() else 0.0,
         }
         metrics_ci: dict[str, dict[str, Any]] = {}
         if cfg["bootstrap_enabled"]:
