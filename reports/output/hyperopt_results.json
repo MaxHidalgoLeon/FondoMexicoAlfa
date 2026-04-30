@@ -1,0 +1,20 @@
+{
+  "best_value": 0.4222,
+  "best_params": {
+    "bl_risk_aversion": 1.44722,
+    "bl_tau": 0.1093,
+    "mv_risk_aversion": 7.00318,
+    "mv_turnover_penalty": 0.20695,
+    "mv_market_impact_eta": 0.0224,
+    "cvar_risk_aversion": 7.23442,
+    "ewma_lambda_cov": 0.94748,
+    "elasticnet_l1_ratios": [0.1, 0.9],
+    "regime_ewma_span": 10,
+    "forecast_forward_days": 38,
+    "adtv_ewma_lambda": 0.96331
+  },
+  "n_trials": 50,
+  "optimizer": "optuna_tpe",
+  "n_folds": 5,
+  "trials": []
+}
