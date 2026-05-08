@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 """
-run_all.py — Script maestro del proyecto Fondo Mexico.
+run_all.py — Master script for the Fondo Mexico project.
 
-Ejecuta en orden:
+Runs in order:
   1. Tests (pytest)
-  2. Pipeline completo
-  3. Generación del reporte HTML
+  2. Full pipeline
+  3. HTML report generation
 
-Configuración: edita config.yaml en la raíz del proyecto.
-Los argumentos de la terminal sobreescriben config.yaml.
+Configuration: edit config.yaml in the project root.
+Command-line arguments override config.yaml.
 
-Uso:
+Usage:
     python scripts/run_all.py
     python scripts/run_all.py --source yahoo
     python scripts/run_all.py --source refinitiv --start 2020-01-01 --hedge
@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Rutas
+# Paths
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -55,7 +55,7 @@ HYPEROPT_TUNABLE_KEYS = frozenset({
 })
 
 # ---------------------------------------------------------------------------
-# Cargar .env (credenciales) si existe
+# Load .env (credentials) if it exists
 # ---------------------------------------------------------------------------
 def _load_env() -> None:
     env_path = ROOT / ".env"
@@ -70,7 +70,7 @@ def _load_env() -> None:
             os.environ.setdefault(key.strip(), value.strip())
 
 # ---------------------------------------------------------------------------
-# Cargar config.yaml
+# Load config.yaml
 # ---------------------------------------------------------------------------
 def _load_config() -> dict:
     config_path = ROOT / "config.yaml"
@@ -93,7 +93,7 @@ def _load_config() -> dict:
             file_cfg = yaml.safe_load(f) or {}
         defaults.update({k: v for k, v in file_cfg.items() if v is not None})
     except ImportError:
-        print("[AVISO] pyyaml no instalado — usando valores por defecto. Instala con: pip install pyyaml")
+        print("[WARNING] pyyaml not installed — using default values. Install with: pip install pyyaml")
     return defaults
 
 
@@ -109,43 +109,43 @@ def _apply_optimized_params(config: dict, source: str) -> dict:
         applied = {k: v for k, v in opt_cfg.items() if k in HYPEROPT_TUNABLE_KEYS and v is not None}
         if applied:
             config = {**config, **applied}
-            print(f"[Hyperopt:{source}] Aplicando {len(applied)} parámetros optimizados "
-                  f"de config_optimized_{source}.yaml: {', '.join(sorted(applied))}")
+            print(f"[Hyperopt:{source}] Applying {len(applied)} optimized parameters "
+                  f"from config_optimized_{source}.yaml: {', '.join(sorted(applied))}")
     except Exception as exc:
-        print(f"[AVISO] No se pudo leer config_optimized_{source}.yaml: {exc}")
+        print(f"[WARNING] Could not read config_optimized_{source}.yaml: {exc}")
     return config
 
 # ---------------------------------------------------------------------------
-# Argumentos de la terminal (sobreescriben config.yaml)
+# CLI arguments (override config.yaml)
 # ---------------------------------------------------------------------------
 def _parse_args(config: dict) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Fondo Mexico — pipeline completo")
+    p = argparse.ArgumentParser(description="Fondo Mexico — full pipeline")
     p.add_argument(
         "--source",
         type=str,
         default=None,
         help=(
-            "Fuente(s) de datos: mock|yahoo|bloomberg|refinitiv, "
-            "lista separada por comas, o 'all' para yahoo,refinitiv,bloomberg "
+            "Data source(s): mock|yahoo|bloomberg|refinitiv, "
+            "comma-separated list, or 'all' for yahoo,refinitiv,bloomberg "
             f"(config.yaml: {config['source']})"
         ),
     )
-    p.add_argument("--start", default=None, help=f"Fecha inicio YYYY-MM-DD (config.yaml: {config['start_date']})")
-    p.add_argument("--end",   default=None, help=f"Fecha fin   YYYY-MM-DD (config.yaml: {config['end_date']})")
-    p.add_argument("--hedge", action="store_true", default=None, help="Activar hedge overlay (Layer 2)")
-    p.add_argument("--reform", action="store_true", default=None, help="Incluir comparativo de escenarios reforma LFI (4 estructuras)")
-    p.add_argument("--out",   default=None, help="Ruta del reporte HTML de salida")
+    p.add_argument("--start", default=None, help=f"Start date YYYY-MM-DD (config.yaml: {config['start_date']})")
+    p.add_argument("--end",   default=None, help=f"End date   YYYY-MM-DD (config.yaml: {config['end_date']})")
+    p.add_argument("--hedge", action="store_true", default=None, help="Enable hedge overlay (Layer 2)")
+    p.add_argument("--reform", action="store_true", default=None, help="Include LFI reform scenario comparison (4 structures)")
+    p.add_argument("--out",   default=None, help="Output HTML report path")
     p.add_argument(
         "--benchmarks",
         default=None,
-        help="Tickers benchmark separados por coma (ej: ^MXX,GBMINTBO.MX)",
+        help="Comma-separated benchmark tickers (e.g. ^MXX,GBMINTBO.MX)",
     )
-    p.add_argument("--skip-tests", action="store_true", help="Omitir la etapa de tests")
+    p.add_argument("--skip-tests", action="store_true", help="Skip the test stage")
     p.add_argument(
         "--optimizer",
         choices=["mv", "cvar", "robust", "both"],
         default=None,
-        help=f"Optimizador de portafolio (config.yaml: {config.get('optimizer', 'mv')})",
+        help=f"Portfolio optimizer (config.yaml: {config.get('optimizer', 'mv')})",
     )
     return p.parse_args()
 
@@ -161,14 +161,14 @@ def _normalize_sources(raw_source: str | list[str] | tuple[str, ...]) -> list[st
             candidates = [s.strip().lower() for s in source_text.split(",") if s.strip()]
 
     if not candidates:
-        raise ValueError("No se especificó ninguna fuente de datos.")
+        raise ValueError("No data source specified.")
 
     invalid = [s for s in candidates if s not in SUPPORTED_SOURCES]
     if invalid:
         valid = ", ".join(SUPPORTED_SOURCES + ["all"])
-        raise ValueError(f"Fuente(s) inválida(s): {', '.join(invalid)}. Válidas: {valid}")
+        raise ValueError(f"Invalid source(s): {', '.join(invalid)}. Valid options: {valid}")
 
-    # Preservar orden y eliminar duplicados
+    # Preserve order and remove duplicates
     return list(dict.fromkeys(candidates))
 
 
@@ -179,11 +179,11 @@ def _output_path_for_source(base_out: str, source: str, multi_source: bool) -> s
     return str(out_path.with_name(f"{out_path.stem}_{source}{out_path.suffix}"))
 
 # ---------------------------------------------------------------------------
-# Paso 1 — Tests
+# Step 1 — Tests
 # ---------------------------------------------------------------------------
 def run_tests(abort_on_failure: bool) -> bool:
     print("\n" + "=" * 60)
-    print("PASO 1/3 — Ejecutando tests")
+    print("STEP 1/3 — Running tests")
     print("=" * 60)
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short"],
@@ -191,15 +191,15 @@ def run_tests(abort_on_failure: bool) -> bool:
     )
     if result.returncode != 0:
         if abort_on_failure:
-            print("\n[ERROR] Tests fallaron. Abortando pipeline.")
-            print("        Para ignorar los tests usa: --skip-tests")
+            print("\n[ERROR] Tests failed. Aborting pipeline.")
+            print("        To skip tests use: --skip-tests")
             return False
         else:
-            print("\n[AVISO] Tests fallaron pero se continúa (abort_on_test_failure=false en config.yaml).")
+            print("\n[WARNING] Tests failed but continuing (abort_on_test_failure=false in config.yaml).")
     return True
 
 # ---------------------------------------------------------------------------
-# Paso 2 + 3 — Pipeline y reporte
+# Steps 2 + 3 — Pipeline and report
 # ---------------------------------------------------------------------------
 def run_report(
     source: str,
@@ -213,17 +213,17 @@ def run_report(
     reform: bool = False,
 ) -> None:
     print("\n" + "=" * 60)
-    print(f"PASO 2/3 — Corriendo pipeline  [{source}]  {start} → {end}")
+    print(f"STEP 2/3 — Running pipeline  [{source}]  {start} → {end}")
     print("=" * 60)
 
-    # Inyectar App Key de Refinitiv si está en el entorno
+    # Inject Refinitiv App Key from the environment if present
     provider_kwargs = {}
     if source == "refinitiv":
         app_key = os.environ.get("REFINITIV_APP_KEY", "")
-        if app_key and app_key != "pega_tu_app_key_aqui":
+        if app_key and app_key != "paste_your_app_key_here":
             provider_kwargs["app_key"] = app_key
         else:
-            print("[AVISO] REFINITIV_APP_KEY no configurada en .env")
+            print("[WARNING] REFINITIV_APP_KEY not configured in .env")
     elif source == "bloomberg":
         data_dir = os.environ.get("BLOOMBERG_DATA_DIR", "data/bloomberg")
         provider_kwargs["data_dir"] = data_dir
@@ -242,7 +242,7 @@ def run_report(
     )
 
     print("\n" + "=" * 60)
-    print("PASO 3/3 — Generando reporte HTML")
+    print("STEP 3/3 — Generating HTML report")
     print("=" * 60)
 
     from reports.charts import build_dashboard_html
@@ -251,10 +251,10 @@ def run_report(
     out = ROOT / out_path
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
-    print(f"\n[OK] Reporte guardado en: {out}")
+    print(f"\n[OK] Report saved to: {out}")
 
 # ---------------------------------------------------------------------------
-# Main
+# Entry point
 # ---------------------------------------------------------------------------
 def main() -> None:
     _load_env()
@@ -284,20 +284,20 @@ def main() -> None:
             return cfg_bench
         return DEFAULT_BENCHMARKS if current_source in ("yahoo", "refinitiv", "bloomberg") else []
 
-    print(f"\nFondo Mexico — Pipeline completo")
-    print(f"  Fuente(s)  : {', '.join(sources)}")
-    print(f"  Periodo    : {start} → {end}")
+    print(f"\nFondo Mexico — Full Pipeline")
+    print(f"  Source(s)  : {', '.join(sources)}")
+    print(f"  Period     : {start} → {end}")
     print(f"  Hedge      : {hedge}")
     print(f"  Reform LFI : {reform}")
-    print(f"  Optimizador: {optimizer}")
-    print(f"  Reporte    : {out}")
+    print(f"  Optimizer  : {optimizer}")
+    print(f"  Report     : {out}")
 
     if not args.skip_tests:
         ok = run_tests(abort_on_failure=abort)
         if not ok:
             sys.exit(1)
     else:
-        print("\n[AVISO] Tests omitidos por --skip-tests")
+        print("\n[WARNING] Tests skipped via --skip-tests")
 
     multi_source = len(sources) > 1
     successful_sources: list[str] = []
@@ -327,20 +327,20 @@ def main() -> None:
         except Exception as exc:
             failed_sources.append((source, str(exc)))
             print(f"\n[ERROR] {source}: {exc}")
-            print("        Se continúa con el siguiente provider.")
+            print("        Continuing with next provider.")
 
     if failed_sources:
         print("\n" + "=" * 60)
-        print("RESUMEN DE ERRORES POR PROVIDER")
+        print("PROVIDER ERROR SUMMARY")
         print("=" * 60)
         for source, err in failed_sources:
             print(f"- {source}: {err}")
 
     if not successful_sources:
-        print("\n[ERROR] Ningún provider completó exitosamente.")
+        print("\n[ERROR] No provider completed successfully.")
         sys.exit(1)
 
-    print("\n[LISTO] Pipeline completado exitosamente.\n")
+    print("\n[DONE] Pipeline completed successfully.\n")
 
 if __name__ == "__main__":
     main()

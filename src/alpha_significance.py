@@ -55,22 +55,20 @@ def compute_benchmark_alpha_significance(
     settings: dict | None = None,
     risk_free_rate: float = 0.04,
 ) -> dict[str, dict]:
-    """Calcula la significancia estadística del alpha vs. benchmarks con bootstrap.
+    """Compute statistical significance of alpha vs benchmarks using bootstrap.
 
-    Para cada benchmark (IPC, fondos GBM, etc.):
-      1. Alinea las series de retornos del fondo y el benchmark.
-      2. Calcula el beta OLS (β) con regresión en retornos diarios.
-      3. Alpha de Jensen = R_p - [R_f + β·(R_m - R_f)] (anualizado).
-      4. Aplica bootstrap estacionario por pares para obtener IC al 95% del alpha
-         y un p-value: ¿es el alpha significativamente distinto de cero?
-      5. También calcula Information Ratio (retorno activo / tracking error) y
-         Tracking Error (desviación estándar del exceso de retorno anualizado).
+    For each benchmark (IPC, GBM funds, etc.):
+      1. Aligns fund and benchmark return series.
+      2. Computes OLS beta (β) via regression on daily returns.
+      3. Jensen's alpha = R_p - [R_f + β·(R_m - R_f)] (annualized).
+      4. Applies paired stationary bootstrap to obtain 95% CI for alpha
+         and a p-value: is the alpha significantly different from zero?
+      5. Also computes Information Ratio (active return / tracking error) and
+         Tracking Error (annualized standard deviation of excess return).
 
-    Usa bootstrap de bloques (Politis-Romano) con tamaño de bloque auto-seleccionado
-    (selector de Patton-Politis-White si block_size='auto') para manejar la
-    autocorrelación serial de los retornos financieros.
-
-    Compute paired stationary-bootstrap significance diagnostics vs benchmarks.
+    Uses block bootstrap (Politis-Romano) with auto-selected block size
+    (Patton-Politis-White selector when block_size='auto') to handle serial
+    autocorrelation in financial returns.
     """
     cfg = resolve_settings(settings)
     if benchmark_returns is None or benchmark_returns.empty or not cfg["bootstrap_enabled"]:

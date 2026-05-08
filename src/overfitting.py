@@ -40,12 +40,12 @@ _EULER_MASCHERONI = 0.5772156649015328606
 
 
 def expected_max_sharpe(n_trials: int) -> float:
-    """Sharpe máximo esperado bajo H0 (Sharpe real = 0) si se prueban N configuraciones.
+    """Expected maximum Sharpe under H0 (true Sharpe = 0) when N configurations are tested.
 
-    Cuantas más configuraciones se prueban (N más grande), mayor es la probabilidad
-    de encontrar un Sharpe alto por azar puro (data snooping).  Esta función computa
-    el benchmark de comparación: el SR que cualquier estrategia aleatoria debería
-    superar solo por haber explorado N alternativas.
+    The more configurations tested (larger N), the higher the probability of
+    finding a high Sharpe by pure chance (data snooping). This function computes
+    the comparison benchmark: the SR any random strategy should exceed just by
+    having explored N alternatives.
     """
     if n_trials <= 1:
         return 0.0

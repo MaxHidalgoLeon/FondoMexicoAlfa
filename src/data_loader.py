@@ -16,18 +16,18 @@ def compute_adtv_liquidity_scores(
     ewma_lambda: float = 0.97,
     min_periods: int = 60,
 ) -> pd.Series:
-    """Calcula scores de liquidez normalizados basados en el ADTV real.
+    """Compute normalized liquidity scores based on real ADTV.
 
-    ADTV (Average Daily Traded Value) = promedio(precio_cierre × volumen) en los
-    últimos 'window' días hábiles.  Un ADTV alto → activo muy líquido.
+    ADTV (Average Daily Traded Value) = mean(close_price × volume) over the
+    last 'window' trading days. A high ADTV means the asset is very liquid.
 
-    Métodos de promedio:
-      'uniform' → media simple sobre la ventana.
-      'ewma'    → media ponderada exponencialmente (lambda=0.97 da más peso a días recientes).
+    Averaging methods:
+      'uniform' → simple mean over the window.
+      'ewma'    → exponentially weighted mean (lambda=0.97 gives more weight to recent days).
 
-    Los scores se normalizan min-max a [0, 1] dentro del universo equity/FIBRA.
-    Se usan como denominador en el término de impacto de mercado del optimizador:
-    η·σ_i / ADTV_i — activos ilíquidos (ADTV bajo) tienen mayor costo estimado de trade.
+    Scores are min-max normalized to [0, 1] within the equity/FIBRA universe.
+    Used as the denominator in the market-impact term of the optimizer:
+    η·σ_i / ADTV_i — illiquid assets (low ADTV) have a higher estimated trade cost.
 
     Compute liquidity scores from real ADTV (Average Daily Traded Value).
 
@@ -53,7 +53,7 @@ def compute_adtv_liquidity_scores(
 
 
 def get_investable_universe() -> pd.DataFrame:
-    """Create the nearshoring industrial universe for México (verified on Yahoo Finance 2026-04).
+    """Create the nearshoring industrial universe for Mexico (verified on Yahoo Finance 2026-04).
 
     Thematic mandate: ≥30% revenue exposure to nearshoring / industrial activity.
     Removed (consumer staples / beverages, outside thematic mandate):
@@ -80,10 +80,10 @@ def get_investable_universe() -> pd.DataFrame:
         "CETES28", "CETES91", "MBONO3Y",
     ]
     names = [
-        "Nemak", "Grupo Industrial Saltillo", "CEMEX", "Ternium México", "Grupo Carso",
-        "Aeropuertos del Sureste", "Grupo Aeroportuario del Pacífico", "Grupo Aeroportuario Centro Norte", "Pinfra", "Orbia",
+        "Nemak", "Grupo Industrial Saltillo", "CEMEX", "Ternium Mexico", "Grupo Carso",
+        "Aeropuertos del Sureste", "Grupo Aeroportuario del Pacifico", "Grupo Aeroportuario Centro Norte", "Pinfra", "Orbia",
         "Vesta",
-        "Alpek", "Grupo México", "Alfa", "Grupo Simec", "Vitro",
+        "Alpek", "Grupo Mexico", "Alfa", "Grupo Simec", "Vitro",
         "FIBRA Uno", "FIBRA Prologis", "FIBRA Macquarie", "FIBRA Terrafina", "FIBRA Monterrey",
         "Cetes 28d", "Cetes 91d", "Mbono 3yr",
     ]
@@ -187,14 +187,14 @@ def generate_mock_price_series(
     end_date: str = "2026-03-31",
     freq: str = "B",
 ) -> pd.DataFrame:
-    """Genera series de precios simuladas con movimiento geométrico browniano (GBM).
+    """Generate simulated price series using Geometric Brownian Motion (GBM).
 
-    Para cada ticker genera retornos log-normales independientes:
-      drift ~ Uniform(2%, 12%) anual
-      volatilidad ~ Uniform(18%, 35%) anual
+    For each ticker generates independent log-normal returns:
+      drift ~ Uniform(2%, 12%) annualized
+      volatility ~ Uniform(18%, 35%) annualized
 
-    Los precios son sintéticos (solo para pruebas/desarrollo) — no representan
-    ningún activo real.  La semilla fija (seed=42) garantiza reproducibilidad.
+    Prices are synthetic (for testing/development only) — they do not represent
+    any real asset. The fixed seed (seed=42) guarantees reproducibility.
     """
     dates = pd.date_range(start_date, end_date, freq=freq)
     n = len(dates)
@@ -340,17 +340,17 @@ def build_mock_bonds(dates: pd.DatetimeIndex) -> pd.DataFrame:
 
 
 def build_mock_macro_series(start_date: str = "2017-01-01", end_date: str = "2026-03-31") -> pd.DataFrame:
-    """Genera series de datos macroeconómicos simulados de frecuencia mensual.
+    """Generate simulated monthly macroeconomic data series.
 
-    Variables incluidas:
-      - IMAI: Índice Mensual de Actividad Industrial (simulado con drift positivo).
-      - industrial_production_yoy: Producción industrial año contra año (~4% promedio).
-      - exports_yoy: Crecimiento de exportaciones (~6% promedio, refleja nearshoring).
-      - usd_mxn: Tipo de cambio USD/MXN (proceso random walk desde 19.5).
-      - banxico_rate: Tasa de política monetaria Banxico (random walk acotada 4-12%).
-      - inflation_yoy: Inflación anual (rango 2-9%).
-      - us_ip_yoy: Producción industrial USA (~3% promedio).
-      - us_fed_rate: Tasa Fed Funds (5.25% hasta Q2 2024, luego baja 25bps/trimestre).
+    Variables included:
+      - IMAI: Monthly Industrial Activity Index (simulated with positive drift).
+      - industrial_production_yoy: Industrial production year-over-year (~4% mean).
+      - exports_yoy: Export growth (~6% mean, reflects nearshoring).
+      - usd_mxn: USD/MXN exchange rate (random walk from 19.5).
+      - banxico_rate: Banxico monetary policy rate (random walk bounded 4-12%).
+      - inflation_yoy: Annual inflation (range 2-9%).
+      - us_ip_yoy: US industrial production (~3% mean).
+      - us_fed_rate: Fed Funds rate (5.25% through Q2 2024, then -25bps/quarter).
     """
     dates = pd.date_range(start_date, end_date, freq="ME")
     np.random.seed(9)
@@ -411,25 +411,25 @@ def load_data(
     fundamentals_lag_days: int = 90,
     **provider_kwargs,
 ) -> Dict[str, pd.DataFrame]:
-    """Carga todos los datos necesarios para el pipeline desde la fuente especificada.
+    """Load all data required by the pipeline from the specified source.
 
-    Fuentes soportadas:
-      'mock'      → datos sintéticos generados internamente (sin API key, para desarrollo).
-      'yahoo'     → precios históricos via yfinance + fundamentales básicos.
-      'bloomberg' → datos completos via Bloomberg BDH/BDS (requiere terminal Bloomberg).
-      'refinitiv' → datos históricos via Refinitiv Eikon/LSEG (requiere API key).
+    Supported sources:
+      'mock'      → synthetic data generated internally (no API key, for development).
+      'yahoo'     → historical prices via yfinance + basic fundamentals.
+      'bloomberg' → full data via Bloomberg BDH/BDS (requires Bloomberg terminal).
+      'refinitiv' → historical data via Refinitiv Eikon/LSEG (requires API key).
 
-    El diccionario devuelto tiene siempre las mismas claves:
-      'universe'           → DataFrame con todos los tickers y sus metadatos.
-      'prices'             → DataFrame wide (fecha × ticker) de precios de cierre.
-      'fundamentals'       → Fundamentales trimestrales de acciones (P/E, P/B, ROE…).
-      'fibra_fundamentals' → Fundamentales de FIBRAs (cap rate, FFO, LTV…).
-      'bonds'              → Datos de renta fija (YTM, duración, precio).
-      'macro'              → Indicadores macroeconómicos mensuales (IP, FX, Banxico…).
+    The returned dictionary always has the same keys:
+      'universe'           → DataFrame with all tickers and their metadata.
+      'prices'             → Wide DataFrame (date × ticker) of close prices.
+      'fundamentals'       → Quarterly equity fundamentals (P/E, P/B, ROE…).
+      'fibra_fundamentals' → FIBRA fundamentals (cap rate, FFO, LTV…).
+      'bonds'              → Fixed-income data (YTM, duration, price).
+      'macro'              → Monthly macro indicators (IP, FX, Banxico…).
 
-    fundamentals_lag_days=90 garantiza que en el backtest se usen fundamentales
-    reportados al menos 90 días antes de la fecha de rebalanceo (evita look-ahead bias
-    de reportes trimestrales que se publican ~45-60 días después del cierre del trimestre).
+    fundamentals_lag_days=90 ensures the backtest uses fundamentals reported
+    at least 90 days before the rebalancing date (avoids look-ahead bias from
+    quarterly reports published ~45-60 days after the quarter close).
     """
     from .data_providers import get_provider
 
@@ -552,10 +552,10 @@ def load_data(
 
 
 # ---------------------------------------------------------------------------
-# ETF Universe — versión por clase de activo (profe)
+# ETF Universe — asset-class version
 # ---------------------------------------------------------------------------
 
-# Ticker → (nombre, sector, asset_class_pipeline, min_weight, max_weight)
+# Ticker → (name, sector, asset_class_pipeline, min_weight, max_weight)
 # Fixed-income sleeve uses government bonds — no EMLC.
 _ETF_SPECS: Dict[str, tuple] = {
     "INDUSTRIAL":    ("S&P/BMV IPC CompMX Industrial",    "Industrial",    "equity", 0.45, 0.65),

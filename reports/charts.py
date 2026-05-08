@@ -1,22 +1,22 @@
 """
-Constructor del dashboard de reportes de la estrategia Fondo México.
+Dashboard builder for the Fondo Mexico strategy report.
 
-Genera un HTML completamente autónomo (standalone) con todos los charts de Plotly
-embebidos.  El punto de entrada principal es build_dashboard_html(), que recibe el
-diccionario de resultados de run_pipeline() y genera la página completa.
+Generates a fully standalone HTML with all Plotly charts embedded.
+The main entry point is build_dashboard_html(), which receives the
+run_pipeline() results dict and generates the complete page.
 
-Secciones del reporte generado:
-  1. Desempeño: curva de valor acumulado, Sharpe/Sortino/Max Drawdown, sub-períodos.
-  2. Benchmarks: comparación vs. IPC y fondos GBM con alpha de Jensen.
-  3. Riesgo: VaR/CVaR (4 métodos), GARCH vol, stress test determinístico/distribucional.
-  4. Significancia estadística: bootstrap IC para alpha, IR, tracking error.
-  5. Señales: IC de la señal, mapa de calor de factores, distribución de vistas BL.
-  6. Universo: donuts de composición por clase de activo y sector.
-  7. Portafolio: pesos históricos, rotación, concentración.
-  8. Overlay FX y apalancamiento dinámico (Layer 2, si hedge_mode=True).
-  9. Comparación Layer 1 vs. Layer 2.
- 10. Reforma LFI: comparación de 4 escenarios regulatorios.
- 11. Hiperparámetros: historial de Optuna, importancia fANOVA, DSR y PBO.
+Report sections:
+  1. Performance: cumulative value curve, Sharpe/Sortino/Max Drawdown, sub-periods.
+  2. Benchmarks: comparison vs. IPC and GBM funds with Jensen's alpha.
+  3. Risk: VaR/CVaR (4 methods), GARCH vol, deterministic/distributional stress test.
+  4. Statistical significance: bootstrap CI for alpha, IR, tracking error.
+  5. Signals: signal IC, factor heat map, BL view distribution.
+  6. Universe: composition donuts by asset class and sector.
+  7. Portfolio: historical weights, turnover, concentration.
+  8. FX overlay and dynamic leverage (Layer 2, if hedge_mode=True).
+  9. Layer 1 vs. Layer 2 comparison.
+ 10. LFI reform: comparison of 4 regulatory scenarios.
+ 11. Hyperparameters: Optuna history, fANOVA importance, DSR and PBO.
 
 All charts use plotly with a dark theme.
 """
@@ -192,9 +192,9 @@ def _ci_range_text(metric_stats: dict | None, fmt_fn) -> str:
 def build_dashboard_html(results: dict, hedge_mode, data_source: str, reform: bool = False) -> str:
     import datetime
 
-    hedge_active = bool(hedge_mode)  # True si es True, "analytical", o "regulated"
+    hedge_active = bool(hedge_mode)  # True if True, "analytical", or "regulated"
     hedge_is_analytical = (hedge_mode == "analytical" or hedge_mode is True)
-    # True = tratar como analytical (default seguro)
+    # True = treat as analytical (safe default)
 
     settings   = resolve_settings(results.get("settings"))
     summary    = results["summary"]
@@ -295,7 +295,7 @@ def build_dashboard_html(results: dict, hedge_mode, data_source: str, reform: bo
   Period: <strong>{start_date}</strong> to <strong>{end_date}</strong> &nbsp;|&nbsp;
   Generated: <strong>{timestamp}</strong> &nbsp;|&nbsp;
   Hedge overlay: <strong>{"Yes" if hedge_active else "No"}</strong> &nbsp;|&nbsp;
-  Reforma LFI: <strong>{"Yes" if reform_layer else "No"}</strong>
+  LFI Reform: <strong>{"Yes" if reform_layer else "No"}</strong>
 </p>
 {body}
 <script>
@@ -478,12 +478,12 @@ def _section_performance(returns, hedge_returns, metrics, hedge_metrics, hedge_m
 
     cum_grid = f"<div class=\"card\">{chart_cum}</div>"
     if fan_chart:
-        cum_grid += f"\n<div class=\"card\">{fan_chart}<p style='color:#8892b0; font-size:0.82rem; margin-top:10px;'>El fan chart muestra un envelope de trayectorias consistentes con la dependencia temporal observada via stationary bootstrap.</p></div>"
+        cum_grid += f"\n<div class=\"card\">{fan_chart}<p style='color:#8892b0; font-size:0.82rem; margin-top:10px;'>The fan chart shows an envelope of trajectories consistent with the temporal dependence observed via stationary bootstrap.</p></div>"
     
     if hedge_is_analytical:
         cum_grid += """
    <p style="font-size:11px;color:#9ca3af;margin-top:4px;">
-   * Hedge Layer 2 mostrado como referencia analítica \u2014 no incluido en NAV regulatorio.
+   * Hedge Layer 2 shown as analytical reference \u2014 not included in regulatory NAV.
    </p>"""
     sharpe_grid = (
         f"<div class=\"grid2\"><div class=\"card\">{chart_sharpe_trad}</div><div class=\"card\">{chart_sharpe_hedge}</div></div>"
@@ -541,7 +541,7 @@ def _section_benchmarks(returns, hedge_returns, benchmarks, alpha_significance=N
 
     note = ""
     if not has_bench_data:
-        note = "<p style='color:#8892b0; margin-top:8px;'>Sin benchmarks externos cargados. Cuando me pases los tickers GBM, se agregan aquí junto con IPC.</p>"
+        note = "<p style='color:#8892b0; margin-top:8px;'>No external benchmarks loaded. When GBM tickers are provided, they will appear here alongside IPC.</p>"
 
     alpha_table = ""
     if alpha_significance:
@@ -562,10 +562,10 @@ def _section_benchmarks(returns, hedge_returns, benchmarks, alpha_significance=N
                 f"<td class='mono'>{_pct(te.get('point'))} [{_pct(te.get('ci_low'))}, {_pct(te.get('ci_high'))}]</td></tr>"
             )
         alpha_table = (
-            "<div class='card'><h3>Alpha de Jensen vs Benchmarks</h3>"
-            "<table><tr><th>Benchmark</th><th>Beta (β)</th><th>Alpha Jensen (95% CI)</th><th>Information Ratio (95% CI)</th><th>Tracking Error (95% CI)</th></tr>"
+            "<div class='card'><h3>Jensen's Alpha vs Benchmarks</h3>"
+            "<table><tr><th>Benchmark</th><th>Beta (β)</th><th>Jensen's Alpha (95% CI)</th><th>Information Ratio (95% CI)</th><th>Tracking Error (95% CI)</th></tr>"
             + "".join(rows)
-            + "</table><p style='color:#8892b0; font-size:0.82rem; margin-top:10px;'>Alpha = R<sub>p</sub> − [R<sub>f</sub> + β·(R<sub>m</sub> − R<sub>f</sub>)]. * indica significancia al 5% bajo paired stationary bootstrap.</p></div>"
+            + "</table><p style='color:#8892b0; font-size:0.82rem; margin-top:10px;'>Alpha = R<sub>p</sub> − [R<sub>f</sub> + β·(R<sub>m</sub> − R<sub>f</sub>)]. * indicates significance at 5% under paired stationary bootstrap.</p></div>"
         )
 
     source_note = ""
@@ -573,9 +573,9 @@ def _section_benchmarks(returns, hedge_returns, benchmarks, alpha_significance=N
         source_note = (
             "<div class='card' style='border-color:#f39c12;'>"
             "<p style='color:#f39c12; font-size:0.88rem;'>"
-            "<strong>Señales en modo Yahoo:</strong> Los datos fundamentales históricos no están disponibles vía Yahoo Finance "
-            "(solo snapshot actual). El backtest utiliza únicamente señales de precio: momentum y liquidez. "
-            "Para señales fundamentales PIT (pe_ratio, pb_ratio, roe, etc.) se requiere Refinitiv/LSEG.</p></div>"
+            "<strong>Yahoo mode signals:</strong> Historical fundamental data is not available via Yahoo Finance "
+            "(current snapshot only). The backtest uses only price signals: momentum and liquidity. "
+            "For point-in-time fundamental signals (pe_ratio, pb_ratio, roe, etc.) Refinitiv/LSEG is required.</p></div>"
         )
 
     return f"""
@@ -786,7 +786,7 @@ def _section_risk(returns, summary, hedge_returns=None, hedge_metrics=None, sett
   <div class="card">{hedge_vol}</div>
 </div>
 <div class="grid2">
-  <div class="card"><h3>Advanced Risk Metrics — Tradicional</h3>{trad_table}</div>
+  <div class="card"><h3>Advanced Risk Metrics — Traditional</h3>{trad_table}</div>
   <div class="card"><h3>Risk Metrics — Hedge</h3>{hedge_table}</div>
 </div>"""
     else:
@@ -910,7 +910,7 @@ def _section_risk(returns, summary, hedge_returns=None, hedge_metrics=None, sett
   <div class="card"><h3>Method Comparison</h3>{comparison_table}</div>
 </div>"""
 
-    units_note = "<p style='color:#8892b0; font-size:0.82rem; margin-top:10px;'>Nota: VaR y CVaR se muestran como retorno diario esperado en porcentaje (no anualizado).</p>"
+    units_note = "<p style='color:#8892b0; font-size:0.82rem; margin-top:10px;'>Note: VaR and CVaR are shown as expected daily return in percentage (not annualized).</p>"
     return f"""
 <h2>3. Risk Analysis</h2>
 {hedge_block}
@@ -957,8 +957,8 @@ def _section_statistical_significance(summary, benchmark_alpha, signal_diagnosti
                 f"<tr><td>{bench}</td><td class='mono'>{beta_str}</td><td class='mono'>{_pct(alpha.get('point'))}</td><td class='mono'>[{_pct(alpha.get('ci_low'))}, {_pct(alpha.get('ci_high'))}]</td><td class='mono'>{alpha.get('p_value', np.nan):.3f}</td><td class='mono'>{_num(ir.get('point'))}</td><td class='mono'>{ir.get('p_value', np.nan):.3f}</td></tr>"
             )
         alpha_table = (
-            "<div class='card'><h3>Alpha de Jensen vs Benchmarks</h3>"
-            "<table><tr><th>Benchmark</th><th>Beta (β)</th><th>Alpha Jensen</th><th>Alpha 95% CI</th><th>Alpha p-value</th><th>IR</th><th>IR p-value</th></tr>"
+            "<div class='card'><h3>Jensen's Alpha vs Benchmarks</h3>"
+            "<table><tr><th>Benchmark</th><th>Beta (β)</th><th>Jensen's Alpha</th><th>Alpha 95% CI</th><th>Alpha p-value</th><th>IR</th><th>IR p-value</th></tr>"
             + "".join(rows)
             + "<tr><td colspan='7' style='color:#8892b0; font-size:0.82rem; padding-top:10px;'>Alpha = R<sub>p</sub> − [R<sub>f</sub> + β·(R<sub>m</sub> − R<sub>f</sub>)]</td></tr>"
             + "</table></div>"
@@ -1090,8 +1090,8 @@ def _section_signals(feature_df, forecast_df=None, signal_diagnostics=None, bl_v
             )
         bl_views_table = (
             "<div class='card'><h3>Active Black–Litterman Views</h3>"
-            "<p style='color:#666;font-size:0.9em'>Vistas activas alimentando el posterior BL. "
-            "ElasticNet aporta vistas per-ticker; macro aporta tilt sectorial con baja confianza.</p>"
+            "<p style='color:#666;font-size:0.9em'>Active views feeding the BL posterior. "
+            "ElasticNet contributes per-ticker views; macro contributes a sector tilt with low confidence.</p>"
             "<table><tr><th>Source</th><th>Target</th><th>View</th><th>Confidence</th></tr>"
             + "".join(rows) + "</table></div>"
         )
@@ -1344,13 +1344,13 @@ def _section_lfi_reform_comparison(reform_layer: dict, trad_returns: pd.Series, 
 
     # ── Metrics table ─────────────────────────────────────────────────────────
     metric_keys = [
-        ("Retorno anual", "annualized_return", True, _pct),
-        ("Volatilidad anual", "annualized_vol", False, _pct),
+        ("Annualized Return", "annualized_return", True, _pct),
+        ("Annualized Vol", "annualized_vol", False, _pct),
         ("Sharpe", "sharpe", True, lambda v: _num(v, 2)),
         ("Sortino", "sortino", True, lambda v: _num(v, 2)),
         ("Max Drawdown", "max_drawdown", False, _pct),
-        ("CVaR 95% (diario)", "cvar_95", False, _pct),
-        ("Turnover promedio", "turnover", False, _pct),
+        ("CVaR 95% (daily)", "cvar_95", False, _pct),
+        ("Avg Turnover", "turnover", False, _pct),
     ]
     scenario_order = ["regulated", "130_30", "market_neutral", "130_30_sector_neutral"]
     present = [k for k in scenario_order if k in reform_layer]
@@ -1359,7 +1359,7 @@ def _section_lfi_reform_comparison(reform_layer: dict, trad_returns: pd.Series, 
         f"<th style='color:{scenario_colors.get(k, C_PURPLE)}'>{reform_layer[k].get('scenario_label', k)}</th>"
         for k in present
     )
-    header = f"<tr><th>Métrica</th>{header_cells}</tr>"
+    header = f"<tr><th>Metric</th>{header_cells}</tr>"
 
     rows_html = ""
     for label, mkey, higher_is_better, fmt in metric_keys:
@@ -1428,7 +1428,7 @@ def _section_lfi_reform_comparison(reform_layer: dict, trad_returns: pd.Series, 
     return f"""
 <h2>{section_num}. LFI Reform Scenarios</h2>
 <div class=\"card\">{chart_html}</div>
-<div class=\"card\"><h3>Comparativo de métricas</h3>{table_html}</div>
+<div class=\"card\"><h3>Metrics comparison</h3>{table_html}</div>
 {allocation_blocks}"""
 
 
@@ -1505,7 +1505,7 @@ def _build_portfolio_block(block_weights, block_turnover, title, universe=None, 
 
 
 def _section_etf_anchor(summary: dict, weights, universe) -> str:
-    """Puente ETF → Normal: donut ETF + grouped bar ETF vs Inicio vs Fin + band table."""
+    """ETF → Normal bridge: ETF donut + grouped bar ETF vs Start vs End + band table."""
     import pandas as pd
 
     payload = summary.get("etf_anchor_payload") or {}
@@ -1517,9 +1517,9 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
     as_of   = payload.get("as_of",   "n/a")
     source  = payload.get("source",  "n/a")
 
-    # Remapeo de labels del ETF → labels reales de la cartera.
-    # El universo del ETF clasifica con una taxonomía distinta a la cartera
-    # normal; estos pares igualan los nombres antes de comparar.
+    # Remap ETF labels → actual portfolio labels.
+    # The ETF universe uses a different taxonomy than the normal portfolio;
+    # these pairs align sector names before comparison.
     ETF_LABEL_REMAP = {
         "Communication": "Logistics",
         "Materials":     "Energy",
@@ -1530,7 +1530,7 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
         new_k = ETF_LABEL_REMAP.get(k, k)
         raw_etf[new_k] = raw_etf.get(new_k, 0.0) + float(v)
 
-    # Sectores canónicos del puente (consistente con pipeline.py)
+    # Canonical bridge sectors (consistent with pipeline.py)
     INDUSTRIAL_SECTORS = {
         "Industrial", "Logistics", "Infrastructure", "Energy",
         "Materials", "Consumer", "Communication",
@@ -1558,12 +1558,12 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
             out[sector] = out.get(sector, 0.0) + float(w)
         return out
 
-    # Pesos sectoriales del portafolio: primer y último rebalanceo real
+    # Portfolio sector weights: first and last actual rebalance
     ini_b: dict[str, float] = {b: 0.0 for b in BUCKETS}
     fin_b: dict[str, float] = {b: 0.0 for b in BUCKETS}
     ini_s: dict[str, float] = {}
     fin_s: dict[str, float] = {}
-    t_ini_label, t_fin_label = "inicio", "fin"
+    t_ini_label, t_fin_label = "start", "end"
 
     if weights is not None and not weights.empty and universe is not None and "sector" in universe.columns:
         nz = weights.loc[weights.abs().sum(axis=1) > 1e-9]
@@ -1576,7 +1576,7 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
             t_ini_label = str(pd.Timestamp(nz.index[0]).date())
             t_fin_label = str(pd.Timestamp(nz.index[-1]).date())
 
-    # Pesos ETF por bucket (mismo mapeo que el portafolio)
+    # ETF weights by bucket (same mapping as the portfolio)
     etf_b: dict[str, float] = {b: 0.0 for b in BUCKETS}
     for k, v in raw_etf.items():
         if k in INDUSTRIAL_SECTORS:
@@ -1586,17 +1586,17 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
         elif k == "Government":
             etf_b["Government"] += float(v)
 
-    # Pesos ETF por sector individual (sin agregar)
+    # ETF weights by individual sector (not aggregated)
     etf_s: dict[str, float] = {k: float(v) for k, v in raw_etf.items() if float(v) > 1e-9}
 
-    # Banda informativa por sector (derivada del bucket Industrial; default 0.15)
+    # Informational band per sector (derived from Industrial bucket; default 0.15)
     bucket_bands = []
     for _b, _bands in targets.items():
         _lo = float(_bands.get("min", 0.0)); _hi = float(_bands.get("max", 1.0))
         bucket_bands.append((_hi - _lo) / 2.0)
     band = max(bucket_bands) if bucket_bands else 0.15
 
-    # ── Donut: composición sectorial del ETF (detallado, antes de agregar) ────
+    # ── Donut: ETF sector composition (detailed, before aggregation) ────
     chart_etf = ""
     if raw_etf:
         etf_labels = [k for k, v in raw_etf.items() if float(v) > 1e-6]
@@ -1608,24 +1608,24 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
         ))
         fig_etf.update_layout(
             **LAYOUT,
-            title=f"Pesos ETF por sector — {source} ({as_of})",
+            title=f"ETF weights by sector — {source} ({as_of})",
             height=340,
         )
         chart_etf = _fig_to_div(fig_etf)
 
-    # ── Grouped bar: ETF vs Inicio vs Fin por sector individual ──────────────
-    # Unión de sectores presentes en ETF y portafolio, ordenados por peso ETF desc
+    # ── Grouped bar: ETF vs Start vs End by individual sector ──────────────
+    # Union of sectors present in ETF and portfolio, sorted by ETF weight desc
     sectors_axis = sorted(
         set(etf_s) | set(ini_s) | set(fin_s),
         key=lambda s: (-etf_s.get(s, 0.0), s),
     )
 
-    # Banda informativa por sector individual: target ± band, clipping en [0,1]
+    # Informational band per individual sector: target ± band, clipped to [0,1]
     sector_band_lo = {s: max(0.0, etf_s.get(s, 0.0) - band) for s in sectors_axis}
     sector_band_hi = {s: min(1.0, etf_s.get(s, 0.0) + band) for s in sectors_axis}
 
     fig_aa = go.Figure()
-    # Banda informativa como sombra (rectángulos por sector)
+    # Informational band as shadow (rectangles per sector)
     for i, s in enumerate(sectors_axis):
         fig_aa.add_shape(
             type="rect",
@@ -1641,12 +1641,12 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
         marker_color=C_AMBER, opacity=0.85,
     ))
     fig_aa.add_trace(go.Bar(
-        name=f"Portafolio inicio ({t_ini_label})",
+        name=f"Portfolio start ({t_ini_label})",
         x=sectors_axis, y=[ini_s.get(s, 0.0) * 100 for s in sectors_axis],
         marker_color=C_BLUE, opacity=0.85,
     ))
     fig_aa.add_trace(go.Bar(
-        name=f"Portafolio fin ({t_fin_label})",
+        name=f"Portfolio end ({t_fin_label})",
         x=sectors_axis, y=[fin_s.get(s, 0.0) * 100 for s in sectors_axis],
         marker_color=C_GREEN, opacity=0.90,
     ))
@@ -1654,16 +1654,16 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
         **LAYOUT,
         barmode="group",
         title=(
-            "Impacto del puente ETF — Asset Allocation por sector "
-            f"(banda informativa ±{band*100:.0f}%)"
+            "ETF bridge impact — Asset Allocation by sector "
+            f"(informational band ±{band*100:.0f}%)"
         ),
         xaxis_title="Sector",
-        yaxis_title="Peso (%)",
+        yaxis_title="Weight (%)",
         height=400,
     )
     chart_aa = _fig_to_div(fig_aa)
 
-    # ── Tabla: delta inicio→fin y distancia al ancla ETF ─────────────────────
+    # ── Table: delta start→end and distance to ETF anchor ────────────────────
     impact_rows = []
     for b in BUCKETS:
         delta_port = fin_b[b] - ini_b[b]
@@ -1680,13 +1680,13 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
         )
     impact_table = (
         "<div class=’card’>"
-        "<h3>Asset Allocation: ETF vs Portafolio (inicio → fin)</h3>"
+        "<h3>Asset Allocation: ETF vs Portfolio (start → end)</h3>"
         "<table>"
         "<tr><th>Bucket</th>"
         f"<th>ETF ({as_of})</th>"
-        f"<th>Inicio ({t_ini_label})</th>"
-        f"<th>Fin ({t_fin_label})</th>"
-        "<th>Δ Fin−Inicio</th><th>Δ Fin−ETF</th></tr>"
+        f"<th>Start ({t_ini_label})</th>"
+        f"<th>End ({t_fin_label})</th>"
+        "<th>Δ End−Start</th><th>Δ End−ETF</th></tr>"
         + "".join(impact_rows)
         + "</table></div>"
     )
@@ -1702,9 +1702,9 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
         lo = max(0.0, target - band)
         hi = min(1.0, target + band)
         actual = fin_s.get(s, 0.0)
-        if   actual <= lo + 1e-3: flag = "🔻 cota inferior"
-        elif actual >= hi - 1e-3: flag = "🔺 cota superior"
-        else:                     flag = "✓ dentro de banda"
+        if   actual <= lo + 1e-3: flag = "🔻 lower bound"
+        elif actual >= hi - 1e-3: flag = "🔺 upper bound"
+        else:                     flag = "✓ within band"
         sector_rows.append(
             f"<tr><td>{s}</td>"
             f"<td class=’mono’>{target*100:.1f}%</td>"
@@ -1713,14 +1713,14 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
             f"<td>{flag}</td></tr>"
         )
     sector_table = (
-        "<div class=’card’><h3>Detalle por sector individual (informativo)</h3>"
+        "<div class=’card’><h3>Individual sector detail (informational)</h3>"
         "<p style=’color:#666;font-size:0.9em’>"
-        f"Banda informativa = target ETF ± {band*100:.0f}%. "
-        "Estos sectores no son constraint directo del optimizador — "
-        "se agregan al bucket correspondiente para el anclaje real."
+        f"Informational band = ETF target ± {band*100:.0f}%. "
+        "These sectors are not a direct optimizer constraint — "
+        "they are aggregated into the corresponding bucket for the actual anchor."
         "</p>"
-        "<table><tr><th>Sector</th><th>Target ETF</th><th>Banda</th>"
-        "<th>Realizado (fin)</th><th>Estado</th></tr>"
+        "<table><tr><th>Sector</th><th>ETF Target</th><th>Band</th>"
+        "<th>Realized (end)</th><th>Status</th></tr>"
         + "".join(sector_rows) + "</table></div>"
     )
 
@@ -1730,9 +1730,9 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
         lo, hi  = float(bands.get("min", 0.0)), float(bands.get("max", 1.0))
         mid     = (lo + hi) / 2
         actual  = fin_b.get(sector, 0.0)
-        if   actual <= lo + 1e-3: flag = "🔻 cota inferior activa"
-        elif actual >= hi - 1e-3: flag = "🔺 cota superior activa"
-        else:                     flag = "libre"
+        if   actual <= lo + 1e-3: flag = "🔻 lower bound active"
+        elif actual >= hi - 1e-3: flag = "🔺 upper bound active"
+        else:                     flag = "free"
         band_rows.append(
             f"<tr><td>{sector}</td>"
             f"<td class=’mono’>{mid*100:.1f}%</td>"
@@ -1741,18 +1741,18 @@ def _section_etf_anchor(summary: dict, weights, universe) -> str:
             f"<td>{flag}</td></tr>"
         )
     band_table = (
-        "<div class=’card’><h3>Band binding por bucket (constraint real)</h3>"
+        "<div class=’card’><h3>Band binding by bucket (actual constraint)</h3>"
         "<p style=’color:#666;font-size:0.9em’>"
-        "Buckets que el optimizador efectivamente constriñe. "
-        "’libre’ = el optimizador no se topó con la banda; "
-        "el ancla ETF no degradó el óptimo libre.</p>"
-        "<table><tr><th>Bucket</th><th>Target</th><th>Banda</th>"
-        "<th>Realizado</th><th>Estado</th></tr>"
+        "Buckets that the optimizer effectively constrains. "
+        "’free’ = the optimizer did not hit the band; "
+        "the ETF anchor did not degrade the unconstrained optimum.</p>"
+        "<table><tr><th>Bucket</th><th>Target</th><th>Band</th>"
+        "<th>Realized</th><th>Status</th></tr>"
         + "".join(band_rows) + "</table></div>"
     )
 
     return f"""
-<h2>Puente ETF → Normal (anclaje sectorial blando)</h2>
+<h2>ETF → Normal Bridge (soft sector anchor)</h2>
 <div class="grid2">
   <div class="card">{chart_etf}</div>
   <div class="card">{chart_aa}</div>
@@ -2029,8 +2029,8 @@ def _section_layer_comparison(metrics, hedge_metrics, tail_hedge, hedge_is_analy
         banner = """<div class="alert-banner" style="background:#2a1a00;border-left:4px solid #f59e0b;
        padding:10px 16px;margin-bottom:12px;font-size:13px;color:#fcd34d;">
        ⚠️ <strong>Analytical Overlay — Not Part of Regulated NAV.</strong>
-       Las métricas del hedge Layer 2 son un ejercicio paralelo y no forman
-       parte del NAV regulatorio reportable ante la CNBV.
+       Hedge Layer 2 metrics are a parallel exercise and do not form
+       part of the regulatory NAV reportable to the CNBV.
      </div>"""
 
     return f"""
@@ -2109,8 +2109,8 @@ def _section_optimizer_comparison(backtest: dict, summary: dict, hedge_mode: boo
 <div class="card">
     <h3>Hedge</h3>
     <p style=\"color:#8892b0; font-size:0.9rem;\">
-        La comparacion MV vs min-CVaR no aplica al Hedge en esta version del pipeline,
-        porque el overlay hedge usa un motor especifico de cobertura (sin variante MV/CVaR paralela).
+        The MV vs min-CVaR comparison does not apply to the Hedge in this version of the pipeline,
+        because the hedge overlay uses a specific hedging engine (no parallel MV/CVaR variant).
     </p>
 </div>"""
 
@@ -2375,11 +2375,11 @@ def _section_hyperopt_dashboard(data_source: str, strategy_returns: pd.Series | 
     elapsed_min = f"{elapsed / 60:.1f} min" if elapsed else "N/A"
     tables_html = (
         f'<div class="grid2">'
-        f'<div class="card"><h3>Mejores parámetros — {objective_metric} = {_num(best_value, 4)}'
+        f'<div class="card"><h3>Best parameters — {objective_metric} = {_num(best_value, 4)}'
         f'<span style="font-size:0.8rem; color:#8892b0; font-weight:normal;"> '
         f'({n_trials} trials · {elapsed_min})</span></h3>'
         f'<table><tbody>{param_rows}</tbody></table></div>'
-        f'<div class="card"><h3>Métricas de validación (walk-forward OOS)</h3>'
+        f'<div class="card"><h3>Validation metrics (walk-forward OOS)</h3>'
         f'<table><tbody>{metric_rows}</tbody></table></div>'
         f'</div>'
     )
@@ -2507,13 +2507,13 @@ def _section_overfitting_diagnostics(
         for m, v, i in rows
     )
     return (
-        f'<div class="card"><h3>Diagnóstico de overfitting (Bailey & López de Prado)</h3>'
-        f'<table><thead><tr><th>Métrica</th><th>Valor</th><th>Interpretación</th></tr></thead>'
+        f'<div class="card"><h3>Overfitting diagnostics (Bailey & López de Prado)</h3>'
+        f'<table><thead><tr><th>Metric</th><th>Value</th><th>Interpretation</th></tr></thead>'
         f'<tbody>{body}</tbody></table>'
         f'<p style="color:#8892b0; font-size:0.85rem; margin-top:0.5rem;">'
-        f'DSR ajusta el Sharpe por skew/kurtosis y el número de configuraciones probadas; '
-        f'p &gt; 0.95 indica que el Sharpe es estadísticamente superior al máximo esperado '
-        f'bajo H0 de cero skill. PBO &lt; 0.20 indica baja probabilidad de overfitting (López de Prado 2016).'
+        f'DSR adjusts the Sharpe for skew/kurtosis and the number of configurations tested; '
+        f'p &gt; 0.95 indicates that the Sharpe is statistically superior to the maximum expected '
+        f'under H0 of zero skill. PBO &lt; 0.20 indicates low probability of overfitting (López de Prado 2016).'
         f'</p></div>'
     )
 

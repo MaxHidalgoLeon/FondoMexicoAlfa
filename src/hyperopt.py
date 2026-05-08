@@ -1,19 +1,19 @@
 """
-Optimización de hiperparámetros del pipeline FMIA via búsqueda Bayesiana (Optuna).
+Hyperparameter optimization for the FMIA pipeline via Bayesian search (Optuna).
 
 Optimizes a configurable subset of pipeline hyperparameters using
 walk-forward cross-validation with a purging gap to prevent data leakage.
 
-Usa el sampler TPE (Tree-structured Parzen Estimator) de Optuna que construye
-un modelo probabilístico del espacio de búsqueda para proponer mejores candidatos
-en cada iteración — más eficiente que la búsqueda aleatoria o en grilla.
+Uses Optuna's TPE (Tree-structured Parzen Estimator) sampler, which builds
+a probabilistic model of the search space to propose better candidates
+each iteration — more efficient than random search or grid search.
 
-Después de optimizar, corre fANOVA (functional ANOVA) para estimar la importancia
-de cada hiperparámetro sobre el objetivo — útil para entender cuáles parámetros
-importan más y cuáles son irrelevantes para el desempeño.
+After optimizing, runs fANOVA (functional ANOVA) to estimate each
+hyperparameter's importance on the objective — useful for understanding which
+parameters matter most and which are irrelevant to performance.
 
-La validación es walk-forward con n_folds pliegues y un gap de purga (purge_gap_days)
-entre entrenamiento y prueba para eliminar el look-ahead bias en la selección.
+Validation is walk-forward with n_folds folds and a purge gap (purge_gap_days)
+between training and test to eliminate look-ahead bias in selection.
 
 Regulatory parameters (CNBV 10% position / issuer limits, FX overlay cap,
 liquidity sleeve per regime) are intentionally excluded from the search

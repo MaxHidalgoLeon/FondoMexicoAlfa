@@ -50,14 +50,14 @@ def _end_of_month_dates(dates: pd.DatetimeIndex) -> np.ndarray:
 
 
 def score_cross_section(feature_df: pd.DataFrame) -> pd.DataFrame:
-    """Calcula scores de corte transversal (cross-sectional) y el score compuesto.
+    """Compute cross-sectional scores and the composite score.
 
-    Para cada fecha, transforma los factores (momentum, value, quality, liquidity)
-    a rangos percentilares (rank/pct) dentro del universo — esto hace que cada señal
-    sea comparable entre activos sin importar las diferencias de escala.
+    For each date, transforms factors (momentum, value, quality, liquidity)
+    into percentile ranks (rank/pct) within the universe — this makes each
+    signal comparable across assets regardless of scale differences.
 
-    Score compuesto = promedio simple de los rangos de los factores disponibles.
-    Un score cercano a 1 = mejor del universo; cercano a 0 = peor.
+    Composite score = simple average of the available factor ranks.
+    A score close to 1 = best in universe; close to 0 = worst.
     """
     scores = feature_df.copy()
     # features.py produces momentum_63 and momentum_126; use momentum_63 as the base momentum signal
@@ -82,20 +82,20 @@ def forecast_returns(
     returns: pd.DataFrame,
     settings: dict | None = None,
 ) -> pd.DataFrame:
-    """Pronostica retornos futuros usando ElasticNetCV con ventana expansiva.
+    """Forecast returns using ElasticNetCV with an expanding window.
 
-    Para cada clase de activo (equity, fibra) y cada fecha de rebalanceo:
-      1. Construye el conjunto de entrenamiento: todos los (fecha, ticker) históricos
-         con retorno realizado disponible (forward return sin look-ahead bias).
-      2. Normaliza las features con StandardScaler (media 0, desv estándar 1).
-      3. Ajusta ElasticNet con CV para seleccionar automáticamente λ y α (L1/L2).
-      4. Predice el retorno esperado para todos los tickers en esa fecha.
+    For each asset class (equity, fibra) and each rebalancing date:
+      1. Builds the training set: all historical (date, ticker) pairs with
+         realized return available (forward return without look-ahead bias).
+      2. Normalizes features with StandardScaler (mean 0, std 1).
+      3. Fits ElasticNet with CV to automatically select λ and α (L1/L2).
+      4. Predicts expected return for all tickers on that date.
 
-    El retorno objetivo es el retorno logarítmico a forecast_forward_days días
-    adelante, calculado con _compute_forward_returns() sin look-ahead.
+    The target return is the log return forecast_forward_days ahead,
+    computed with _compute_forward_returns() without look-ahead.
 
-    Al final, estandariza las predicciones cross-sectionalmente (z-score por fecha)
-    para que sean comparables entre activos y fechas.
+    Finally, standardizes predictions cross-sectionally (z-score per date)
+    so they are comparable across assets and dates.
 
     Forecast returns using an expanding-window Elastic Net per asset class.
 

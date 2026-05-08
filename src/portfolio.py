@@ -13,18 +13,18 @@ _EPS_SMOOTH = 1e-8
 
 
 def _smooth_abs(x: np.ndarray) -> np.ndarray:
-    """Aproximación diferenciable de |x|: sqrt(x² + ε).
+    """Differentiable approximation of |x|: sqrt(x² + ε).
 
-    Se usa en lugar de np.abs() para que SLSQP pueda calcular gradientes analíticos
-    sin discontinuidades en x=0, lo que mejora la convergencia del optimizador.
+    Used instead of np.abs() so that SLSQP can compute analytic gradients
+    without discontinuities at x=0, improving optimizer convergence.
     """
     return np.sqrt(x * x + _EPS_SMOOTH)
 
 
 def _smooth_sign(x: np.ndarray) -> np.ndarray:
-    """Aproximación suave de sign(x): x / sqrt(x² + ε).
+    """Smooth approximation of sign(x): x / sqrt(x² + ε).
 
-    Derivada de _smooth_abs; se usa en el gradiente analítico del objetivo.
+    Derivative of _smooth_abs; used in the analytic gradient of the objective.
     """
     return x / np.sqrt(x * x + _EPS_SMOOTH)
 
@@ -310,14 +310,14 @@ def _portfolio_objective(
     prev_weights: np.ndarray,
     market_impact: np.ndarray | None = None,
 ) -> float:
-    """Función objetivo a minimizar por SLSQP (media-varianza con penalidades).
+    """Objective function minimized by SLSQP (mean-variance with penalties).
 
-    Objetivo = -w'μ  +  λ·w'Σw  +  κ·escala_er·Σ|Δw_i|  +  Σ(η_i·|Δw_i|)
+    Objective = -w'μ  +  λ·w'Σw  +  κ·er_scale·Σ|Δw_i|  +  Σ(η_i·|Δw_i|)
 
-    - Primer término: maximizar retorno esperado (negativo porque minimizamos).
-    - Segundo término: penalizar varianza con aversión al riesgo λ.
-    - Tercer término: penalizar rotación (turnover) escalada por magnitud de retornos.
-    - Cuarto término: costo de impacto de mercado Almgren-Chriss (η·σ_i/ADTV_i).
+    - First term: maximize expected return (negative because we minimize).
+    - Second term: penalize variance with risk aversion λ.
+    - Third term: penalize turnover scaled by expected return magnitude.
+    - Fourth term: Almgren-Chriss market-impact cost (η·σ_i/ADTV_i).
     """
     expected_cost = -weights.dot(expected_returns)
     variance = risk_aversion * weights.dot(cov_matrix).dot(weights)
@@ -351,8 +351,8 @@ def optimize_portfolio(
 ) -> pd.Series:
     """Mean-variance optimizer (SLSQP).
 
-    Disposiciones de Carácter General aplicables a los fondos de inversión
-    — CNBV — límite del 10 % por emisor sobre NAV.
+    General Provisions applicable to investment funds
+    — CNBV — 10% issuer concentration limit on NAV.
 
     Constraints enforced:
     - Individual position: w_i ∈ [min_position, min(max_position, override_i)]
@@ -499,8 +499,8 @@ def optimize_portfolio_cvar(
 ) -> pd.Series:
     """Mean-CVaR portfolio optimization.
 
-    Disposiciones de Carácter General aplicables a los fondos de inversión
-    — CNBV — límite del 10 % por emisor sobre NAV.
+    General Provisions applicable to investment funds
+    — CNBV — 10% issuer concentration limit on NAV.
 
     Objective: minimize  -w'μ  +  λ·|CVaR(α)|  +  κ·turnover  +  market_impact
     Uses historical scenario_returns (T × N) for CVaR estimation.
@@ -648,8 +648,8 @@ def optimize_portfolio_robust(
 ) -> pd.Series:
     """Michaud Resampled Efficiency optimizer.
 
-    Disposiciones de Carácter General aplicables a los fondos de inversión
-    — CNBV — límite del 10 % por emisor sobre NAV.
+    General Provisions applicable to investment funds
+    — CNBV — 10% issuer concentration limit on NAV.
 
     Runs the MV optimizer ``n_simulations`` times, each time with μ perturbed
     by a draw from its estimation-error distribution:
@@ -733,19 +733,19 @@ def black_litterman(
     risk_aversion: float = 2.5,
     tau: float = 0.05,
 ) -> pd.Series:
-    """Calcula los retornos esperados posteriores de Black-Litterman.
+    """Compute Black-Litterman posterior expected returns.
 
-    Fórmula (He & Litterman, 1999):
-      π   = δ · Σ · w_mkt         (retornos de equilibrio CAPM implícitos)
-      Ω   = diag(1/conf · τ)      (incertidumbre de las vistas — mayor conf → menor Ω)
-      M   = P · τΣ · P' + Ω       (varianza total de la vista)
-      π_BL = π + τΣP' · M⁻¹ · (Q - Pπ)   (posterior = prior + ajuste ponderado)
+    Formula (He & Litterman, 1999):
+      π   = δ · Σ · w_mkt         (implicit CAPM equilibrium returns)
+      Ω   = diag(1/conf · τ)      (view uncertainty — higher conf → smaller Ω)
+      M   = P · τΣ · P' + Ω       (total view variance)
+      π_BL = π + τΣP' · M⁻¹ · (Q - Pπ)   (posterior = prior + weighted adjustment)
 
-    P: matriz de selección (1 en la posición del ticker de la vista).
-    Q: vector de retornos esperados por las vistas (del modelo ElasticNet o macro).
-    τ (tau): escalar de incertidumbre del prior; típicamente 0.01–0.10.
+    P: selection matrix (1 at the position of the view ticker).
+    Q: expected return vector from views (from ElasticNet or macro model).
+    τ (tau): prior uncertainty scalar; typically 0.01–0.10.
     """
-    pi = risk_aversion * cov_matrix.dot(market_weights)  # retornos de equilibrio CAPM
+    pi = risk_aversion * cov_matrix.dot(market_weights)  # CAPM equilibrium returns
     P = np.zeros((len(views), len(market_weights)))
     Q = np.zeros(len(views))
     omega = np.zeros((len(views), len(views)))
@@ -783,14 +783,14 @@ def apply_fx_overlay(
     expected_usdmxn_return: float,
     hedge_ratio: float = 0.5,
 ) -> pd.Series:
-    """Ajusta los retornos esperados por el riesgo cambiario USD/MXN.
+    """Adjust expected returns for USD/MXN currency risk.
 
-    Para cada activo con exposición en dólares (usd_exposure ∈ [0,1]):
-      ajuste_FX = usd_exposure · (1 - hedge_ratio) · retorno_esperado_USDMXN
+    For each asset with USD exposure (usd_exposure ∈ [0,1]):
+      FX_adjustment = usd_exposure · (1 - hedge_ratio) · expected_USDMXN_return
 
-    Si el MXN se deprecia (retorno_USDMXN > 0) y el activo tiene alta exposición USD,
-    sus retornos en pesos suben → ajuste positivo.
-    hedge_ratio = fracción de la exposición cubierta con forwards (Layer 1 default: 0.5).
+    If the MXN depreciates (USDMXN_return > 0) and the asset has high USD exposure,
+    its peso returns rise → positive adjustment.
+    hedge_ratio = fraction of exposure hedged with forwards (Layer 1 default: 0.5).
     """
     fx_adjustment = usd_exposure * (1 - hedge_ratio) * expected_usdmxn_return
     adjusted = expected_returns + fx_adjustment

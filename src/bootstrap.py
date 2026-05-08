@@ -23,12 +23,12 @@ def _sign_p_value(point: float, distribution: np.ndarray) -> float:
 
 
 def bootstrap_block_size_selector(returns: pd.Series) -> int:
-    """Estima el tamaño óptimo de bloque para el bootstrap estacionario.
+    """Estimate the optimal block size for the stationary bootstrap.
 
-    Usa el selector de Patton-Politis-White (PPW) implementado en la librería arch.
-    El tamaño de bloque controla cuánta autocorrelación serial se preserva en las
-    muestras bootstrap: bloques más grandes = más dependencia temporal preservada.
-    Resultado acotado en [5, 60] días como guardarraíles de sentido común.
+    Uses the Patton-Politis-White (PPW) selector implemented in the arch library.
+    The block size controls how much serial autocorrelation is preserved in bootstrap
+    samples: larger blocks = more temporal dependence preserved.
+    Result clipped to [5, 60] days as common-sense guardrails.
     """
     clean = _as_clean_series(returns)
     if len(clean) < 10:
@@ -51,17 +51,17 @@ def bootstrap_metric(
     confidence: float = 0.95,
     seed: int = 42,
 ) -> dict:
-    """Calcula una métrica escalar con intervalos de confianza bootstrap estacionario.
+    """Compute a scalar metric with stationary bootstrap confidence intervals.
 
-    El bootstrap estacionario (Politis-Romano 1994) remuestrea bloques de longitud
-    aleatoria (geométrica con media=block_size) para preservar la autocorrelación
-    de los retornos financieros, a diferencia del bootstrap i.i.d. clásico.
+    The stationary bootstrap (Politis-Romano 1994) resamples blocks of random
+    length (geometric with mean=block_size) to preserve serial autocorrelation
+    of financial returns, unlike the classic i.i.d. bootstrap.
 
-    Devuelve:
-      point        → valor observado de la métrica.
-      ci_low/high  → intervalo de confianza percentílico al nivel 'confidence'.
-      se           → error estándar bootstrap de la distribución.
-      distribution → array de n_reps valores bootstrap de la métrica.
+    Returns:
+      point        → observed value of the metric.
+      ci_low/high  → percentile confidence interval at level 'confidence'.
+      se           → bootstrap standard error of the distribution.
+      distribution → array of n_reps bootstrap values of the metric.
     """
     clean = _as_clean_series(returns)
     point = float(metric_fn(clean)) if len(clean) else np.nan
@@ -110,14 +110,14 @@ def bootstrap_paired_difference(
     confidence: float = 0.95,
     seed: int = 42,
 ) -> dict:
-    """Bootstrap por pares de la diferencia fondo-benchmark preservando alineación temporal.
+    """Paired bootstrap of the fund-benchmark difference preserving temporal alignment.
 
-    En cada réplica remuestrea los mismos índices para el fondo y el benchmark,
-    manteniendo el emparejamiento correcto de fechas.  Esto es crucial para el alpha
-    de Jensen, el IR y el tracking error, donde el timing de cada retorno importa.
+    Each replica resamples the same indices for fund and benchmark,
+    maintaining correct date pairing. This is crucial for Jensen's alpha,
+    IR, and tracking error, where the timing of each return matters.
 
-    Devuelve lo mismo que bootstrap_metric() más 'p_value' (fracción de réplicas
-    donde la métrica toma el signo opuesto — test de significancia unilateral).
+    Returns the same as bootstrap_metric() plus 'p_value' (fraction of replicas
+    where the metric takes the opposite sign — one-sided significance test).
     """
     aligned = pd.concat(
         [pd.Series(returns_fund, dtype=float), pd.Series(returns_benchmark, dtype=float)],

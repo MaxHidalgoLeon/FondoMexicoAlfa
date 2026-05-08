@@ -1,9 +1,9 @@
-"""Tests unitarios del módulo de construcción de vistas Black-Litterman.
+"""Unit tests for the Black-Litterman view construction module.
 
-Verifica build_elastic_net_views(), build_macro_views() y combine_views():
-  - Vistas vacías cuando el input está vacío.
-  - Confidencias en el rango correcto [0.30, 0.70] para vistas ElasticNet.
-  - Combine_views pondera correctamente por confianza.
+Verifies build_elastic_net_views(), build_macro_views() and combine_views():
+  - Empty views when input is empty.
+  - Confidences in the correct range [0.30, 0.70] for ElasticNet views.
+  - combine_views correctly weights by confidence.
 """
 import unittest
 

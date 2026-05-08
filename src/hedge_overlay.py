@@ -1,25 +1,25 @@
-"""Módulo de hedge overlay — Capa 2: posicionamiento market-neutral y FX.
+"""Hedge overlay module — Layer 2: market-neutral positioning and FX.
 
-Este módulo implementa la Capa 2 de la estrategia, que se construye sobre el
-portafolio base (Capa 1) y añade tres componentes adicionales:
+This module implements Layer 2 of the strategy, built on top of the base
+portfolio (Layer 1) and adding three additional components:
 
-1. Long/Short (market-neutral): genera posiciones largas en los tickers con mayor
-   señal esperada y cortas en los de menor señal, dentro de cada sector
-   (sector-neutral) para eliminar el beta sectorial.
+1. Long/Short (market-neutral): generates long positions in tickers with the
+   highest expected signal and short positions in those with the lowest, within
+   each sector (sector-neutral) to eliminate sector beta.
 
-2. Overlay direccional de FX: ajusta dinámicamente el ratio de cobertura USD/MXN
-   más allá del 50% estático de la Capa 1, basado en momentum del MXN y volatilidad
-   GARCH.  Rango: [10%, 95%] de cobertura.
+2. Directional FX overlay: dynamically adjusts the USD/MXN hedge ratio beyond
+   the static 50% of Layer 1, based on MXN momentum and GARCH volatility.
+   Range: [10%, 95%] hedging.
 
-3. Tail risk hedge: analiza si comprar puts sobre el índice (IPC) es justificable
-   basado en el VaR histórico al 99% y el costo diario de la prima, bajo 4 escenarios
-   de régimen de volatilidad (tranquilo, normal, elevado, crisis).
+3. Tail risk hedge: analyzes whether buying puts on the index (IPC) is
+   justified based on historical 99% VaR and daily premium cost, across
+   4 volatility regime scenarios (quiet, normal, elevated, crisis).
 
-4. Leverage escalar dinámico: ajusta el apalancamiento (max 1.3x) inversamente al
-   CVaR rolling — más riesgo → menos apalancamiento (control de riesgo de la capa).
+4. Dynamic leverage scalar: adjusts leverage (max 1.3x) inversely to rolling
+   CVaR — more risk → less leverage (layer risk control).
 
-5. Reform comparison: corre los 4 escenarios de la Ley de Fondos de Inversión (LFI):
-   Regulado (actual), 130/30, Market-Neutral, 130/30 Sector-Neutral.
+5. Reform comparison: runs the 4 scenarios of the Investment Funds Law (LFI):
+   Regulated (current), 130/30, Market-Neutral, 130/30 Sector-Neutral.
 """
 
 from __future__ import annotations
@@ -44,16 +44,16 @@ def long_short_portfolio(
     gross_target: float = 1.0,
     weight_by_signal: bool = True,
 ) -> pd.DataFrame:
-    """Construye el libro long/short market-neutral por sector.
+    """Build the sector-neutral market-neutral long/short book.
 
-    Para cada fecha y sector:
-      - Largo en los top_n tickers con mayor retorno esperado (señal positiva).
-      - Corto en los bottom_n tickers con menor retorno esperado (señal negativa).
-      - Pesos proporcionales a la fuerza de la señal (opcional via weight_by_signal).
-      - Normaliza para que el neto = net_target y el bruto = gross_target.
+    For each date and sector:
+      - Long in the top_n tickers with the highest expected return (positive signal).
+      - Short in the bottom_n tickers with the lowest expected return (negative signal).
+      - Weights proportional to signal strength (optional via weight_by_signal).
+      - Normalizes so that net = net_target and gross = gross_target.
 
-    Con sector_neutral=True, cancela el beta sectorial al operar longs y shorts
-    dentro del mismo sector.  Exposure neta = 0 → sin beta de mercado.
+    With sector_neutral=True, cancels sector beta by trading longs and shorts
+    within the same sector. Net exposure = 0 → no market beta.
     """
     results = []
 
@@ -171,14 +171,14 @@ def dynamic_leverage(
     alpha: float = 0.95,
     window: int = 63,
 ) -> pd.Series:
-    """Calcula el escalar de apalancamiento dinámico diario basado en CVaR rolling.
+    """Compute the daily dynamic leverage scalar based on rolling CVaR.
 
-    Lógica:
-      - CVaR rolling sobre ventana de 'window' días.
-      - Si |CVaR| > cvar_limit: el riesgo es alto → reduce apalancamiento hacia min_leverage.
-      - Si |CVaR| ≤ cvar_limit/2: el riesgo es bajo → usa apalancamiento máximo.
-      - Zona intermedia: interpolación lineal entre min_leverage y max_leverage.
-    El leverage se suaviza con EMA de 5 días para evitar cambios bruscos diarios.
+    Logic:
+      - Rolling CVaR over a 'window'-day window.
+      - If |CVaR| > cvar_limit: risk is high → reduce leverage toward min_leverage.
+      - If |CVaR| ≤ cvar_limit/2: risk is low → use maximum leverage.
+      - Intermediate zone: linear interpolation between min_leverage and max_leverage.
+    Leverage is smoothed with a 5-day EMA to avoid abrupt daily changes.
     """
     leverage = pd.Series(1.0, index=portfolio_returns.index)
 
@@ -218,8 +218,8 @@ def fx_directional_overlay(
     """Active FX positioning beyond passive hedging.
 
     Args:
-        mxn_garch_vol: GARCH vol forecast anualizada para USD/MXN. Cuando se
-            provee, regímenes de alta volatilidad incrementan el hedge ratio.
+        mxn_garch_vol: Annualized GARCH vol forecast for USD/MXN. When provided,
+            high-volatility regimes increase the hedge ratio.
     """
     
     # If macro_df is empty, return empty result
@@ -266,11 +266,11 @@ def fx_directional_overlay(
     macro_df["hedge_ratio"] = min_hedge_ratio + (max_hedge_ratio - min_hedge_ratio) * \
         expit(np.asarray(clipped_score, dtype=float) * 6)  # scale so sigmoid is responsive  # noqa: E127
 
-    # GARCH vol adjustment: alta vol de MXN → incrementar hedge ratio
+    # GARCH vol adjustment: high MXN vol → increase hedge ratio
     if mxn_garch_vol is not None and np.isfinite(mxn_garch_vol) and mxn_garch_vol > 0:
-        # 15% anualizado = neutral, >25% = régimen de alta vol
+        # 15% annualized = neutral, >25% = high-vol regime
         vol_zscore = (mxn_garch_vol - 0.15) / 0.10
-        vol_boost = 0.05 * float(np.clip(vol_zscore, -1.0, 1.0))  # máx ±5%
+        vol_boost = 0.05 * float(np.clip(vol_zscore, -1.0, 1.0))  # max ±5%
         macro_df["hedge_ratio"] = (macro_df["hedge_ratio"] + vol_boost).clip(
             lower=min_hedge_ratio, upper=max_hedge_ratio
         )
@@ -317,7 +317,7 @@ def tail_risk_hedge(
 
 REFORM_SCENARIOS: dict[str, dict] = {
     "regulated": {
-        "label": "Regulado (LFI actual)",
+        "label": "Regulated (current LFI)",
         "top_n": 8, "bottom_n": 0, "sector_neutral": False,
         "net_target": 1.05, "gross_target": 1.15, "max_leverage_cap": 1.15,
         "hedge_mode_override": "regulated",

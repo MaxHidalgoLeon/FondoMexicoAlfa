@@ -74,7 +74,7 @@ def _normalize_sources(raw: str | list) -> list[str]:
         candidates = ["yahoo", "refinitiv", "bloomberg"] if raw == "all" else [s.strip() for s in raw.split(",") if s.strip()]
     invalid = [s for s in candidates if s not in SUPPORTED_SOURCES]
     if invalid:
-        raise ValueError(f"Fuente(s) inválida(s): {', '.join(invalid)}. Válidas: {', '.join(SUPPORTED_SOURCES)}, all")
+        raise ValueError(f"Invalid source(s): {', '.join(invalid)}. Valid options: {', '.join(SUPPORTED_SOURCES)}, all")
     return list(dict.fromkeys(candidates))
 
 
@@ -87,9 +87,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--source",
         default=None,
         help=(
-            "Fuente(s) de datos separadas por coma, o 'all' para yahoo,refinitiv.\n"
-            "Ejemplos: --source yahoo   --source yahoo,refinitiv   --source all\n"
-            "Cada fuente genera su propio config_optimized_{source}.yaml."
+            "Comma-separated data source(s), or 'all' for yahoo,refinitiv.\n"
+            "Examples: --source yahoo   --source yahoo,refinitiv   --source all\n"
+            "Each source produces its own config_optimized_{source}.yaml."
         ),
     )
     parser.add_argument("--start", dest="start_date", default=None)
@@ -136,7 +136,7 @@ def _run_single_source(
     try:
         data = load_data(source=source, start_date=start_date, end_date=end_date)
     except Exception as exc:
-        logger.error("[%s] Fallo al cargar datos: %s", source, exc)
+        logger.error("[%s] Failed to load data: %s", source, exc)
         return False
 
     prices = data["prices"]
@@ -219,10 +219,10 @@ def main() -> int:
     search_keys     = cfg.get("hyperopt_search_keys")
 
     print(f"\nFondo Mexico — Hyperparameter Optimization")
-    print(f"  Fuente(s)  : {', '.join(sources)}")
-    print(f"  Periodo    : {start_date} → {end_date}")
+    print(f"  Source(s)  : {', '.join(sources)}")
+    print(f"  Period     : {start_date} → {end_date}")
     print(f"  Trials     : {n_trials}  |  Folds: {n_folds}  |  Purge gap: {purge_gap_days}d")
-    print(f"  Objetivo   : {objective_metric}  |  Optimizador: {optimizer}\n")
+    print(f"  Objective  : {objective_metric}  |  Optimizer: {optimizer}\n")
 
     successful, failed = [], []
     for source in sources:
@@ -238,11 +238,11 @@ def main() -> int:
 
     print("\n" + "=" * 60)
     if successful:
-        print(f"[OK] Completado: {', '.join(successful)}")
+        print(f"[OK] Completed: {', '.join(successful)}")
         for s in successful:
-            print(f"     config_optimized_{s}.yaml  →  listo para run_all.py")
+            print(f"     config_optimized_{s}.yaml  →  ready for run_all.py")
     if failed:
-        print(f"[ERROR] Fallaron: {', '.join(failed)}")
+        print(f"[ERROR] Failed: {', '.join(failed)}")
     print("=" * 60)
 
     return 0 if not failed else 1

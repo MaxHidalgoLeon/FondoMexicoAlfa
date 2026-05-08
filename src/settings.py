@@ -6,9 +6,9 @@ from typing import Any
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     # ------------------------------------------------------------------
-    # Parámetros de configuración global del pipeline.
-    # Cada sección controla un módulo diferente del sistema.
-    # Para sobreescribir, pasar un dict con las claves a modificar a resolve_settings().
+    # Global pipeline configuration parameters.
+    # Each section controls a different module of the system.
+    # To override, pass a dict with the keys to modify to resolve_settings().
     # ------------------------------------------------------------------
     # Covarianza / EWMA
     # ------------------------------------------------------------------
@@ -119,10 +119,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 
 
 def resolve_settings(settings: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Devuelve una copia de DEFAULT_SETTINGS con las claves de 'settings' aplicadas encima.
+    """Return a copy of DEFAULT_SETTINGS with the keys in 'settings' applied on top.
 
-    Permite que cada función del pipeline reciba parámetros personalizados sin
-    romper los defaults. Las claves None en 'settings' se ignoran (no sobreescriben).
+    Allows each pipeline function to receive custom parameters without breaking
+    the defaults. None values in 'settings' are ignored (do not override).
     """
     merged = deepcopy(DEFAULT_SETTINGS)
     if settings:

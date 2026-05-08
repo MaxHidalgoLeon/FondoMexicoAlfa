@@ -201,7 +201,7 @@ def _load_benchmark_returns(
             prices = pd.concat(price_parts, axis=1) if price_parts else pd.DataFrame()
             prices = prices.loc[:, ~prices.columns.duplicated()].sort_index().ffill(limit=5)
 
-            # BBVANSH no está en Yahoo — fallback a Refinitiv
+            # BBVANSH not in Yahoo — fallback to Refinitiv
             _YAHOO_FALLBACK = {"BBVANSH": "refinitiv"}
             missing_bm = [t for t in tickers if t not in prices.columns or prices[t].isna().all()]
             for ticker in missing_bm:
@@ -233,8 +233,8 @@ def _load_benchmark_returns(
                 prices = prices.sort_index().ffill(limit=5)
 
             # Per-ticker cross-provider fallback:
-            #   ACTIED  → Yahoo (no está en Refinitiv)
-            #   BBVANSH → Refinitiv/LSEG (no está en Yahoo)
+            #   ACTIED  → Yahoo (not in Refinitiv)
+            #   BBVANSH → Refinitiv/LSEG (not in Yahoo)
             _TICKER_FALLBACK = {
                 "ACTIED": "yahoo",
             }
@@ -281,24 +281,24 @@ def run_pipeline(
     settings: dict | None = None,
     **provider_kwargs,
 ) -> dict[str, object]:
-    """Orquesta el pipeline completo de la estrategia para el universo normal (acciones + FIBRAs + renta fija).
+    """Orchestrate the complete pipeline for the normal universe (equities + FIBRAs + fixed income).
 
-    Pasos principales:
-      1. Carga de datos (precios, fundamentales, macro, bonos).
-      2. Filtro dinámico de liquidez: elimina los tickers en el percentil 20 de ADTV.
-      3. Construcción de señales (features → score → retorno esperado).
-      4. Black-Litterman: combina CAPM + vistas ElasticNet + vistas macro.
-      5. Overlay de tipo de cambio (USD/MXN) sobre retornos esperados.
-      6. Detección de régimen macro → dimensionamiento del sleeve de liquidez (CETES).
-      7. Optimización de portafolio (MV / CVaR / Michaud) con restricciones CNBV.
-      8. Backtest walk-forward con rebalanceo mensual y costos de transacción.
-      9. Métricas de riesgo: GARCH-GJR, VaR dinámico, Monte Carlo, GEV, stress test.
-     10. Significancia alpha vs. benchmarks + diagnósticos IC de señal.
-     11. (Opcional) Capa 2: hedge overlay de FX + tail hedge + apalancamiento.
-     12. (Opcional) Comparación de escenarios de reforma LFI.
+    Main steps:
+      1. Data loading (prices, fundamentals, macro, bonds).
+      2. Dynamic liquidity filter: removes tickers in the ADTV bottom 20th percentile.
+      3. Signal construction (features → score → expected return).
+      4. Black-Litterman: combines CAPM + ElasticNet views + macro views.
+      5. FX overlay (USD/MXN) on expected returns.
+      6. Macro regime detection → liquidity sleeve sizing (CETES).
+      7. Portfolio optimization (MV / CVaR / Michaud) with CNBV constraints.
+      8. Walk-forward backtest with monthly rebalancing and transaction costs.
+      9. Risk metrics: GARCH-GJR, dynamic VaR, Monte Carlo, GEV, stress test.
+     10. Alpha significance vs benchmarks + signal IC diagnostics.
+     11. (Optional) Layer 2: FX hedge overlay + tail hedge + leverage.
+     12. (Optional) LFI reform scenario comparison.
 
-    Devuelve un diccionario con todos los resultados ('data', 'backtest', 'summary',
-    'signal_diagnostics', 'benchmarks', opcionalmente 'hedge_layer' y 'reform_layer').
+    Returns a dictionary with all results ('data', 'backtest', 'summary',
+    'signal_diagnostics', 'benchmarks', optionally 'hedge_layer' and 'reform_layer').
     """
     from .data_loader import load_data, compute_adtv_liquidity_scores
     from .risk import detect_macro_regime
@@ -443,7 +443,7 @@ def run_pipeline(
         tau=float(cfg["bl_tau"]),
     )
 
-    # Risk-free rate: último valor de Banxico disponible en macro
+    # Risk-free rate: latest available Banxico value in macro
     banxico_series = macro["banxico_rate"].dropna()
     risk_free_rate = float(banxico_series.iloc[-1]) if not banxico_series.empty else 0.02
     # Normalize units: providers may deliver 11.25 (percent) instead of 0.1125 (decimal).
@@ -451,7 +451,7 @@ def run_pipeline(
         risk_free_rate = risk_free_rate / 100.0
     logger.info("Risk-free rate (Banxico): %.4f", risk_free_rate)
 
-    # GARCH sobre retornos de USD/MXN para proyectar vol y drift
+    # GARCH on USD/MXN returns to forecast vol and drift
     usdmxn_returns = np.log(macro["usd_mxn"] / macro["usd_mxn"].shift(1)).replace([np.inf, -np.inf], np.nan).dropna()
     mxn_garch_vol = None
     if len(usdmxn_returns) >= 30:
@@ -459,9 +459,9 @@ def run_pipeline(
             _mxn_garch = fit_garch(usdmxn_returns)
             mxn_garch_vol = garch_forecast_vol(_mxn_garch)
             expected_usdmxn_return = float(usdmxn_returns.mean() + _mxn_garch.resid.mean())
-            logger.info("GARCH USD/MXN vol forecast (anualizada): %.4f", mxn_garch_vol)
+            logger.info("GARCH USD/MXN vol forecast (annualized): %.4f", mxn_garch_vol)
         except Exception:
-            logger.warning("GARCH fit para USD/MXN falló — usando media histórica.")
+            logger.warning("GARCH fit for USD/MXN failed — using historical mean.")
             expected_usdmxn_return = float(usdmxn_returns.mean())
     else:
         expected_usdmxn_return = float(usdmxn_returns.mean()) if len(usdmxn_returns) > 0 else 0.0
@@ -889,10 +889,10 @@ def run_pipeline(
 
 
 def print_summary(results: dict[str, object], hedge_mode: bool = False) -> None:
-    """Imprime en consola un resumen tabular de métricas de la estrategia.
+    """Print a tabular summary of strategy metrics to the console.
 
-    En modo hedge (Layer 2) muestra una tabla comparativa Capa 1 vs Capa 2.
-    En modo normal muestra las métricas de Layer 1 y los resultados del stress test.
+    In hedge mode (Layer 2) shows a side-by-side Layer 1 vs Layer 2 comparison.
+    In normal mode shows Layer 1 metrics and stress test results.
     """
     summary = results["summary"]
     print("=== Strategy Pipeline Summary ===")
@@ -946,10 +946,10 @@ def run_etf_pipeline(
     settings: dict | None = None,
     **provider_kwargs,
 ) -> dict[str, object]:
-    """Pipeline equivalente a run_pipeline() pero para el universo de ETFs internacionales.
+    """Pipeline equivalent to run_pipeline() but for the ETF universe.
 
     Universe: EWW (45-65%) | INDS (20-35%) | IGF (5-15%) | ILF (0-10%)
-              + CETES28 / CETES91 / MBONO3Y (manga de liquidez, max 30% combinado)
+              + CETES28 / CETES91 / MBONO3Y (liquidity sleeve, max 30% combined)
 
     Pipeline for the ETF version of the strategy.
 

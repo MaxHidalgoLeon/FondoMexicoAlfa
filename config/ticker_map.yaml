@@ -57,7 +57,7 @@ OMAB:
 PINFRA:
   yahoo:     "PINFRA"
   lseg:      "PINFRA"
-  bloomberg: "PINFRA*"  # BAD_SEC en market_caps — verificar si el ticker cambió
+  bloomberg: "PINFRA*"  # BAD_SEC in market_caps — verify if the ticker changed
 
 ORBIA:
   yahoo:     "ORBIA"
@@ -113,14 +113,14 @@ GBMNEAR:
   bloomberg: "GBMNEARA"
 
 BBVANSH:
-  yahoo:     null            # sin ticker en Yahoo
-  lseg:      "BBVANSHPV.MX"          # PENDIENTE — agregar RIC de Refinitiv
-  bloomberg: "BBVANSHE MM Equity"            # PENDIENTE — agregar ticker de Bloomberg
+  yahoo:     null            # no ticker on Yahoo
+  lseg:      "BBVANSHPV.MX"          # PENDING — add Refinitiv RIC
+  bloomberg: "BBVANSHE MM Equity"            # PENDING — add Bloomberg ticker
 
 ACTIED:
-  yahoo:     "ACTIEDA"            # PENDIENTE — agregar ticker de Yahoo
-  lseg:      "LP65041010"            # PENDIENTE — agregar RIC de Refinitiv
-  bloomberg: "ACTIEDA MM Equity"            # PENDIENTE — agregar ticker de Bloomberg
+  yahoo:     "ACTIEDA"            # PENDING — add Yahoo ticker
+  lseg:      "LP65041010"            # PENDING — add Refinitiv RIC
+  bloomberg: "ACTIEDA MM Equity"            # PENDING — add Bloomberg ticker
 
 # ------------------------------------------------------------------
 # FIBRAs — Industrial / Logistics focus
@@ -180,11 +180,11 @@ MBONO3Y:
   bloomberg: null
 
 # ------------------------------------------------------------------
-# ETFs — versión por sector S&P/BMV IPC CompMX (modo ETF)
+# ETFs — sector version S&P/BMV IPC CompMX (ETF mode)
 # ------------------------------------------------------------------
-# INDUSTRIAL, CONSUMER, COMMUNICATION, MATERIALS: series de precio
-# cargadas desde archivos CSV locales (index/<Sector>.csv).
-# No tienen ticker externo — se marcan con yahoo: null.
+# INDUSTRIAL, CONSUMER, COMMUNICATION, MATERIALS: price series
+# loaded from local CSV files (index/<Sector>.csv).
+# No external ticker — marked with yahoo: null.
 
 INDUSTRIAL:
   yahoo:     null

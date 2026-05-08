@@ -1,18 +1,18 @@
 #!/usr/bin/env python
 """
-run_etf_hyperopt.py — Hyperopt para la versión ETF del Fondo Mexico.
+run_etf_hyperopt.py — Hyperopt for the ETF version of Fondo Mexico.
 
-Optimiza los mismos hiperparámetros del modelo (risk_aversion, tau, EWMA, etc.)
-pero usando el universo ETF (EWW, INDS, IGF, ILF, EMLC) con señales price-only.
+Optimizes the same model hyperparameters (risk_aversion, tau, EWMA, etc.)
+but using the ETF universe (EWW, INDS, IGF, ILF, EMLC) with price-only signals.
 
-Salidas:
+Outputs:
   reports/hyperopt_data/hyperopt_results_etf_{source}.json
   config_optimized_etf_{source}.yaml
 
-Las gráficas y métricas de hyperopt se renderizan dentro del reporte ETF
-principal (run_etf.py); este script ya no genera HTML standalone.
+Hyperopt charts and metrics are rendered inside the main ETF report
+(run_etf.py); this script no longer produces a standalone HTML.
 
-Uso:
+Usage:
     python scripts/run_etf_hyperopt.py
     python scripts/run_etf_hyperopt.py --source yahoo --n-trials 30
     python scripts/run_etf_hyperopt.py --source bloomberg --n-trials 50
@@ -62,7 +62,7 @@ def _normalize_sources(raw: str | list) -> list[str]:
         candidates = ["yahoo", "bloomberg", "refinitiv"] if raw == "all" else [s.strip() for s in raw.split(",") if s.strip()]
     invalid = [s for s in candidates if s not in SUPPORTED_SOURCES]
     if invalid:
-        raise ValueError(f"Fuente(s) inválida(s): {', '.join(invalid)}. Válidas: {', '.join(SUPPORTED_SOURCES)}, all")
+        raise ValueError(f"Invalid source(s): {', '.join(invalid)}. Valid options: {', '.join(SUPPORTED_SOURCES)}, all")
     return list(dict.fromkeys(candidates))
 
 
@@ -116,7 +116,7 @@ def _run_single_source(
     try:
         data = load_etf_data(source=source, start_date=start_date, end_date=end_date, **provider_kwargs)
     except Exception as exc:
-        logger.error("[ETF %s] Fallo al cargar datos: %s", source, exc)
+        logger.error("[ETF %s] Failed to load data: %s", source, exc)
         return False
 
     prices   = data["prices"]
@@ -126,7 +126,7 @@ def _run_single_source(
 
     feature_df = build_etf_features(prices, macro, universe, bonds=bonds)
     if feature_df.empty:
-        logger.error("[ETF %s] feature_df vacío — no hay suficientes precios.", source)
+        logger.error("[ETF %s] feature_df is empty — not enough price data.", source)
         return False
 
     result = run_hyperopt(
@@ -163,14 +163,14 @@ def _run_single_source(
     }
     with open(output_path, "w") as f:
         json.dump(payload, f, indent=2, default=str)
-    logger.info("[ETF %s] JSON guardado: %s", source, output_path)
+    logger.info("[ETF %s] JSON saved: %s", source, output_path)
 
     if result.best_params:
         try:
             _dump_yaml({**cfg, **result.best_params}, config_out)
-            logger.info("[ETF %s] Config optimizado: %s", source, config_out)
+            logger.info("[ETF %s] Optimized config: %s", source, config_out)
         except ImportError:
-            logger.warning("PyYAML no disponible — omitiendo %s.", config_out)
+            logger.warning("PyYAML not available — skipping %s.", config_out)
 
     return True
 
@@ -194,12 +194,12 @@ def main() -> int:
     optimizer        = args.optimizer     or str(cfg.get("hyperopt_optimizer",   "mv"))
     seed             = args.seed          or int(cfg.get("hyperopt_seed",        42))
 
-    print("\nFondo Mexico — Hyperopt ETF")
-    print(f"  Fuente(s)  : {', '.join(sources)}")
-    print(f"  Periodo    : {start_date} → {end_date}")
+    print("\nFondo Mexico — ETF Hyperopt")
+    print(f"  Source(s)  : {', '.join(sources)}")
+    print(f"  Period     : {start_date} → {end_date}")
     print(f"  Trials     : {n_trials}  |  Folds: {n_folds}  |  Purge: {purge_gap_days}d")
-    print(f"  Objetivo   : {objective_metric}  |  Optimizador: {optimizer}")
-    print(f"  Universo   : EWW | INDS | IGF | ILF | EMLC\n")
+    print(f"  Objective  : {objective_metric}  |  Optimizer: {optimizer}")
+    print(f"  Universe   : EWW | INDS | IGF | ILF | EMLC\n")
 
     successful, failed = [], []
     for source in sources:
@@ -214,11 +214,11 @@ def main() -> int:
 
     print("\n" + "=" * 60)
     if successful:
-        print(f"[OK] Completado: {', '.join(successful)}")
+        print(f"[OK] Completed: {', '.join(successful)}")
         for s in successful:
-            print(f"     config_optimized_etf_{s}.yaml  →  listo para run_etf.py")
+            print(f"     config_optimized_etf_{s}.yaml  →  ready for run_etf.py")
     if failed:
-        print(f"[ERROR] Fallaron: {', '.join(failed)}")
+        print(f"[ERROR] Failed: {', '.join(failed)}")
     print("=" * 60)
 
     return 0 if not failed else 1

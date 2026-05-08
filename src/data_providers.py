@@ -1177,7 +1177,7 @@ class FREDBanxicoMacroProvider:
     # Banxico SIE series IDs
     # ------------------------------------------------------------------
     _BANXICO_SERIES = {
-        "SF43783": "banxico_rate",    # Tasa de fondeo bancario objetivo
+        "SF43783": "banxico_rate",    # Target overnight interbank rate
         "SP1": "inflation_index",     # INPC (nivel); yoy computed internally
         "SF60653": "usd_mxn_banxico", # Tipo de cambio FIX
     }
@@ -1186,9 +1186,9 @@ class FREDBanxicoMacroProvider:
     # INEGI BIE series IDs (indicator codes)
     # ------------------------------------------------------------------
     _INEGI_SERIES = {
-        "910406": "IMAI",                       # Índice de actividad industrial
-        "910405": "industrial_production_idx",  # Producción industrial (nivel)
-        "229954": "exports_idx",                # Exportaciones totales (nivel)
+        "910406": "IMAI",                       # Monthly Industrial Activity Index
+        "910405": "industrial_production_idx",  # Industrial production (level)
+        "229954": "exports_idx",                # Total exports (level)
     }
 
     # ------------------------------------------------------------------
@@ -1505,7 +1505,7 @@ class BloombergLocalProvider(BaseDataProvider):
     def _load(self, filename: str) -> pd.DataFrame:
         path = self.data_dir / filename
         if not path.exists():
-            logger.warning("Bloomberg local: archivo no encontrado: %s", path)
+            logger.warning("Bloomberg local: file not found: %s", path)
             return pd.DataFrame()
         return pd.read_parquet(path)
 
@@ -1535,7 +1535,7 @@ class BloombergLocalProvider(BaseDataProvider):
         df = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
         if "ticker" in df.columns:
             df = df[df["ticker"].isin(tickers)]
-        # Si el parquet viene en formato largo [date, ticker, field, value], pivotar a ancho
+        # If the parquet is in long format [date, ticker, field, value], pivot to wide
         if "field" in df.columns and "value" in df.columns:
             df["value"] = pd.to_numeric(df["value"], errors="coerce")
             df = df.pivot_table(index=["date", "ticker"], columns="field", values="value", aggfunc="first").reset_index()
@@ -1602,7 +1602,7 @@ class BloombergLocalProvider(BaseDataProvider):
             return pd.DataFrame(columns=expected)
         df["date"] = pd.to_datetime(df["date"]).astype("datetime64[ns]")
         df = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
-        # Si viene en formato largo [date, ticker, field, value], pivotar a ancho
+        # If it comes in long format [date, ticker, field, value], pivot to wide
         if "field" in df.columns and "value" in df.columns and "ticker" in df.columns:
             df["value"] = pd.to_numeric(df["value"], errors="coerce")
             df = df.pivot_table(index="date", columns="ticker", values="value", aggfunc="first").reset_index()

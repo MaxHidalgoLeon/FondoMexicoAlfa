@@ -110,7 +110,7 @@ python scripts/run_etf.py --source bloomberg
 python scripts/run_all.py --source bloomberg
 ```
 
-The new HTML section "Puente ETF → Normal" shows the source ETF weights, the realized normal-mode bucket weights, and a `band binding` table that flags any sector that hit a constraint edge (a sign the band is too tight). All `free` rows means the anchor did not degrade the unanchored optimum.
+The new HTML section "ETF → Normal Bridge" shows the source ETF weights, the realized normal-mode bucket weights, and a `band binding` table that flags any sector that hit a constraint edge (a sign the band is too tight). All `free` rows means the anchor did not degrade the unanchored optimum.
 
 Regulatory parameters (`max_position`, `issuer_concentration_limit`, `fx_overlay_notional_cap`, `liquidity_sleeve_*`) are fixed at CNBV/prospectus-compliant values and excluded from the hyperopt search space.
 

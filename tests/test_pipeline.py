@@ -1,8 +1,8 @@
-"""Tests de integración del pipeline completo.
+"""Integration tests for the full pipeline.
 
-Verifica que run_pipeline() con source='mock' devuelve la estructura correcta
-de resultados (backtest, summary, señales, benchmarks) y que las métricas
-principales son numéricamente válidas (no NaN/Inf, rangos razonables).
+Verifies that run_pipeline() with source='mock' returns the correct result
+structure (backtest, summary, signals, benchmarks) and that the main
+metrics are numerically valid (no NaN/Inf, reasonable ranges).
 """
 import unittest
 import numpy as np
@@ -564,15 +564,15 @@ class PipelineTestCase(unittest.TestCase):
 
     def test_no_lookahead_in_fundamentals(self) -> None:
         """
-        Paso 4.5: Para cualquier fecha t del backtest, los fundamentales
-        (pe_ratio, pb_ratio, roe) deben provenir de un reporte con
-        report_date <= t - 90 días (fundamentals_lag_days del config).
-        Con datos mock no hay report_date real, así que validamos que:
-        - el pipeline aplica el lag: ningún feature de fundamentales en el
-          signal_matrix tiene fecha más reciente que (date - 90 days) para
-          el mismo ticker.
-        - Si la columna 'report_date' no existe (modo mock), el test valida
-          en su lugar que fundamentals_lag_days >= 90 está en el config.
+        Step 4.5: For any backtest date t, fundamentals
+        (pe_ratio, pb_ratio, roe) must come from a report with
+        report_date <= t - 90 days (fundamentals_lag_days from config).
+        With mock data there is no real report_date, so we validate that:
+        - the pipeline applies the lag: no fundamental feature in the
+          signal_matrix has a date more recent than (date - 90 days) for
+          the same ticker.
+        - If the 'report_date' column does not exist (mock mode), the test
+          validates instead that fundamentals_lag_days >= 90 is in the config.
         """
         import yaml, os
         cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
@@ -581,7 +581,7 @@ class PipelineTestCase(unittest.TestCase):
         lag = cfg.get("fundamentals_lag_days", 0)
         self.assertGreaterEqual(
             lag, 90,
-            f"fundamentals_lag_days={lag} < 90: look-ahead bias no mitigado en config."
+            f"fundamentals_lag_days={lag} < 90: look-ahead bias not mitigated in config."
         )
 
         # Si el pipeline produjo una signal_matrix con fechas, verificar lag real
@@ -594,7 +594,7 @@ class PipelineTestCase(unittest.TestCase):
                 min_lag = lag_actual.min()
                 self.assertGreaterEqual(
                     min_lag, 90,
-                    f"Look-ahead detectado: lag mínimo={min_lag} días < 90 en fundamentales."
+                    f"Look-ahead detected: minimum lag={min_lag} days < 90 in fundamentals."
                 )
 
 

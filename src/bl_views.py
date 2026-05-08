@@ -48,13 +48,13 @@ def _expanding_zscore(series: pd.Series, min_periods: int = 24) -> float:
 
 
 def build_elastic_net_views(forecast_df_opt: pd.DataFrame) -> Tuple[TickerViews, Confidences]:
-    """Construye las vistas BL por ticker a partir del modelo ElasticNet.
+    """Build per-ticker BL views from the ElasticNet model.
 
-    Para cada ticker, la vista = retorno esperado promedio del modelo ElasticNet.
-    La confianza se escala proporcionalmente a |vista| dentro del rango [0.30, 0.70]:
-      - Ticker con el mayor retorno esperado en valor absoluto → confianza 0.70.
-      - Ticker con el menor → confianza 0.30.
-    Esto hace que las vistas más fuertes del modelo tengan más peso en el BL.
+    For each ticker, the view = mean expected return from the ElasticNet model.
+    Confidence is scaled proportionally to |view| within the range [0.30, 0.70]:
+      - Ticker with the highest expected return in absolute value → confidence 0.70.
+      - Ticker with the lowest → confidence 0.30.
+    This gives stronger model views more weight in the BL posterior.
     """
     if forecast_df_opt is None or forecast_df_opt.empty:
         return {}, {}
@@ -79,17 +79,17 @@ def build_macro_views(
     universe: pd.DataFrame,
     cfg: dict,
 ) -> Tuple[TickerViews, Confidences]:
-    """Construye vistas BL sectoriales a partir de indicadores macro.
+    """Build sector-level BL views from macro indicators.
 
-    Flujo:
-      1. Calcula z-score expansivo de cada señal macro (IP, exportaciones, Banxico, FX).
-      2. Convierte z-scores a magnitudes de vista vía tanh (bounded en ±max_mag ≈ 1.5%).
-      3. Expande las vistas sectoriales a cada ticker del universo.
-      4. Agrega un ajuste adicional por exposición USD: tickers con >40% de ingresos en USD
-         se benefician cuando el MXN se deprecia (FX momentum positivo).
+    Flow:
+      1. Computes expanding-window z-score of each macro signal (IP, exports, Banxico, FX).
+      2. Converts z-scores to view magnitudes via tanh (bounded at ±max_mag ≈ 1.5%).
+      3. Expands sector views to each ticker in the universe.
+      4. Adds an additional USD-exposure adjustment: tickers with >40% USD revenue
+         benefit when the MXN depreciates (positive FX momentum).
 
-    Desactivado por default (use_macro=False en config). Cuando está activo, las vistas
-    macro tienen confianza baja (~0.20) para nudear la señal ElasticNet sin dominarla.
+    Disabled by default (use_macro=False in config). When active, macro views
+    have low confidence (~0.20) to nudge the ElasticNet signal without dominating it.
 
     Sector-level macro views expanded to per-ticker dicts.
 
@@ -165,11 +165,11 @@ def build_macro_views(
 def combine_views(
     *sources: Tuple[TickerViews, Confidences],
 ) -> Tuple[TickerViews, Confidences]:
-    """Combina múltiples fuentes de vistas BL con ponderación por confianza.
+    """Combine multiple BL view sources with confidence weighting.
 
-    Para cada ticker presente en al menos una fuente:
-      vista_final = Σ(vista_i × conf_i) / Σ(conf_i)   (promedio ponderado)
-      conf_final  = max(conf_i)                          (no acumular confianza)
+    For each ticker present in at least one source:
+      view_final = Σ(view_i × conf_i) / Σ(conf_i)   (weighted average)
+      conf_final  = max(conf_i)                        (avoid double-counting confidence)
 
     Confidence-weighted blend of multiple view sources.
 

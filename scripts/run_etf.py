@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 """
-run_etf.py — Pipeline para la versión ETF del Fondo Mexico.
+run_etf.py — Pipeline for the ETF version of Fondo Mexico.
 
-Universo: EWW (45-65%) | INDS (20-35%) | IGF (5-15%) | ILF (0-10%) | EMLC (complemento)
-Señales:  momentum + volatilidad (price-only, sin fundamentales)
-Salidas:  reports/output/output_etf_{source}.html
+Universe: EWW (45-65%) | INDS (20-35%) | IGF (5-15%) | ILF (0-10%) | EMLC (complement)
+Signals:  momentum + volatility (price-only, no fundamentals)
+Output:   reports/output/output_etf_{source}.html
 
-Uso:
+Usage:
     python scripts/run_etf.py
     python scripts/run_etf.py --source yahoo
     python scripts/run_etf.py --source bloomberg
@@ -72,7 +72,7 @@ def _normalize_sources(raw: str | list) -> list[str]:
         candidates = ["yahoo", "bloomberg", "refinitiv"] if raw == "all" else [s.strip() for s in raw.split(",") if s.strip()]
     invalid = [s for s in candidates if s not in SUPPORTED_SOURCES]
     if invalid:
-        raise ValueError(f"Fuente(s) inválida(s): {', '.join(invalid)}. Válidas: {', '.join(SUPPORTED_SOURCES)}, all")
+        raise ValueError(f"Invalid source(s): {', '.join(invalid)}. Valid options: {', '.join(SUPPORTED_SOURCES)}, all")
     return list(dict.fromkeys(candidates))
 
 
@@ -85,16 +85,16 @@ DEFAULT_BENCHMARKS = ["IPC", "GBMCRE", "GBMNEAR", "GBMMOD", "GBMALFA"]
 
 
 def _parse_args(config: dict) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Fondo Mexico — pipeline ETF")
+    p = argparse.ArgumentParser(description="Fondo Mexico — ETF pipeline")
     p.add_argument("--source",    default=None)
     p.add_argument("--start",     default=None)
     p.add_argument("--end",       default=None)
     p.add_argument("--optimizer", choices=["mv", "cvar", "robust", "both"], default=None)
     p.add_argument("--out",       default=None)
     p.add_argument("--benchmarks", default=None,
-                   help="Benchmarks separados por coma. Default: IPC,GBMCRE,GBMNEAR,GBMMOD,GBMALFA")
+                   help="Comma-separated benchmarks. Default: IPC,GBMCRE,GBMNEAR,GBMMOD,GBMALFA")
     p.add_argument("--hedge", action="store_true", default=None,
-                   help="Activar hedge overlay (Layer 2)")
+                   help="Enable hedge overlay (Layer 2)")
     return p.parse_args()
 
 
@@ -118,7 +118,7 @@ def run_report(
         if app_key and app_key != "pega_tu_app_key_aqui":
             provider_kwargs["app_key"] = app_key
         else:
-            print("[AVISO] REFINITIV_APP_KEY no configurada en .env")
+            print("[WARNING] REFINITIV_APP_KEY not configured in .env")
     elif source == "bloomberg":
         provider_kwargs["data_dir"] = os.environ.get("BLOOMBERG_DATA_DIR", "data/bloomberg")
 
@@ -143,7 +143,7 @@ def run_report(
     out = ROOT / out_path
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
-    print(f"\n[OK] Reporte ETF guardado en: {out}")
+    print(f"\n[OK] ETF report saved to: {out}")
 
 
 def main() -> None:
@@ -168,13 +168,13 @@ def main() -> None:
     sources     = _normalize_sources(raw_source)
     multi       = len(sources) > 1
 
-    print("\nFondo Mexico — Pipeline ETF")
-    print(f"  Fuente(s)  : {', '.join(sources)}")
-    print(f"  Periodo    : {start} → {end}")
+    print("\nFondo Mexico — ETF Pipeline")
+    print(f"  Source(s)  : {', '.join(sources)}")
+    print(f"  Period     : {start} → {end}")
     print(f"  Hedge      : {hedge}")
-    print(f"  Optimizador: {optimizer}")
-    print(f"  Universo   : EWW | INDS | IGF | ILF | CETES28 | CETES91 | MBONO3Y")
-    print(f"  Benchmarks : {', '.join(benchmarks) if benchmarks else 'GBM (por defecto)'}")
+    print(f"  Optimizer  : {optimizer}")
+    print(f"  Universe   : EWW | INDS | IGF | ILF | CETES28 | CETES91 | MBONO3Y")
+    print(f"  Benchmarks : {', '.join(benchmarks) if benchmarks else 'GBM (default)'}")
 
     successful, failed = [], []
     for source in sources:
@@ -187,10 +187,10 @@ def main() -> None:
             print(f"\n[ERROR] {source}: {exc}")
 
     if failed:
-        print(f"\n[ERRORES] {', '.join(s for s, _ in failed)}")
+        print(f"\n[ERRORS] {', '.join(s for s, _ in failed)}")
     if not successful:
         sys.exit(1)
-    print("\n[LISTO] Pipeline ETF completado.\n")
+    print("\n[DONE] ETF pipeline completed.\n")
 
 
 if __name__ == "__main__":

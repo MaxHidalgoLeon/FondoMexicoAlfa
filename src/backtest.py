@@ -23,11 +23,11 @@ logger = logging.getLogger(__name__)
 
 
 def get_rebalance_dates(prices: pd.DataFrame, freq: str = "ME") -> pd.DatetimeIndex:
-    """Devuelve las fechas de rebalanceo: el último día de mercado de cada período.
+    """Return rebalancing dates: the last market day of each period.
 
-    Por defecto rebalancea mensualmente ('ME' = month-end).  Hace un snap al
-    día hábil anterior más cercano dentro del índice de precios para evitar
-    look-ahead bias (usar un precio que aún no existía en esa fecha).
+    Defaults to monthly rebalancing ('ME' = month-end). Snaps to the nearest
+    prior business day in the price index to avoid look-ahead bias
+    (using a price that did not yet exist on that date).
     """
     resampled = prices.resample(freq).last().dropna(how="all")
     # Snap to the nearest actual trading day that exists in prices.index
@@ -119,18 +119,18 @@ def build_covariance_matrix(
     settings: dict | None = None,
     return_diagnostics: bool = False,
 ) -> pd.DataFrame | tuple[pd.DataFrame, dict[str, Any]]:
-    """Calcula la matriz de covarianza para la fecha de rebalanceo.
+    """Compute the covariance matrix for the rebalancing date.
 
-    Método híbrido:
-      1. Calcula covarianza EWMA-Ledoit-Wolf (más reactiva a cambios recientes).
-      2. Si el resultado no es semidefinida positiva (PSD) o hay pocos datos,
-         cae al rolling Ledoit-Wolf estándar (ventana fija de 'window' días).
-      3. Ledoit-Wolf aplica shrinkage hacia la identidad para matrices con pocas
-         observaciones relativas al número de activos (N >> T), reduciendo ruido.
+    Hybrid method:
+      1. Computes EWMA-Ledoit-Wolf covariance (more reactive to recent changes).
+      2. If the result is not positive semi-definite (PSD) or there is insufficient
+         data, falls back to the standard rolling Ledoit-Wolf (fixed 'window' days).
+      3. Ledoit-Wolf applies shrinkage toward the identity for matrices with few
+         observations relative to the number of assets (N >> T), reducing noise.
 
-    El parámetro covariance_method en settings controla qué método usar:
-      'ewma_ledoit_wolf'  → método híbrido (default).
-      'rolling_ledoit_wolf' → rolling puro sin EWMA.
+    The covariance_method parameter in settings controls which method to use:
+      'ewma_ledoit_wolf'  → hybrid method (default).
+      'rolling_ledoit_wolf' → pure rolling without EWMA.
     """
     cfg = resolve_settings(settings)
     rolling_cov = _rolling_ledoit_wolf_covariance(returns, date, window)
@@ -209,20 +209,20 @@ def run_backtest(
     settings: dict | None = None,
     sector_constraints: Optional[Dict[str, Dict[str, float]]] = None,
 ) -> Dict[str, pd.DataFrame]:
-    """Ejecuta el backtest walk-forward con rebalanceo periódico.
+    """Run the walk-forward backtest with periodic rebalancing.
 
-    Lógica principal (por cada fecha de rebalanceo):
-      1. Extrae los retornos esperados del signal_df para esa fecha.
-      2. Calcula la covarianza EWMA-Ledoit-Wolf sobre el histórico hasta esa fecha.
-      3. Detecta el régimen macro actual (expansión/tightening/stress) y ajusta
-         las restricciones de clase de activo según el régimen.
-      4. Si el régimen cambia con baja confianza, hace una transición gradual
-         (blend lineal entre restricciones del régimen anterior y el nuevo).
-      5. Optimiza el portafolio (MV, CVaR o Michaud según 'optimizer').
-      6. Actualiza los pesos para el período siguiente.
+    Main logic (for each rebalancing date):
+      1. Extracts expected returns from signal_df for that date.
+      2. Computes EWMA-Ledoit-Wolf covariance over history up to that date.
+      3. Detects the current macro regime (expansion/tightening/stress) and
+         adjusts asset-class constraints according to the regime.
+      4. If the regime changes with low confidence, performs a gradual transition
+         (linear blend between previous and new regime constraints).
+      5. Optimizes the portfolio (MV, CVaR or Michaud per 'optimizer').
+      6. Updates weights for the next period.
 
-    Los retornos del portafolio se calculan como suma ponderada de retornos log,
-    menos el costo de transacción aplicado en las fechas de rebalanceo.
+    Portfolio returns are computed as the weighted sum of log returns,
+    minus transaction costs applied on rebalancing dates.
 
     Run backtest.
 
