@@ -36,7 +36,7 @@ _STRESS_PERCENTILE    = 75
 # ---------------------------------------------------------------------------
 
 def _latest_macro_before(macro_df: pd.DataFrame, date) -> pd.DataFrame:
-    """Return all macro rows with date strictly before `date`."""
+    """Return all macro rows with a ``date`` column value strictly before ``date``."""
     cutoff = pd.Timestamp(date)
     col = "date" if "date" in macro_df.columns else macro_df.index.name
     if col and col in macro_df.columns:
@@ -49,9 +49,17 @@ def _banxico_trailing_change(
     date,
     lookback_months: int = _RATE_LOOKBACK_MONTHS,
 ) -> float | None:
-    """Banxico rate change over the trailing `lookback_months` months.
+    """Compute the Banxico overnight rate change over the trailing period.
 
-    Uses only rows with date < `date`. Returns None if insufficient history.
+    Args:
+        macro_df: Monthly macro DataFrame with ``date`` and ``banxico_rate``
+            columns.
+        date: Reference date; only rows strictly before this date are used.
+        lookback_months: Number of months to look back (default 3).
+
+    Returns:
+        Rate change in percentage points, or ``None`` if insufficient history
+        or the ``banxico_rate`` column is absent.
     """
     before = _latest_macro_before(macro_df, date).copy()
     if before.empty:
@@ -72,16 +80,21 @@ def _banxico_trailing_change(
 
 
 def _ipc_equity_returns(prices_df: pd.DataFrame, equity_tickers: list[str]) -> pd.Series:
-    """Equal-weighted daily log return of the equity sub-universe.
+    """Compute the equal-weighted daily log return of the equity sub-universe.
 
-    Parameters
-    ----------
-    prices_df : wide DataFrame indexed by date, columns = tickers.
-    equity_tickers : subset of ticker columns to use.
+    Used as an IPC (Índice de Precios y Cotizaciones) proxy because no IPC
+    index ticker is present in the prices panel.
 
-    Returns
-    -------
-    pd.Series indexed by date with daily log returns of the IPC proxy.
+    Args:
+        prices_df: Wide daily price DataFrame; ``index`` is date, columns are
+            ticker symbols.
+        equity_tickers: Subset of ticker columns to include in the
+            equal-weighted average. Tickers absent from ``prices_df`` are
+            silently dropped.
+
+    Returns:
+        Series indexed by date containing daily log returns of the IPC proxy.
+        Returns an empty Series if none of ``equity_tickers`` are present.
     """
     cols = [c for c in equity_tickers if c in prices_df.columns]
     if not cols:
@@ -95,7 +108,17 @@ def _ipc_equity_returns(prices_df: pd.DataFrame, equity_tickers: list[str]) -> p
 
 
 def _ipc_vol_60d(ipc_returns: pd.Series, date) -> float | None:
-    """60-day realised vol (annualised) of the IPC proxy strictly before `date`."""
+    """Compute the 60-day realised annualised volatility of the IPC proxy.
+
+    Args:
+        ipc_returns: Daily log return series of the IPC proxy (from
+            ``_ipc_equity_returns``).
+        date: Reference date; only returns strictly before this date are used.
+
+    Returns:
+        Annualised volatility (``std * sqrt(252)``), or ``None`` if fewer than
+        20 daily observations are available in the 60-day window.
+    """
     cutoff = pd.Timestamp(date)
     before = ipc_returns[ipc_returns.index < cutoff]
     window = before.iloc[-_IPC_VOL_WINDOW:]
@@ -109,10 +132,18 @@ def _ipc_vol_60d(ipc_returns: pd.Series, date) -> float | None:
 # ---------------------------------------------------------------------------
 
 def assign_rate_regime(macro_df: pd.DataFrame, date) -> str:
-    """Return TIGHTENING | EASING | NEUTRAL for rebalance date `date`.
+    """Classify the Banxico rate regime at a rebalance date.
 
-    Uses only macro data strictly before `date` (no lookahead).
-    Falls back to NEUTRAL when insufficient history is available.
+    Uses only macro data strictly before ``date`` (no lookahead). Falls back
+    to ``NEUTRAL`` when insufficient Banxico rate history is available.
+
+    Args:
+        macro_df: Monthly macro DataFrame with ``date`` and ``banxico_rate``
+            columns.
+        date: Rebalance date to classify.
+
+    Returns:
+        One of ``TIGHTENING``, ``EASING``, or ``NEUTRAL``.
     """
     delta = _banxico_trailing_change(macro_df, date)
     if delta is None:
@@ -130,14 +161,22 @@ def assign_stress_regime(
     date,
     vol_threshold: float,
 ) -> str:
-    """Return STRESS | CALM for rebalance date `date`.
+    """Classify the market stress regime at a rebalance date.
 
-    Parameters
-    ----------
-    ipc_returns  : daily log return series of the IPC proxy.
-    date         : rebalance date (regime uses data strictly before this date).
-    vol_threshold: threshold (annualised vol). Derived from the full OOS window
-                   upfront — not computed here to avoid per-call overhead.
+    Uses IPC proxy 60-day realised volatility computed from data strictly
+    before ``date``. Falls back to ``CALM`` when insufficient price history
+    is available.
+
+    Args:
+        ipc_returns: Daily log return series of the IPC proxy (from
+            ``_ipc_equity_returns``).
+        date: Rebalance date to classify.
+        vol_threshold: Annualised vol threshold separating STRESS from CALM.
+            Derived from the full OOS window via ``compute_stress_threshold``
+            — not computed here to avoid per-call overhead.
+
+    Returns:
+        ``STRESS`` if 60-day IPC vol exceeds ``vol_threshold``, else ``CALM``.
     """
     vol = _ipc_vol_60d(ipc_returns, date)
     if vol is None:
@@ -150,16 +189,24 @@ def compute_stress_threshold(
     ipc_returns: pd.Series,
     percentile: float = _STRESS_PERCENTILE,
 ) -> float:
-    """Compute the vol threshold from the full OOS window.
+    """Compute the IPC vol threshold from the full out-of-sample window.
 
-    Intended to be called once before `build_regime_table`.  The threshold
+    Intended to be called once before ``build_regime_table``. The threshold
     is a research-only descriptor of the volatility distribution — it does
-    NOT introduce per-period lookahead because the cut point is fixed at
-    the start of analysis and not updated as periods roll forward.
+    NOT introduce per-period lookahead because the cut point is fixed at the
+    start of analysis and not updated as periods roll forward.
 
-    Returns
-    -------
-    float : vol level at `percentile`-th percentile across all rebalances.
+    Args:
+        rebalance_dates: Ordered sequence of rebalance dates spanning the
+            full OOS window.
+        ipc_returns: Daily log return series of the IPC proxy.
+        percentile: Percentile of the vol distribution to use as the STRESS
+            threshold (default 75).
+
+    Returns:
+        Annualised vol level at the ``percentile``-th percentile across all
+        rebalance dates. Falls back to ``0.20`` if no observations are
+        available.
     """
     vols = []
     for d in rebalance_dates:
@@ -179,21 +226,28 @@ def build_regime_table(
     equity_tickers: list[str],
     vol_threshold: float | None = None,
 ) -> pd.DataFrame:
-    """Build a per-rebalance regime table.
+    """Build a per-rebalance regime classification table.
 
-    Parameters
-    ----------
-    rebalance_dates : ordered sequence of rebalance dates.
-    macro_df        : monthly macro DataFrame with 'date' and 'banxico_rate'.
-    prices_df       : wide daily prices (index=date, columns=tickers).
-    equity_tickers  : equity ticker subset for the IPC proxy.
-    vol_threshold   : if None, computed at 75th percentile of OOS window.
+    For each rebalance date assigns a rate regime (``TIGHTENING`` /
+    ``EASING`` / ``NEUTRAL``) and a stress regime (``STRESS`` / ``CALM``),
+    along with diagnostic columns for the underlying raw signals.
 
-    Returns
-    -------
-    DataFrame with columns:
-        date, rate_regime, stress_regime, rate_change_3m,
-        banxico_rate_level, ipc_vol_60d
+    Args:
+        rebalance_dates: Ordered sequence of rebalance dates spanning the
+            analysis window.
+        macro_df: Monthly macro DataFrame with ``date`` and ``banxico_rate``
+            columns.
+        prices_df: Wide daily price DataFrame; ``index`` is date, columns are
+            ticker symbols.
+        equity_tickers: Equity ticker subset used to construct the IPC proxy.
+        vol_threshold: Annualised vol threshold for the STRESS regime.
+            If ``None``, computed automatically at the 75th percentile of
+            the OOS window via ``compute_stress_threshold``.
+
+    Returns:
+        DataFrame indexed by date with columns:
+        ``rate_regime``, ``stress_regime``, ``rate_change_3m``,
+        ``banxico_rate_level``, ``ipc_vol_60d``.
     """
     dates = sorted(pd.Timestamp(d) for d in rebalance_dates)
     ipc_ret = _ipc_equity_returns(prices_df, equity_tickers)
