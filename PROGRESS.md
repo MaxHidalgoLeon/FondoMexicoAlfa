@@ -105,29 +105,29 @@ Step 4 — see below.
 
 ## Step 4: PDF Tearsheet
 
-Status: IN_PROGRESS
+Status: DONE
 Last updated: 2026-05-10T00:00:00Z
-Last commit hash: 87e8fe7
+Last commit hash: (see final commit)
 
 ### Checkpoints
-- [ ] 4.1 Discovery scan + file inventory complete
-- [ ] 4.2 weasyprint added to requirements.txt
-- [ ] 4.3 HTML structure scaffolded (all 5 pages, placeholder content)
-- [ ] 4.4 Page 1 (cover) complete
-- [ ] 4.5 Page 2 (model comparison) complete with figures
-- [ ] 4.6 Page 3 (SHAP attribution) complete with figures
-- [ ] 4.7 Page 4 (regime analysis) complete with figures
-- [ ] 4.8 Page 5 (risk + methodology) complete
-- [ ] 4.9 PDF renders without errors, file size < 15 MB
-- [ ] 4.10 Tests added + ≥ 101 passing
-- [ ] 4.11 Final commit + Step 4 closed
+- [x] 4.1 Discovery scan + file inventory complete
+- [x] 4.2 weasyprint + fpdf2 added to requirements.txt
+- [x] 4.3 HTML structure scaffolded (all 5 pages, placeholder content)
+- [x] 4.4 Page 1 (cover) complete
+- [x] 4.5 Page 2 (model comparison) complete with figures
+- [x] 4.6 Page 3 (SHAP attribution) complete with figures
+- [x] 4.7 Page 4 (regime analysis) complete with figures
+- [x] 4.8 Page 5 (risk + methodology) complete
+- [x] 4.9 PDF renders without errors, file size < 15 MB (534 KB)
+- [x] 4.10 Tests added + 104 passing (101 existing + 3 new tearsheet tests)
+- [x] 4.11 Final commit + Step 4 closed
 
 ### Notes / decisions
-- WeasyPrint ≥ 60 uses pydyf (no cairo/pango system deps) — installs cleanly on macOS.
+- WeasyPrint ≥ 60 still requires pango/gobject system libs (unavailable on this macOS env without Xcode CLT update). fpdf2 2.8.7 used as pure-Python fallback.
 - All PNGs embedded as base64 data URIs; no external file refs in HTML.
-- Source data: parse step1 MD for comparison table; load regime_performance_table.csv;
-  parse step2 MD for top-10 features and stability tables.
+- Source data: parse step1 MD for comparison table; load regime_performance_table.csv; parse step2 MD for top-10 features and stability tables.
 - Page layout: A4 landscape, dark theme, CSS page counters for footer.
+- fpdf2 normalize_text override applied to handle Unicode chars (em-dash, rho, Delta, etc.) that latin-1 core fonts cannot encode.
 
 ### Next step on resume
-4.2 — install weasyprint and add to requirements.txt
+Step 4 DONE. No further steps defined.
