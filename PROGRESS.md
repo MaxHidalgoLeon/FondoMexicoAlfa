@@ -46,7 +46,7 @@ Step 2 — see below.
 
 Status: DONE
 Last updated: 2026-05-10T00:00:00Z
-Last commit hash: <see final commit>
+Last commit hash: 0767588
 
 ### Checkpoints
 - [x] 2.1 Discovery scan complete + shap in requirements.txt
