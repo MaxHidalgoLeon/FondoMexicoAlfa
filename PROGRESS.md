@@ -99,5 +99,35 @@ Last commit hash: 44e03ce
 - Per-regime portfolio metrics from backtest.returns sliced to rebalance windows within that regime.
 
 ### Next step on resume
-Step 4 (tearsheet PDF) — suggested entry: combine regime table + SHAP attribution + equity curves
-into a single Weasyprint/reportlab PDF tearsheet.
+Step 4 — see below.
+
+---
+
+## Step 4: PDF Tearsheet
+
+Status: IN_PROGRESS
+Last updated: 2026-05-10T00:00:00Z
+Last commit hash: 87e8fe7
+
+### Checkpoints
+- [ ] 4.1 Discovery scan + file inventory complete
+- [ ] 4.2 weasyprint added to requirements.txt
+- [ ] 4.3 HTML structure scaffolded (all 5 pages, placeholder content)
+- [ ] 4.4 Page 1 (cover) complete
+- [ ] 4.5 Page 2 (model comparison) complete with figures
+- [ ] 4.6 Page 3 (SHAP attribution) complete with figures
+- [ ] 4.7 Page 4 (regime analysis) complete with figures
+- [ ] 4.8 Page 5 (risk + methodology) complete
+- [ ] 4.9 PDF renders without errors, file size < 15 MB
+- [ ] 4.10 Tests added + ≥ 101 passing
+- [ ] 4.11 Final commit + Step 4 closed
+
+### Notes / decisions
+- WeasyPrint ≥ 60 uses pydyf (no cairo/pango system deps) — installs cleanly on macOS.
+- All PNGs embedded as base64 data URIs; no external file refs in HTML.
+- Source data: parse step1 MD for comparison table; load regime_performance_table.csv;
+  parse step2 MD for top-10 features and stability tables.
+- Page layout: A4 landscape, dark theme, CSS page counters for footer.
+
+### Next step on resume
+4.2 — install weasyprint and add to requirements.txt
