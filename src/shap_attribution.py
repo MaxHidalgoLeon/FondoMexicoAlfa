@@ -39,18 +39,28 @@ def collect_rebalance_shap(
 ) -> list[dict]:
     """Compute SHAP values for one rebalance and return as a list of records.
 
-    Parameters
-    ----------
-    model:        Fitted XGBoostModel (must have .estimator_ and .scale()).
-    X_pred_df:    Raw (unscaled) prediction-set features, shape (n_tickers, n_features).
-    date:         Rebalance date (any type accepted by pd.Timestamp).
-    tickers:      Ordered list of ticker labels matching X_pred_df rows.
-    feature_cols: Ordered list of feature names matching X_pred_df columns.
+    Uses ``shap.TreeExplainer`` on the fitted ``XGBRegressor`` inside ``model``.
+    The feature matrix is scaled via ``model.scale()`` before SHAP computation
+    so that SHAP values correspond to the same feature space the trees were
+    trained on.
 
-    Returns
-    -------
-    List of dicts with keys: date, ticker, feature, shap_value.
-    Returns [] on any error so the caller can continue without crashing.
+    Args:
+        model: Fitted ``XGBoostModel`` instance. Must expose ``.estimator_``
+            (the underlying ``XGBRegressor``) and ``.scale()`` for transforming
+            raw features to the scaled space.
+        X_pred_df: Raw (unscaled) prediction-set features, shape
+            ``(n_tickers, n_features)``.
+        date: Rebalance date; any value accepted by ``pd.Timestamp``.
+        tickers: Ordered list of ticker labels corresponding to the rows of
+            ``X_pred_df``.
+        feature_cols: Ordered list of feature names corresponding to the
+            columns of ``X_pred_df``.
+
+    Returns:
+        List of dicts, one per (ticker, feature) pair, with keys:
+        ``date``, ``ticker``, ``feature``, ``shap_value``, ``feature_value``.
+        Returns an empty list on any error so the walk-forward loop can
+        continue without crashing.
     """
     try:
         import shap as _shap
@@ -97,7 +107,14 @@ def collect_rebalance_shap(
 
 
 def write_shap_parquet(records: list[dict], path: str | Path) -> None:
-    """Persist accumulated SHAP records to parquet (overwrite)."""
+    """Persist accumulated SHAP records to parquet, overwriting any existing file.
+
+    Args:
+        records: List of dicts produced by ``collect_rebalance_shap``. Each
+            dict must contain ``date``, ``ticker``, ``feature``,
+            ``shap_value``, and ``feature_value`` keys.
+        path: Destination file path. Parent directories are created if absent.
+    """
     if not records:
         logger.warning("write_shap_parquet: no records to write.")
         return
@@ -118,7 +135,19 @@ def write_shap_parquet(records: list[dict], path: str | Path) -> None:
 # ---------------------------------------------------------------------------
 
 def load_shap_parquet(path: str | Path) -> pd.DataFrame:
-    """Load and validate the SHAP parquet."""
+    """Load and validate the SHAP parquet file written by ``write_shap_parquet``.
+
+    Args:
+        path: Path to the parquet file (``data/shap_values.parquet`` by default).
+
+    Returns:
+        DataFrame with columns ``date`` (datetime64), ``ticker`` (str),
+        ``feature`` (str), ``shap_value`` (float64), ``feature_value`` (float64).
+
+    Raises:
+        FileNotFoundError: If the parquet file does not exist.
+        ValueError: If any required column is absent.
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"SHAP parquet not found: {path}")
@@ -131,9 +160,16 @@ def load_shap_parquet(path: str | Path) -> pd.DataFrame:
 
 
 def top_features_table(shap_df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
-    """Return top-n features by time-averaged mean |SHAP|.
+    """Return the top-n features by time-averaged mean absolute SHAP value.
 
-    Columns: rank, feature, mean_abs_shap, std_abs_shap.
+    Args:
+        shap_df: Long-format SHAP DataFrame with at least ``date``,
+            ``feature``, and ``shap_value`` columns.
+        n: Number of top features to return (default 10).
+
+    Returns:
+        DataFrame with columns ``rank``, ``feature``, ``mean_abs_shap``,
+        ``std_abs_shap``, sorted descending by ``mean_abs_shap``.
     """
     abs_df = shap_df.copy()
     abs_df["abs_shap"] = abs_df["shap_value"].abs()
@@ -146,7 +182,17 @@ def top_features_table(shap_df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
 
 
 def compute_mean_abs_shap_pivot(shap_df: pd.DataFrame) -> pd.DataFrame:
-    """Return pivot: index=date, columns=feature, values=mean(|shap|) across tickers."""
+    """Build a pivot table of mean absolute SHAP values by date and feature.
+
+    Args:
+        shap_df: Long-format SHAP DataFrame with ``date``, ``feature``,
+            and ``shap_value`` columns.
+
+    Returns:
+        DataFrame with ``date`` as index and feature names as columns;
+        values are mean ``|shap_value|`` across tickers for each
+        ``(date, feature)`` pair.
+    """
     abs_df = shap_df.copy()
     abs_df["abs_shap"] = abs_df["shap_value"].abs()
     pivot = (
@@ -164,18 +210,20 @@ def compute_stability(
 ) -> dict[str | int, list[float]]:
     """Compute Spearman rank-correlation stability of feature rankings.
 
-    For each consecutive pair of rebalance dates (t, t+1), rank features by
-    mean |SHAP| and compute Spearman correlation of the rankings.
+    For each consecutive pair of rebalance dates ``(t, t+1)``, ranks features
+    by mean ``|SHAP|`` and computes the Spearman correlation between the two
+    rankings. A score near 1.0 indicates that model feature importance is
+    stable across months; near 0.0 indicates high churn.
 
-    Parameters
-    ----------
-    k_values : sequence of int or None.
-        For each k, the top-k features at date t are used.
-        None means all features.
+    Args:
+        shap_df: Long-format SHAP DataFrame as returned by ``load_shap_parquet``.
+        k_values: For each element ``k``, only the top-``k`` features at
+            date ``t`` are used when computing the correlation. ``None`` uses
+            all features.
 
-    Returns
-    -------
-    dict mapping k (int or "all") → list of per-consecutive-pair correlations.
+    Returns:
+        Dict mapping ``k`` (int) or ``"all"`` (str) to a list of
+        per-consecutive-pair Spearman correlations.
     """
     pivot = compute_mean_abs_shap_pivot(shap_df)
     dates = sorted(pivot.index)
@@ -207,7 +255,16 @@ def compute_stability(
 
 
 def stability_summary(stability: dict) -> pd.DataFrame:
-    """Convert stability dict to a summary DataFrame (mean ± std per K)."""
+    """Convert the stability dict to a summary DataFrame with mean and std per K.
+
+    Args:
+        stability: Dict as returned by ``compute_stability``, mapping
+            ``k`` (int or ``"all"``) to a list of Spearman correlations.
+
+    Returns:
+        DataFrame with columns ``K``, ``n_pairs``, ``mean_spearman``,
+        ``std_spearman`` — one row per entry in ``stability``.
+    """
     rows = []
     for k, corrs in stability.items():
         label = f"top-{k}" if isinstance(k, int) else "all"
@@ -222,17 +279,25 @@ def stability_summary(stability: dict) -> pd.DataFrame:
 
 
 def compute_turnover_drivers(shap_df: pd.DataFrame, top_n: int = 3) -> dict:
-    """Decompose SHAP score volatility to identify turnover drivers.
+    """Decompose SHAP score volatility to identify the main turnover drivers.
 
-    Total SHAP score per (date, ticker) ≈ f(x) - E[f(x)] = sum of per-feature
-    SHAP values. The change in SHAP score from t-1 to t is driven by changes
-    in individual feature SHAP contributions.
+    The total SHAP score per ``(date, ticker)`` approximates the model's
+    centred prediction: ``f(x) - E[f(x)] = sum_j SHAP_j``. Month-to-month
+    variance of per-feature SHAP deltas across all ``(date, ticker)`` pairs
+    quantifies each feature's contribution to prediction instability.
 
-    Returns
-    -------
-    dict with:
-        "top_drivers": DataFrame (feature, var_contribution, pct_contribution)
-        "shap_score_df": long DataFrame (date, ticker, shap_score, delta_shap_score)
+    Args:
+        shap_df: Long-format SHAP DataFrame as returned by ``load_shap_parquet``.
+        top_n: Number of top driver features to return (default 3).
+
+    Returns:
+        Dict with two keys:
+
+        - ``"top_drivers"``: DataFrame with columns ``feature``,
+          ``var_contribution``, ``pct_contribution`` for the top-``top_n``
+          features sorted by variance contribution descending.
+        - ``"shap_score_df"``: Long DataFrame ``(date, ticker, shap_score,
+          delta_shap_score)`` for downstream visualisation.
     """
     # Total SHAP score per (date, ticker)
     score = (
