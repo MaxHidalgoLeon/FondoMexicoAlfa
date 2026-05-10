@@ -4,7 +4,7 @@
 
 Status: IN_PROGRESS
 Last updated: 2026-05-09T00:00:00Z
-Last commit hash: 6d3ae18
+Last commit hash: 105193e
 
 ### Checkpoints
 - [x] 1.1 Discovery scan complete
@@ -14,7 +14,7 @@ Last commit hash: 6d3ae18
 - [x] 1.5 Config flag for model selection (elasticnet | xgboost)
 - [x] 1.6 Backtest runs end-to-end with model=xgboost
 - [ ] 1.7 Comparison report generated (reports/step1_xgboost_vs_elasticnet.md)
-- [ ] 1.8 Tests added and all tests passing
+- [x] 1.8 Tests added and all tests passing
 - [ ] 1.9 Final commit + Step 1 closed
 
 ### Notes / decisions
