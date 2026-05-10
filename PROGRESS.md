@@ -2,9 +2,9 @@
 
 ## Step 1: XGBoost alternative model
 
-Status: IN_PROGRESS
-Last updated: 2026-05-09T00:00:00Z
-Last commit hash: df97e08
+Status: DONE
+Last updated: 2026-05-10T00:00:00Z
+Last commit hash: e91db73 (final commit closes Step 1; one more chore: commit follows)
 
 ### Checkpoints
 - [x] 1.1 Discovery scan complete
@@ -15,7 +15,7 @@ Last commit hash: df97e08
 - [x] 1.6 Backtest runs end-to-end with model=xgboost
 - [x] 1.7 Comparison report generated (reports/step1_xgboost_vs_elasticnet.md)
 - [x] 1.8 Tests added and all tests passing
-- [ ] 1.9 Final commit + Step 1 closed
+- [x] 1.9 Final commit + Step 1 closed
 
 ### Notes / decisions
 - Existing baseline: `forecast_returns` in `src/signals.py` uses `ElasticNetCV` inline (no class wrapper). Keeping that path unchanged via a thin private helper; adding a parallel `_fit_predict_xgboost` helper plus a new `XGBoostModel` class in `src/xgboost_model.py`.
@@ -26,10 +26,22 @@ Last commit hash: df97e08
 - Combined 1.3 and 1.4 in a single commit — they're a tightly coupled unit (the inner CV search lives inside `XGBoostModel.fit`); splitting would require an unusable intermediate state.
 - macOS env note: xgboost wheel needs `libomp.dylib`. Installed user-local Homebrew at `~/homebrew` and patched the venv-shipped `libxgboost.dylib` rpath with `install_name_tool -add_rpath ~/homebrew/opt/libomp/lib …`. Re-running this is required if the venv is rebuilt; not part of the FMIA codebase.
 
-### Next step on resume
-Render the Step 1 comparison report (`scripts/render_step1_report.py --source mock`) from the cached pickles, then run `pytest tests/ -q` and commit the report + tests. End-to-end smokes already done:
-  - `forecast_returns(model=xgboost)` + `run_backtest`: passing (mock; ICIR=+1.45 vs +0.31 elastic).
-  - `run_pipeline(data_source=mock, settings={'forecast_model':'xgboost', ...})` end-to-end with the full BL/FX/sleeve/regime stack: passing (278 s; all 8 standard result keys produced).
-  - `python scripts/run_all.py --help` shows `--model {elasticnet,xgboost}`.
+### Acceptance check (all green)
+- [x] `pytest tests/ -q` → 93 passed (was 87 + 6 new XGBoost tests).
+- [x] `python scripts/run_all.py --model elasticnet …` baseline path untouched.
+- [x] `python scripts/run_all.py --model xgboost …` runs end-to-end (verified
+       via `run_pipeline(settings={'forecast_model':'xgboost', ...})` with
+       all 8 standard result keys produced).
+- [x] `reports/step1_xgboost_vs_elasticnet.md` exists with full comparison
+       table, equity curve PNG, IC time-series PNG, and written interpretation.
+- [x] No leakage (`test_no_lookahead`), fixed seeds
+       (`test_reproducibility` shows max abs diff = 0), deterministic outputs.
 
-Bloomberg side-by-side is blocked on a pre-existing `KeyError: 'pe_ratio'` in `src/features.py:194` when `load_data(source='bloomberg')` is called outside `run_pipeline`. Out of scope for Step 1 — mock comparison is what ships.
+### Next step on resume
+Step 2 (SHAP values) — the user's planned follow-up. The XGBoostModel
+exposes `model.estimator_` (the tuned XGBRegressor) and
+`model.feature_names_`, both of which `shap.TreeExplainer` consumes
+directly. Suggested entry point: per-rebalance SHAP values aggregated
+into a long DataFrame (`date, ticker, feature, shap_value`), then
+top-feature attribution charts and a stability metric (rank correlation
+of mean |SHAP| across consecutive rebalances).
