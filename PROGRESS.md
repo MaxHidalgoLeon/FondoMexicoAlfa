@@ -75,7 +75,7 @@ Step 3 — see below.
 
 Status: DONE
 Last updated: 2026-05-10T00:00:00Z
-Last commit hash: <see final commit>
+Last commit hash: 44e03ce
 
 ### Checkpoints
 - [x] 3.1 Discovery scan complete
