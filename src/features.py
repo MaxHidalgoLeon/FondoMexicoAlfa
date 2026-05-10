@@ -181,6 +181,8 @@ def build_equity_features(prices: pd.DataFrame, fundamentals: pd.DataFrame, macr
         for col, default in [("pe_ratio", 14.0), ("pb_ratio", 1.8), ("roe", 0.12),
                              ("profit_margin", 0.08), ("net_debt_to_ebitda", 2.5),
                              ("ebitda_growth", 0.05), ("capex_to_sales", 0.05)]:
+            if col not in feature_df.columns:
+                feature_df[col] = np.nan
             feature_df.loc[equity_mask, col] = feature_df.loc[equity_mask, col].fillna(default)
         feature_df = feature_df.dropna(subset=["momentum_63", "volatility_63", "pe_ratio", "pb_ratio"])
     else:
@@ -190,6 +192,10 @@ def build_equity_features(prices: pd.DataFrame, fundamentals: pd.DataFrame, macr
     # Add legacy columns for compatibility
     feature_df["momentum"] = feature_df["momentum_63"]
     feature_df["volatility"] = feature_df["volatility_63"]
+    for _col, _default in [("pe_ratio", 14.0), ("pb_ratio", 1.8), ("roe", 0.12),
+                            ("profit_margin", 0.08), ("net_debt_to_ebitda", 2.5)]:
+        if _col not in feature_df.columns:
+            feature_df[_col] = _default
     feature_df = feature_df.assign(
         value_score=lambda x: -0.5 * x["pe_ratio"] - 0.5 * x["pb_ratio"],
         quality_score=lambda x: x["roe"] + x["profit_margin"] - 0.25 * x["net_debt_to_ebitda"],
@@ -256,8 +262,11 @@ def build_fibra_features(prices: pd.DataFrame, fibra_fundamentals: pd.DataFrame,
     # Add legacy columns
     feature_df["momentum"] = feature_df["momentum_63"]
     feature_df["volatility"] = feature_df["volatility_63"]
-    # For fibra: higher cap_rate = better value; higher FFO yield with low leverage = higher quality
-    feature_df["value_score"] = feature_df["cap_rate"]  # higher cap_rate = cheaper / more value
+    for _col, _default in [("cap_rate", 0.075), ("ffo_yield", 0.065),
+                            ("vacancy_rate", 0.08), ("ltv", 0.35)]:
+        if _col not in feature_df.columns:
+            feature_df[_col] = _default
+    feature_df["value_score"] = feature_df["cap_rate"]
     feature_df["quality_score"] = (
         feature_df["ffo_yield"] - feature_df["vacancy_rate"] - feature_df["ltv"] * 0.15
     )
