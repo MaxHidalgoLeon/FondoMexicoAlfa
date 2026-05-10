@@ -28,3 +28,9 @@ data/
 
 # Hyperopt-generated configs (rebuilt by run_hyperopt.py, source-specific)
 config_optimized_*.yaml
+
+# Local Claude Code state
+.claude/
+
+# Step 1 cached artifacts (regenerable via scripts/run_step1_comparison.py)
+reports/output/step1/*.pkl
