@@ -379,17 +379,19 @@ def _plot_ic_boxplot(
 # ---------------------------------------------------------------------------
 
 def _rel(path: Path) -> str:
+    """Return a relative POSIX path from the reports directory for use in markdown links."""
     return path.relative_to(REPORT_PATH.parent).as_posix()
 
 
 def _fmt(val, fmt="{:.3f}") -> str:
+    """Format a numeric value with ``fmt``, returning ``'—'`` for None or NaN."""
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return "—"
     return fmt.format(val)
 
 
 def _perf_table_md(perf_df: pd.DataFrame) -> str:
-    """Format performance table for markdown."""
+    """Format the regime performance table as a markdown table string."""
     cols = [
         ("n_rebalances", "N", "{:.0f}"),
         ("ic_mean",  "IC mean", "{:+.3f}"),
@@ -414,6 +416,7 @@ def _perf_table_md(perf_df: pd.DataFrame) -> str:
 
 
 def _stability_by_regime_md(stab_df: pd.DataFrame) -> str:
+    """Format the SHAP stability-by-regime DataFrame as a markdown table string."""
     lines = ["| Rate regime | Pairs | Top-5 stability | Top-10 stability | All-feature stability |",
              "|:---|---:|---:|---:|---:|"]
     for _, row in stab_df.iterrows():
@@ -427,6 +430,7 @@ def _stability_by_regime_md(stab_df: pd.DataFrame) -> str:
 
 
 def _momentum_shap_md(mom_df: pd.DataFrame) -> str:
+    """Format the momentum SHAP by regime DataFrame as a markdown table string."""
     lines = ["| Rate regime | Mean SHAP (momentum_63) | Std | N obs |",
              "|:---|---:|---:|---:|"]
     for _, row in mom_df.iterrows():
@@ -438,6 +442,7 @@ def _momentum_shap_md(mom_df: pd.DataFrame) -> str:
 
 
 def _write_regime_finding(rr: str, perf_df: pd.DataFrame) -> str:
+    """Compose a narrative paragraph for a single rate regime."""
     row = perf_df[(perf_df["rate_regime"] == rr) & (perf_df["stress_regime"] == "ALL")]
     if row.empty:
         return f"**{rr}**: No data available."
@@ -470,6 +475,7 @@ def _write_regime_finding(rr: str, perf_df: pd.DataFrame) -> str:
 
 
 def _write_recommendation(perf_df: pd.DataFrame, stab_df: pd.DataFrame) -> str:
+    """Compose the actionable regime-filter recommendation section."""
     tight_row = perf_df[(perf_df["rate_regime"] == TIGHTENING) & (perf_df["stress_regime"] == "ALL")]
     stress_row = perf_df[(perf_df["rate_regime"] != "ALL") & (perf_df["stress_regime"] == STRESS)]
 
@@ -495,6 +501,7 @@ def _write_recommendation(perf_df: pd.DataFrame, stab_df: pd.DataFrame) -> str:
 
 
 def main() -> None:
+    """CLI entry point: run pipeline, build regime tables, generate figures and report."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", default="mock")
     ap.add_argument("--model",  default="elasticnet",

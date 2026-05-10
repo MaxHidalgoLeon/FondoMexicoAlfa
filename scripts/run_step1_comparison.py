@@ -42,10 +42,12 @@ logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(mes
 
 
 def _safe_div(num: float, den: float) -> float:
+    """Return num/den, or NaN if den is zero or non-finite."""
     return float(num / den) if den != 0 and np.isfinite(den) else float("nan")
 
 
 def _hit_rate(returns: pd.Series) -> float:
+    """Fraction of positive daily returns (NaN if series is empty)."""
     r = pd.Series(returns).dropna()
     if r.empty:
         return float("nan")
@@ -53,6 +55,7 @@ def _hit_rate(returns: pd.Series) -> float:
 
 
 def _annualized_sortino(returns: pd.Series, risk_free: float = 0.02) -> float:
+    """Annualised Sortino ratio using downside deviation of excess returns."""
     r = pd.Series(returns).dropna()
     if r.empty:
         return float("nan")
@@ -90,6 +93,7 @@ def _ic_per_period(forecast_df: pd.DataFrame, prices: pd.DataFrame, horizon: int
 
 
 def _summarize(forecast_df, prices, returns, metrics, transaction_cost: float) -> dict:
+    """Aggregate IC, return, and risk metrics into a single summary dict."""
     ic = _ic_per_period(forecast_df, prices)
     raw_returns = returns.copy()
     # Net-of-cost Sharpe is the per-rebalance net Sharpe — already in metrics["sharpe"]
@@ -177,6 +181,7 @@ def run_one(
 
 
 def main() -> None:
+    """CLI entry point: parse args, load data, run both models, save artifacts."""
     p = argparse.ArgumentParser()
     p.add_argument("--source", default="bloomberg", choices=["mock", "bloomberg", "yahoo", "refinitiv"])
     p.add_argument("--start", default=None)

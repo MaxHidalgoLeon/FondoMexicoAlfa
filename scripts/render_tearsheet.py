@@ -62,6 +62,7 @@ def _fmt(val, fmt=".3f", color=True) -> str:
 
 
 def _fmt_pct(val) -> str:
+    """Format a fraction (0–1) as a percentage string with one decimal place."""
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return "—"
     return _fmt(val * 100, ".1f") + "%"
@@ -142,6 +143,7 @@ def _parse_step2_tables(md_path: Path) -> tuple[list[dict], list[dict]]:
 
 
 def _load_regime_perf() -> pd.DataFrame:
+    """Load regime_performance_table.csv; returns an empty DataFrame if absent."""
     csv = REPORTS / "regime_performance_table.csv"
     if not csv.exists():
         print(f"  [warn] missing: {csv.name}")
@@ -153,6 +155,7 @@ def _extract_cover_stats(step1_rows: list[dict]) -> dict:
     """Pull headline XGBoost metrics for the cover stat-strip."""
     lookup = {r["metric"]: r for r in step1_rows}
     def xgb(key):
+        """Look up the XGBoost value for a given metric name."""
         row = lookup.get(key, {})
         return row.get("xgboost", "—")
     return {
@@ -306,6 +309,7 @@ img { max-width: 100%; height: auto; }
 
 
 def _page_cover(stats: dict) -> str:
+    """Return the HTML string for Page 1 (cover with headline stat strip)."""
     sharpe = stats.get("sharpe", "—")
     icir   = stats.get("icir",   "—")
     mdd    = stats.get("mdd",    "—")
@@ -347,6 +351,7 @@ def _page_cover(stats: dict) -> str:
 
 
 def _page_model_comparison(step1_rows: list[dict]) -> str:
+    """Return the HTML string for Page 2 (XGBoost vs ElasticNet model comparison table)."""
     if not step1_rows:
         rows_html = '<tr><td colspan="4" class="missing">Step 1 comparison data not found.</td></tr>'
     else:
@@ -390,6 +395,7 @@ def _page_model_comparison(step1_rows: list[dict]) -> str:
 
 
 def _page_shap(top10: list[dict], stability: list[dict]) -> str:
+    """Return the HTML string for Page 3 (SHAP feature attribution with beeswarm/waterfall figures)."""
     if top10:
         top10_rows = ""
         for r in top10:
@@ -443,6 +449,7 @@ def _page_shap(top10: list[dict], stability: list[dict]) -> str:
 
 
 def _page_regime(regime_df: pd.DataFrame) -> str:
+    """Return the HTML string for Page 4 (macro regime performance table and equity curves figure)."""
     # Regime counts
     if not regime_df.empty:
         count_rows = ""
@@ -494,6 +501,7 @@ def _page_regime(regime_df: pd.DataFrame) -> str:
 
 
 def _page_risk_methodology(step1_rows: list[dict]) -> str:
+    """Return the HTML string for Page 5 (risk metrics, factor exposures, methodology summary)."""
     # Extract XGBoost risk metrics from step1 table
     lookup = {r["metric"]: r.get("xgboost", "—") for r in step1_rows}
     sharpe  = lookup.get("Sharpe", "—")
@@ -577,6 +585,7 @@ def build_html(
     stability: list[dict],
     regime_df: pd.DataFrame,
 ) -> str:
+    """Assemble all 5 pages into a complete HTML document string."""
     stats = _extract_cover_stats(step1_rows)
 
     pages = "".join([
@@ -608,6 +617,7 @@ def build_html(
 # ---------------------------------------------------------------------------
 
 def _render_pdf_weasyprint(html_path: Path, pdf_path: Path) -> bool:
+    """Attempt to render the HTML file to PDF using WeasyPrint; returns True on success."""
     try:
         import weasyprint
         with warnings.catch_warnings():
@@ -637,12 +647,15 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
 
     class TearsheetPDF(FPDF):
         def normalize_text(self, text: str) -> str:
+            """Sanitise text so all chars fit within the latin-1 encoding of core fonts."""
             return _ascii(text)
 
         def header(self):
+            """No page header — suppressed intentionally."""
             pass
 
         def footer(self):
+            """Render the centred page-counter footer on every page."""
             self.set_y(-10)
             self.set_font("Helvetica", "I", 6)
             self.set_text_color(139, 148, 158)
@@ -664,12 +677,13 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
     ACC  = (57,  211, 83)
     RED  = (248, 81,  73)
 
-    def set_primary():   pdf.set_text_color(*TXT)
-    def set_muted():     pdf.set_text_color(*MUT)
-    def set_accent():    pdf.set_text_color(*ACC)
-    def set_red():       pdf.set_text_color(*RED)
+    def set_primary():   """Set text colour to primary (light)."""; pdf.set_text_color(*TXT)
+    def set_muted():     """Set text colour to muted grey."""; pdf.set_text_color(*MUT)
+    def set_accent():    """Set text colour to accent green."""; pdf.set_text_color(*ACC)
+    def set_red():       """Set text colour to warning red."""; pdf.set_text_color(*RED)
 
     def section_header(title: str):
+        """Render a bold section-header cell with a green left-border rule."""
         pdf.set_fill_color(*SURF)
         pdf.set_draw_color(*ACC)
         pdf.set_line_width(0.8)
@@ -682,6 +696,7 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
         pdf.ln(2)
 
     def add_img_safe(path: Path, x=None, y=None, w=None, h=None):
+        """Insert an image at the given position, silently skipping if the file is absent."""
         if path.exists():
             try:
                 if x is not None:
@@ -951,6 +966,7 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    """Load all source data, build HTML, write it, then render PDF (WeasyPrint → fpdf2 fallback)."""
     print("[tearsheet] Loading source data ...")
 
     step1_rows = _parse_step1_table(REPORTS / "step1_xgboost_vs_elasticnet.md")

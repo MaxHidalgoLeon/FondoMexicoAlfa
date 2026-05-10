@@ -189,10 +189,12 @@ def _plot_feature_importance_over_time(
 # ---------------------------------------------------------------------------
 
 def _rel(path: Path) -> str:
+    """Return a relative POSIX path from the reports directory for use in markdown links."""
     return path.relative_to(REPORT_PATH.parent).as_posix()
 
 
 def _top_features_md(top: pd.DataFrame) -> str:
+    """Format the top-features DataFrame as a markdown table string."""
     lines = ["| Rank | Feature | Mean |SHAP| | Std |SHAP| |",
              "|---:|:---|---:|---:|"]
     for _, row in top.iterrows():
@@ -204,6 +206,7 @@ def _top_features_md(top: pd.DataFrame) -> str:
 
 
 def _stability_md(summ: pd.DataFrame) -> str:
+    """Format the stability summary DataFrame as a markdown table string."""
     lines = ["| K | Pairs | Mean Spearman | Std Spearman |",
              "|:---|---:|---:|---:|"]
     for _, row in summ.iterrows():
@@ -215,6 +218,7 @@ def _stability_md(summ: pd.DataFrame) -> str:
 
 
 def _turnover_md(drivers: pd.DataFrame) -> str:
+    """Format the turnover drivers DataFrame as a markdown table string."""
     lines = ["| Feature | Variance contribution | % of total |",
              "|:---|---:|---:|"]
     for _, row in drivers.iterrows():
@@ -226,6 +230,7 @@ def _turnover_md(drivers: pd.DataFrame) -> str:
 
 
 def _write_interpretation(top: pd.DataFrame, summ: pd.DataFrame, drivers: pd.DataFrame) -> str:
+    """Compose the narrative interpretation section of the SHAP report."""
     top5 = top.head(5)["feature"].tolist()
     top3_str = ", ".join(f"**{f}**" for f in top5[:3])
     stab_top5 = summ[summ["K"] == "top-5"]["mean_spearman"].values
@@ -261,6 +266,7 @@ filter on the FIBRA sleeve would be the most targeted interventions for Step 3."
 
 
 def main() -> None:
+    """CLI entry point: load SHAP parquet, generate figures and markdown report."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--parquet", default="data/shap_values.parquet")
     args = ap.parse_args()
