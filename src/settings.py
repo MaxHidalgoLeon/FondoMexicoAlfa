@@ -102,6 +102,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "forecast_xgb_random_state": 42,
     "forecast_xgb_n_jobs": 1,
     "forecast_xgb_search_n_jobs": 1,
+    # SHAP attribution (only consumed when forecast_model == "xgboost").
+    "compute_shap": True,           # set False to skip SHAP and save runtime
+    "shap_output_path": "data/shap_values.parquet",  # overwritten each run
     # ------------------------------------------------------------------
     # Portfolio / optimizer hyperparameters
     # Defaults are kept bit-identical to the values currently hardcoded in

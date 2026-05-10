@@ -51,6 +51,10 @@ forecast_xgb_n_estimators_cap: 2000        # early-stopping ceiling
 forecast_xgb_early_stopping_rounds: 50
 forecast_xgb_scoring: "neg_mean_squared_error"   # or "ic" for Spearman rank-IC
 
+# SHAP feature attribution — only consumed when forecast_model == "xgboost".
+# Set false to skip SHAP computation and save ~10% runtime per rebalance.
+compute_shap: true
+
 # Output path for the HTML report
 report_output: "reports/output/strategy_report.html"
 

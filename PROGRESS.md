@@ -49,9 +49,9 @@ Last updated: 2026-05-10T00:00:00Z
 Last commit hash: d04598c
 
 ### Checkpoints
-- [ ] 2.1 Discovery scan complete + shap in requirements.txt
-- [ ] 2.2 Per-rebalance SHAP collection wired into walk-forward loop
-- [ ] 2.3 data/shap_values.parquet written on a test run
+- [x] 2.1 Discovery scan complete + shap in requirements.txt
+- [x] 2.2 Per-rebalance SHAP collection wired into walk-forward loop
+- [x] 2.3 data/shap_values.parquet written on a test run
 - [ ] 2.4 Feature stability metric computed + shap_stability.csv
 - [ ] 2.5 Turnover driver analysis complete
 - [ ] 2.6 SHAP vs ElasticNet comparison figure (or documented skip)
@@ -67,4 +67,4 @@ Last commit hash: d04598c
 - SHAP parquet is overwritten on each run (not appended). Gate: `compute_shap: true` in settings.
 
 ### Next step on resume
-2.1 — install shap + commit deps
+2.4 — stability metric + shap_stability.csv

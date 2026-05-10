@@ -110,6 +110,19 @@ def _fit_predict_elasticnet(
     return model.predict(scaler.transform(X_pred))
 
 
+def _xgboost_cfg_from_settings(cfg: dict) -> dict:
+    return {
+        "n_iter": int(cfg["forecast_xgb_n_iter"]),
+        "cv_splits": int(cfg["forecast_xgb_cv_splits"]),
+        "n_estimators_cap": int(cfg["forecast_xgb_n_estimators_cap"]),
+        "early_stopping_rounds": int(cfg["forecast_xgb_early_stopping_rounds"]),
+        "scoring": str(cfg["forecast_xgb_scoring"]),
+        "random_state": int(cfg["forecast_xgb_random_state"]),
+        "n_jobs": int(cfg["forecast_xgb_n_jobs"]),
+        "search_n_jobs": int(cfg["forecast_xgb_search_n_jobs"]),
+    }
+
+
 def _fit_predict_xgboost(
     X_train: pd.DataFrame,
     y_train: pd.Series,
@@ -124,17 +137,7 @@ def _fit_predict_xgboost(
     """
     from .xgboost_model import XGBoostModel
 
-    xgb_cfg = {
-        "n_iter": int(cfg["forecast_xgb_n_iter"]),
-        "cv_splits": int(cfg["forecast_xgb_cv_splits"]),
-        "n_estimators_cap": int(cfg["forecast_xgb_n_estimators_cap"]),
-        "early_stopping_rounds": int(cfg["forecast_xgb_early_stopping_rounds"]),
-        "scoring": str(cfg["forecast_xgb_scoring"]),
-        "random_state": int(cfg["forecast_xgb_random_state"]),
-        "n_jobs": int(cfg["forecast_xgb_n_jobs"]),
-        "search_n_jobs": int(cfg["forecast_xgb_search_n_jobs"]),
-    }
-    model = XGBoostModel(config=xgb_cfg)
+    model = XGBoostModel(config=_xgboost_cfg_from_settings(cfg))
     try:
         model.fit(X_train, y_train)
     except Exception as exc:
@@ -187,6 +190,9 @@ def forecast_returns(
     else:
         fit_predict = _fit_predict_elasticnet
 
+    do_shap = (model_name == "xgboost") and bool(cfg.get("compute_shap", True))
+    shap_records: list[dict] = []
+
     forecasts: list[pd.DataFrame] = []
     asset_classes = feature_df["asset_class"].unique()
 
@@ -232,7 +238,30 @@ def forecast_returns(
             y_train = train_data["_fwd_return"]
             X_pred = current_data[feature_cols].fillna(0.0)
 
-            preds = fit_predict(X_train, y_train, X_pred, cfg)
+            if do_shap:
+                # Inline XGBoost fit so we can intercept the model object for SHAP.
+                from .xgboost_model import XGBoostModel
+                from .shap_attribution import collect_rebalance_shap
+
+                _xgb_model = XGBoostModel(config=_xgboost_cfg_from_settings(cfg))
+                try:
+                    _xgb_model.fit(X_train, y_train)
+                    shap_records.extend(
+                        collect_rebalance_shap(
+                            _xgb_model,
+                            X_pred,
+                            date,
+                            current_data["ticker"].tolist(),
+                            feature_cols,
+                        )
+                    )
+                except Exception as exc:
+                    logger.warning("XGBoostModel fit/SHAP failed at %s: %s", date, exc)
+                    continue
+                preds = _xgb_model.predict(X_pred)
+            else:
+                preds = fit_predict(X_train, y_train, X_pred, cfg)
+
             if preds is None:
                 logger.warning(
                     "%s fit failed for %s on %s — skipping rebalance.",
@@ -241,6 +270,11 @@ def forecast_returns(
                 continue
             current_data["expected_return"] = preds
             forecasts.append(current_data)
+
+    if do_shap and shap_records:
+        from .shap_attribution import write_shap_parquet
+        shap_path = str(cfg.get("shap_output_path", "data/shap_values.parquet"))
+        write_shap_parquet(shap_records, shap_path)
 
     if not forecasts:
         return pd.DataFrame(columns=["date", "ticker", "asset_class", "expected_return"])

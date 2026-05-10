@@ -288,3 +288,14 @@ class XGBoostModel:
     @property
     def estimator_(self) -> xgb.XGBRegressor | None:
         return self._best_estimator
+
+    def scale(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
+        """Apply the fitted StandardScaler to X.
+
+        Exposed so external callers (e.g. shap_attribution) can produce
+        SHAP values on the same scaled feature space the trees were trained on.
+        Raises RuntimeError if called before fit().
+        """
+        if self._scaler is None:
+            raise RuntimeError("XGBoostModel.scale called before fit().")
+        return self._scaler.transform(self._to_numpy(X))
