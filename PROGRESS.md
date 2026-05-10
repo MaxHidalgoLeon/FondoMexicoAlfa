@@ -38,10 +38,33 @@ Last commit hash: b145fee
        (`test_reproducibility` shows max abs diff = 0), deterministic outputs.
 
 ### Next step on resume
-Step 2 (SHAP values) — the user's planned follow-up. The XGBoostModel
-exposes `model.estimator_` (the tuned XGBRegressor) and
-`model.feature_names_`, both of which `shap.TreeExplainer` consumes
-directly. Suggested entry point: per-rebalance SHAP values aggregated
-into a long DataFrame (`date, ticker, feature, shap_value`), then
-top-feature attribution charts and a stability metric (rank correlation
-of mean |SHAP| across consecutive rebalances).
+Step 2 — see below.
+
+---
+
+## Step 2: SHAP attribution
+
+Status: IN_PROGRESS
+Last updated: 2026-05-10T00:00:00Z
+Last commit hash: d04598c
+
+### Checkpoints
+- [ ] 2.1 Discovery scan complete + shap in requirements.txt
+- [ ] 2.2 Per-rebalance SHAP collection wired into walk-forward loop
+- [ ] 2.3 data/shap_values.parquet written on a test run
+- [ ] 2.4 Feature stability metric computed + shap_stability.csv
+- [ ] 2.5 Turnover driver analysis complete
+- [ ] 2.6 SHAP vs ElasticNet comparison figure (or documented skip)
+- [ ] 2.7 SHAP report (reports/step2_shap_analysis.md + figures)
+- [ ] 2.8 Tests added + 93+ tests passing
+- [ ] 2.9 Final commit + Step 2 closed
+
+### Notes / decisions
+- Architecture: SHAP computed inline in `forecast_returns` walk-forward loop via an explicit `XGBoostModel` instantiation when `model_name=="xgboost"` and `compute_shap=True`. The `fit_predict` function-pointer pattern is bypassed for this path so the model object is accessible before being discarded.
+- `XGBoostModel` gets a new `scale(X)` method exposing the internal `StandardScaler.transform` so `shap_attribution.py` can produce SHAP values on the correct (scaled) feature space without coupling shap to xgboost_model.py.
+- ElasticNet per-rebalance coefficients are not stored anywhere — `_fit_predict_elasticnet` discards the fitted model. The feature-importance comparison panel (§2.4) is therefore XGBoost-only; this is noted in the report.
+- `TreeExplainer` is reconstructed each rebalance (not persisted). Acceptable given universe size (~26 equities + FIBRAs).
+- SHAP parquet is overwritten on each run (not appended). Gate: `compute_shap: true` in settings.
+
+### Next step on resume
+2.1 — install shap + commit deps
