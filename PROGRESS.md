@@ -4,7 +4,7 @@
 
 Status: IN_PROGRESS
 Last updated: 2026-05-09T00:00:00Z
-Last commit hash: bd371aa (pre-Step-1 baseline)
+Last commit hash: c062cb7
 
 ### Checkpoints
 - [x] 1.1 Discovery scan complete
