@@ -131,3 +131,33 @@ Last commit hash: (see final commit)
 
 ### Next step on resume
 Step 4 DONE. No further steps defined.
+
+---
+
+## Step 5: Docstrings and documentation
+
+Status: DONE
+Last updated: 2026-05-10T00:00:00Z
+Last commit hash: 07cc0a1
+
+### Checkpoints
+- [x] 5.1 Discovery scan + file inventory complete
+- [x] 5.2 src/xgboost_model.py documented
+- [x] 5.3 src/shap_attribution.py documented
+- [x] 5.4 src/macro_regimes.py documented
+- [x] 5.5 All scripts/ files documented (module-level + non-obvious helpers)
+- [x] 5.6 104 tests passing
+- [x] 5.7 Final commit + Step 5 closed
+
+### Bugs found — deferred to Step 6
+None found.
+
+### Notes / decisions
+- Google-style docstrings throughout (Args, Returns, Raises).
+- NumPy-style docstrings in shap_attribution.py and macro_regimes.py converted to Google style.
+- scripts/ received module-level docstrings (already present) + one-liner docstrings on all non-obvious private helpers and main() entry points.
+- Inner fpdf2 class methods in render_tearsheet.py documented inline.
+- Zero logic changes.
+
+### Next step on resume
+Step 5 DONE. No further steps defined.
