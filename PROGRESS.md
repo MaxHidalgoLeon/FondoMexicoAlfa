@@ -73,22 +73,22 @@ Step 3 — see below.
 
 ## Step 3: Macro regime performance
 
-Status: IN_PROGRESS
+Status: DONE
 Last updated: 2026-05-10T00:00:00Z
-Last commit hash: c7e1c37
+Last commit hash: <see final commit>
 
 ### Checkpoints
-- [ ] 3.1 Discovery scan complete
-- [ ] 3.2 Macro data located / loaded (Banxico rate + IPC vol)
-- [ ] 3.3 src/macro_regimes.py implemented + unit tested
-- [ ] 3.4 Regime table built and saved
-- [ ] 3.5 Regime-conditioned performance table computed
-- [ ] 3.6 Regime-conditioned SHAP stability computed
-- [ ] 3.7 Momentum SHAP by regime computed
-- [ ] 3.8 All figures generated
-- [ ] 3.9 reports/step3_regime_analysis.md complete
-- [ ] 3.10 Tests added + ≥97 passing
-- [ ] 3.11 Final commit + Step 3 closed
+- [x] 3.1 Discovery scan complete
+- [x] 3.2 Macro data located / loaded (banxico_rate in mock macro; IPC proxy = EW equity returns)
+- [x] 3.3 src/macro_regimes.py implemented + unit tested
+- [x] 3.4 Regime table built and saved (reports/regime_table.csv)
+- [x] 3.5 Regime-conditioned performance table computed (reports/regime_performance_table.csv)
+- [x] 3.6 Regime-conditioned SHAP stability computed
+- [x] 3.7 Momentum SHAP by regime computed
+- [x] 3.8 All figures generated (step3_regime_equity_curves.png, step3_ic_by_regime.png)
+- [x] 3.9 reports/step3_regime_analysis.md complete
+- [x] 3.10 Tests added + 101 passing (97 existing + 4 new regime tests)
+- [x] 3.11 Final commit + Step 3 closed
 
 ### Notes / decisions
 - Banxico rate already in mock macro DataFrame (field: banxico_rate). No lookahead: regime at rebalance t uses macro data up to end of month t-1.
@@ -99,4 +99,5 @@ Last commit hash: c7e1c37
 - Per-regime portfolio metrics from backtest.returns sliced to rebalance windows within that regime.
 
 ### Next step on resume
-3.3 — write src/macro_regimes.py and commit
+Step 4 (tearsheet PDF) — suggested entry: combine regime table + SHAP attribution + equity curves
+into a single Weasyprint/reportlab PDF tearsheet.
