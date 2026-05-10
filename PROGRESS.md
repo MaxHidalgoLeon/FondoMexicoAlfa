@@ -44,20 +44,20 @@ Step 2 — see below.
 
 ## Step 2: SHAP attribution
 
-Status: IN_PROGRESS
+Status: DONE
 Last updated: 2026-05-10T00:00:00Z
-Last commit hash: d04598c
+Last commit hash: <see final commit>
 
 ### Checkpoints
 - [x] 2.1 Discovery scan complete + shap in requirements.txt
 - [x] 2.2 Per-rebalance SHAP collection wired into walk-forward loop
 - [x] 2.3 data/shap_values.parquet written on a test run
-- [ ] 2.4 Feature stability metric computed + shap_stability.csv
-- [ ] 2.5 Turnover driver analysis complete
-- [ ] 2.6 SHAP vs ElasticNet comparison figure (or documented skip)
-- [ ] 2.7 SHAP report (reports/step2_shap_analysis.md + figures)
-- [ ] 2.8 Tests added + 93+ tests passing
-- [ ] 2.9 Final commit + Step 2 closed
+- [x] 2.4 Feature stability metric computed + shap_stability.csv
+- [x] 2.5 Turnover driver analysis complete
+- [x] 2.6 SHAP vs ElasticNet comparison figure (documented skip — ElasticNet coef_ not stored)
+- [x] 2.7 SHAP report (reports/step2_shap_analysis.md + figures)
+- [x] 2.8 Tests added + 97 tests passing (93 existing + 4 new SHAP tests)
+- [x] 2.9 Final commit + Step 2 closed
 
 ### Notes / decisions
 - Architecture: SHAP computed inline in `forecast_returns` walk-forward loop via an explicit `XGBoostModel` instantiation when `model_name=="xgboost"` and `compute_shap=True`. The `fit_predict` function-pointer pattern is bypassed for this path so the model object is accessible before being discarded.
@@ -67,4 +67,6 @@ Last commit hash: d04598c
 - SHAP parquet is overwritten on each run (not appended). Gate: `compute_shap: true` in settings.
 
 ### Next step on resume
-2.4 — stability metric + shap_stability.csv
+Step 3 (performance by macro regime) — see §5 in the step2 report for suggested entry points.
+Key insight: ltv, ffo_yield (FIBRA) and momentum_63 (equity) are the top SHAP features and
+top turnover drivers; regime-conditioned attribution is the natural follow-up.

@@ -23,7 +23,7 @@ from scipy.stats import spearmanr
 
 logger = logging.getLogger(__name__)
 
-_REQUIRED_COLS = {"date", "ticker", "feature", "shap_value"}
+_REQUIRED_COLS = {"date", "ticker", "feature", "shap_value", "feature_value"}
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +82,7 @@ def collect_rebalance_shap(
         return []
 
     ts = pd.Timestamp(date)
+    X_raw = np.asarray(X_pred_df, dtype=float)
     records: list[dict] = []
     for i, ticker in enumerate(tickers):
         for j, feat in enumerate(feature_cols):
@@ -90,6 +91,7 @@ def collect_rebalance_shap(
                 "ticker": ticker,
                 "feature": feat,
                 "shap_value": float(sv[i, j]),
+                "feature_value": float(X_raw[i, j]),
             })
     return records
 
@@ -106,6 +108,7 @@ def write_shap_parquet(records: list[dict], path: str | Path) -> None:
     df["ticker"] = df["ticker"].astype(str)
     df["feature"] = df["feature"].astype(str)
     df["shap_value"] = df["shap_value"].astype(float)
+    df["feature_value"] = df["feature_value"].astype(float)
     df.to_parquet(path, index=False)
     logger.info("SHAP parquet written: %s  (%d rows)", path, len(df))
 
