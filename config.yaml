@@ -36,6 +36,12 @@ benchmark_tickers:
   - "BBVANSH"
   - "ACTIED"
 
+# Cross-sectional return predictor:
+#   "elasticnet" — ElasticNetCV (baseline, default)
+#   "xgboost"    — XGBRegressor with RandomizedSearchCV + TimeSeriesSplit
+# CLI override: --model {elasticnet|xgboost} on scripts/run_all.py.
+forecast_model: "elasticnet"
+
 # Output path for the HTML report
 report_output: "reports/output/strategy_report.html"
 

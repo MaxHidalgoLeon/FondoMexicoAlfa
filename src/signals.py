@@ -12,6 +12,8 @@ from .settings import resolve_settings
 
 logger = logging.getLogger(__name__)
 
+SUPPORTED_FORECAST_MODELS = ("elasticnet", "xgboost")
+
 # Feature sets per asset class (externalized so they're easy to update)
 _EQUITY_FEATURES = [
     "momentum_63", "momentum_126", "volatility_63",
@@ -77,19 +79,87 @@ def score_cross_section(feature_df: pd.DataFrame) -> pd.DataFrame:
     return scores
 
 
+def _fit_predict_elasticnet(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_pred: pd.DataFrame,
+    cfg: dict,
+) -> np.ndarray | None:
+    """Fit ElasticNetCV on (X_train, y_train) and predict on X_pred.
+
+    Returns predictions as a 1-D ndarray, or None if the fit fails.
+    Behaviour bit-identical to the pre-dispatcher inline block.
+    """
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    model = ElasticNetCV(
+        cv=int(cfg["elasticnet_cv_folds"]),
+        l1_ratio=list(cfg["elasticnet_l1_ratios"]),
+        max_iter=int(cfg["elasticnet_max_iter"]),
+        tol=float(cfg["elasticnet_tol"]),
+        random_state=42,
+        n_jobs=-1,
+    )
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=ConvergenceWarning)
+            model.fit(X_train_scaled, y_train)
+    except Exception as exc:
+        logger.warning("ElasticNetCV fit failed: %s", exc)
+        return None
+    return model.predict(scaler.transform(X_pred))
+
+
+def _fit_predict_xgboost(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_pred: pd.DataFrame,
+    cfg: dict,
+) -> np.ndarray | None:
+    """Fit XGBoostModel on (X_train, y_train) and predict on X_pred.
+
+    Returns predictions as a 1-D ndarray, or None if the fit fails.
+    XGBoostModel handles its own StandardScaler + RandomizedSearchCV +
+    early-stopping refit internally.
+    """
+    from .xgboost_model import XGBoostModel
+
+    xgb_cfg = {
+        "n_iter": int(cfg["forecast_xgb_n_iter"]),
+        "cv_splits": int(cfg["forecast_xgb_cv_splits"]),
+        "n_estimators_cap": int(cfg["forecast_xgb_n_estimators_cap"]),
+        "early_stopping_rounds": int(cfg["forecast_xgb_early_stopping_rounds"]),
+        "scoring": str(cfg["forecast_xgb_scoring"]),
+        "random_state": int(cfg["forecast_xgb_random_state"]),
+        "n_jobs": int(cfg["forecast_xgb_n_jobs"]),
+        "search_n_jobs": int(cfg["forecast_xgb_search_n_jobs"]),
+    }
+    model = XGBoostModel(config=xgb_cfg)
+    try:
+        model.fit(X_train, y_train)
+    except Exception as exc:
+        logger.warning("XGBoostModel fit failed: %s", exc)
+        return None
+    return model.predict(X_pred)
+
+
 def forecast_returns(
     feature_df: pd.DataFrame,
     returns: pd.DataFrame,
     settings: dict | None = None,
 ) -> pd.DataFrame:
-    """Forecast returns using ElasticNetCV with an expanding window.
+    """Forecast returns with an expanding-window cross-sectional model.
 
-    For each asset class (equity, fibra) and each rebalancing date:
+    For each asset class (equity, fibra) and each end-of-month rebalancing date:
       1. Builds the training set: all historical (date, ticker) pairs with
-         realized return available (forward return without look-ahead bias).
-      2. Normalizes features with StandardScaler (mean 0, std 1).
-      3. Fits ElasticNet with CV to automatically select λ and α (L1/L2).
-      4. Predicts expected return for all tickers on that date.
+         realized forward return available (no look-ahead bias).
+      2. Hands (X_train, y_train, X_pred) to the model selected by
+         `settings["forecast_model"]`:
+            - "elasticnet" → ElasticNetCV with internal KFold(cv_folds).
+            - "xgboost"    → XGBoostModel with RandomizedSearchCV inside
+                             a TimeSeriesSplit(cv_splits) over the training
+                             window only, plus early stopping.
+      3. Stores predicted expected return for all tickers active on that date.
 
     The target return is the log return forecast_forward_days ahead,
     computed with _compute_forward_returns() without look-ahead.
@@ -97,21 +167,25 @@ def forecast_returns(
     Finally, standardizes predictions cross-sectionally (z-score per date)
     so they are comparable across assets and dates.
 
-    Forecast returns using an expanding-window Elastic Net per asset class.
-
-    Training target: forward forecast_forward_days return computed WITHOUT look-ahead.
-    Models are retrained monthly (end-of-month dates only) for efficiency.
-
-    ElasticNetCV hyperparameters (cv folds, l1_ratios, max_iter, tol) and the
-    forecast horizon come from `settings`; see DEFAULT_SETTINGS in src/settings.py.
+    Hyperparameters (cv folds, l1_ratios, max_iter, tol for ElasticNet;
+    n_iter, cv_splits, scoring, etc. for XGBoost) and the forecast horizon
+    come from `settings`; see DEFAULT_SETTINGS in src/settings.py.
     """
     cfg = resolve_settings(settings)
     forward_days = int(cfg["forecast_forward_days"])
     min_train_rows = int(cfg["forecast_min_train_rows"])
-    cv_folds = int(cfg["elasticnet_cv_folds"])
-    l1_ratios = list(cfg["elasticnet_l1_ratios"])
-    max_iter = int(cfg["elasticnet_max_iter"])
-    tol = float(cfg["elasticnet_tol"])
+
+    model_name = str(cfg.get("forecast_model", "elasticnet")).lower().strip()
+    if model_name not in SUPPORTED_FORECAST_MODELS:
+        raise ValueError(
+            f"Unsupported forecast_model={model_name!r}; "
+            f"choose one of {SUPPORTED_FORECAST_MODELS}."
+        )
+
+    if model_name == "xgboost":
+        fit_predict = _fit_predict_xgboost
+    else:
+        fit_predict = _fit_predict_elasticnet
 
     forecasts: list[pd.DataFrame] = []
     asset_classes = feature_df["asset_class"].unique()
@@ -150,33 +224,22 @@ def forecast_returns(
                 )
                 continue
 
-            X_train = train_data[feature_cols].fillna(0.0)
-            y_train = train_data["_fwd_return"]
-
-            scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train)
-
-            model = ElasticNetCV(
-                cv=cv_folds,
-                l1_ratio=l1_ratios,
-                max_iter=max_iter,
-                tol=tol,
-                random_state=42,
-                n_jobs=-1,
-            )
-            try:
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", category=ConvergenceWarning)
-                    model.fit(X_train_scaled, y_train)
-            except Exception as exc:
-                logger.warning("ElasticNetCV fit failed for %s on %s: %s", asset_class, date, exc)
-                continue
-
             current_data = class_df[class_df["date"] == date].copy()
             if current_data.empty:
                 continue
+
+            X_train = train_data[feature_cols].fillna(0.0)
+            y_train = train_data["_fwd_return"]
             X_pred = current_data[feature_cols].fillna(0.0)
-            current_data["expected_return"] = model.predict(scaler.transform(X_pred))
+
+            preds = fit_predict(X_train, y_train, X_pred, cfg)
+            if preds is None:
+                logger.warning(
+                    "%s fit failed for %s on %s — skipping rebalance.",
+                    model_name, asset_class, date,
+                )
+                continue
+            current_data["expected_return"] = preds
             forecasts.append(current_data)
 
     if not forecasts:

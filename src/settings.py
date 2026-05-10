@@ -82,14 +82,26 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # Numerical tolerances
     "covariance_psd_tolerance": 1e-9,
     # ------------------------------------------------------------------
-    # Forecast model (ElasticNetCV)
+    # Forecast model (ElasticNetCV is the baseline; XGBoost is an
+    # interchangeable alternative selected by `forecast_model`).
     # ------------------------------------------------------------------
+    "forecast_model": "elasticnet",         # "elasticnet" | "xgboost"
     "elasticnet_cv_folds": 5,
     "elasticnet_l1_ratios": [0.1, 0.5, 0.9],
     "elasticnet_max_iter": 10000,
     "elasticnet_tol": 1e-3,
     "forecast_forward_days": 21,
     "forecast_min_train_rows": 50,
+    # XGBoost-specific knobs (ignored when forecast_model != "xgboost").
+    # Kept in DEFAULT_SETTINGS so resolve_settings() always returns them.
+    "forecast_xgb_n_iter": 20,              # RandomizedSearchCV draws
+    "forecast_xgb_cv_splits": 5,            # TimeSeriesSplit folds
+    "forecast_xgb_n_estimators_cap": 2000,  # early-stopping ceiling
+    "forecast_xgb_early_stopping_rounds": 50,
+    "forecast_xgb_scoring": "neg_mean_squared_error",  # or "ic"
+    "forecast_xgb_random_state": 42,
+    "forecast_xgb_n_jobs": 1,
+    "forecast_xgb_search_n_jobs": 1,
     # ------------------------------------------------------------------
     # Portfolio / optimizer hyperparameters
     # Defaults are kept bit-identical to the values currently hardcoded in

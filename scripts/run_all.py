@@ -147,6 +147,15 @@ def _parse_args(config: dict) -> argparse.Namespace:
         default=None,
         help=f"Portfolio optimizer (config.yaml: {config.get('optimizer', 'mv')})",
     )
+    p.add_argument(
+        "--model",
+        choices=["elasticnet", "xgboost"],
+        default=None,
+        help=(
+            "Cross-sectional return predictor "
+            f"(config.yaml: {config.get('forecast_model', 'elasticnet')})"
+        ),
+    )
     return p.parse_args()
 
 
@@ -270,7 +279,9 @@ def main() -> None:
     out     = args.out        or config["report_output"]
     abort     = config["abort_on_test_failure"]
     optimizer = args.optimizer or config.get("optimizer", "mv")
+    forecast_model = args.model or config.get("forecast_model", "elasticnet")
     pipeline_settings = dict(config)
+    pipeline_settings["forecast_model"] = forecast_model
     sources = _normalize_sources(source_value)
     cli_bench = [x.strip() for x in args.benchmarks.split(",") if x.strip()] if args.benchmarks else None
     cfg_bench = config.get("benchmark_tickers")
@@ -290,6 +301,7 @@ def main() -> None:
     print(f"  Hedge      : {hedge}")
     print(f"  Reform LFI : {reform}")
     print(f"  Optimizer  : {optimizer}")
+    print(f"  Forecast   : {forecast_model}")
     print(f"  Report     : {out}")
 
     if not args.skip_tests:
