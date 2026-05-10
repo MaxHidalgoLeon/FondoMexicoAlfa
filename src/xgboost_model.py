@@ -73,6 +73,15 @@ _IC_SCORER = make_scorer(_spearman_ic_scorer, greater_is_better=True)
 
 
 def _resolve_config(overrides: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Merge caller-supplied overrides into a copy of DEFAULT_CONFIG.
+
+    Args:
+        overrides: Partial config mapping. ``None`` values are ignored so
+            callers can selectively override without clearing defaults.
+
+    Returns:
+        Complete config dict with all required keys present.
+    """
     cfg = dict(DEFAULT_CONFIG)
     if overrides:
         for k, v in overrides.items():
@@ -82,6 +91,15 @@ def _resolve_config(overrides: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 def _resolve_search_space(overrides: Mapping[str, Any] | None) -> dict[str, list[Any]]:
+    """Merge caller-supplied search-space overrides into a copy of DEFAULT_SEARCH_SPACE.
+
+    Args:
+        overrides: Partial mapping of hyperparameter name → list of candidate values.
+            ``None`` values are ignored.
+
+    Returns:
+        Complete search-space dict suitable for ``RandomizedSearchCV.param_distributions``.
+    """
     space = {k: list(v) for k, v in DEFAULT_SEARCH_SPACE.items()}
     if overrides:
         for k, v in overrides.items():
@@ -92,6 +110,18 @@ def _resolve_search_space(overrides: Mapping[str, Any] | None) -> dict[str, list
 
 
 def _resolve_scorer(name: str):
+    """Return the sklearn scorer object or string for the requested scoring method.
+
+    Args:
+        name: Scoring name. ``"ic"``, ``"spearman"``, ``"spearman_ic"``, or
+            ``"rank_ic"`` all resolve to the Spearman IC scorer. Any other
+            non-empty string is passed through to sklearn unchanged.
+
+    Returns:
+        ``_IC_SCORER`` (a callable make_scorer wrapper) for IC-based scoring,
+        or the original ``name`` string for sklearn built-ins such as
+        ``"neg_mean_squared_error"``.
+    """
     name = (name or "").lower().strip()
     if name in ("ic", "spearman", "spearman_ic", "rank_ic"):
         return _IC_SCORER
@@ -125,6 +155,25 @@ class XGBoostModel:
         config: Mapping[str, Any] | None = None,
         search_space: Mapping[str, Any] | None = None,
     ) -> None:
+        """Initialise the model with optional config and search-space overrides.
+
+        Args:
+            config: Overrides for ``DEFAULT_CONFIG``. Recognised keys:
+                ``n_estimators_cap`` (int, default 2000),
+                ``early_stopping_rounds`` (int, default 50),
+                ``n_iter`` (int, default 20 — RandomizedSearchCV draws),
+                ``cv_splits`` (int, default 5 — TimeSeriesSplit folds),
+                ``scoring`` (str, default ``"neg_mean_squared_error"``; use
+                    ``"ic"`` for Spearman rank-IC),
+                ``tree_method`` (str, default ``"hist"``),
+                ``objective`` (str, default ``"reg:squarederror"``),
+                ``random_state`` (int, default 42),
+                ``n_jobs`` / ``search_n_jobs`` (int, default 1),
+                ``verbosity`` (int, default 0).
+            search_space: Overrides for ``DEFAULT_SEARCH_SPACE``. Each key
+                maps to a list of candidate values. Only the keys supplied
+                are replaced; omitted keys keep their defaults.
+        """
         self._cfg = _resolve_config(config)
         self._search_space = _resolve_search_space(search_space)
         self._scaler: StandardScaler | None = None
@@ -138,6 +187,7 @@ class XGBoostModel:
     # Helpers
     # ------------------------------------------------------------------
     def _make_base(self) -> xgb.XGBRegressor:
+        """Build an unfitted XGBRegressor from current config (no search params)."""
         return xgb.XGBRegressor(
             n_estimators=int(self._cfg["n_estimators_cap"]),
             tree_method=str(self._cfg["tree_method"]),
@@ -149,12 +199,14 @@ class XGBoostModel:
 
     @staticmethod
     def _to_numpy(X: pd.DataFrame | np.ndarray) -> np.ndarray:
+        """Convert a DataFrame or array to a float64 numpy array without copying if possible."""
         if isinstance(X, pd.DataFrame):
             return X.to_numpy(dtype=float, copy=False)
         return np.asarray(X, dtype=float)
 
     @staticmethod
     def _to_target(y: pd.Series | np.ndarray) -> np.ndarray:
+        """Convert a Series or array to a 1-D float64 numpy array without copying if possible."""
         if isinstance(y, pd.Series):
             return y.to_numpy(dtype=float, copy=False)
         return np.asarray(y, dtype=float)
@@ -163,6 +215,25 @@ class XGBoostModel:
     # sklearn-style API
     # ------------------------------------------------------------------
     def fit(self, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> "XGBoostModel":
+        """Fit the model with internal time-series cross-validation.
+
+        Runs ``RandomizedSearchCV`` with ``TimeSeriesSplit`` inside the
+        supplied training window to select hyperparameters, then refits on
+        the full training set with the best parameters and early stopping
+        against a chronological holdout slice.
+
+        Args:
+            X: Feature matrix, shape ``(n_samples, n_features)``. DataFrame
+                column names are stored as ``feature_names_`` if provided.
+            y: Forward-return targets aligned row-for-row with ``X``.
+
+        Returns:
+            ``self``, enabling method chaining.
+
+        Raises:
+            ValueError: If ``X`` is not 2-D, or if ``X`` and ``y`` have
+                different numbers of rows.
+        """
         X_arr = self._to_numpy(X)
         y_arr = self._to_target(y)
 
@@ -254,6 +325,25 @@ class XGBoostModel:
         return self
 
     def predict(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
+        """Predict forward returns using the fitted model.
+
+        Scales ``X`` with the fitted ``StandardScaler``, then runs inference
+        truncated to ``best_iteration_`` trees when early stopping was
+        effective.
+
+        Args:
+            X: Feature matrix, shape ``(n_samples, n_features)``. Must have
+                the same number of columns as the training data.
+
+        Returns:
+            1-D float64 array of predicted forward returns, length
+            ``n_samples``.
+
+        Raises:
+            RuntimeError: If called before ``fit()``.
+            ValueError: If ``X`` is not 2-D, or if the feature count
+                does not match training data.
+        """
         if self._best_estimator is None or self._scaler is None:
             raise RuntimeError("XGBoostModel.predict called before fit().")
         X_arr = self._to_numpy(X)
@@ -275,18 +365,22 @@ class XGBoostModel:
     # ------------------------------------------------------------------
     @property
     def best_params_(self) -> dict[str, Any] | None:
+        """Best hyperparameter dict from ``RandomizedSearchCV``, or ``None`` before ``fit()``."""
         return None if self._best_params_ is None else dict(self._best_params_)
 
     @property
     def best_iteration_(self) -> int | None:
+        """Number of trees used at prediction time after early stopping, or ``None`` if not set."""
         return self._best_iteration_
 
     @property
     def feature_names_(self) -> list[str] | None:
+        """Ordered list of feature column names from training data, or ``None`` if X was an array."""
         return None if self._feature_names_ is None else list(self._feature_names_)
 
     @property
     def estimator_(self) -> xgb.XGBRegressor | None:
+        """Fitted ``XGBRegressor`` after the last call to ``fit()``, or ``None`` before fitting."""
         return self._best_estimator
 
     def scale(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
