@@ -67,6 +67,36 @@ Last commit hash: 0767588
 - SHAP parquet is overwritten on each run (not appended). Gate: `compute_shap: true` in settings.
 
 ### Next step on resume
-Step 3 (performance by macro regime) — see §5 in the step2 report for suggested entry points.
-Key insight: ltv, ffo_yield (FIBRA) and momentum_63 (equity) are the top SHAP features and
-top turnover drivers; regime-conditioned attribution is the natural follow-up.
+Step 3 — see below.
+
+---
+
+## Step 3: Macro regime performance
+
+Status: IN_PROGRESS
+Last updated: 2026-05-10T00:00:00Z
+Last commit hash: c7e1c37
+
+### Checkpoints
+- [ ] 3.1 Discovery scan complete
+- [ ] 3.2 Macro data located / loaded (Banxico rate + IPC vol)
+- [ ] 3.3 src/macro_regimes.py implemented + unit tested
+- [ ] 3.4 Regime table built and saved
+- [ ] 3.5 Regime-conditioned performance table computed
+- [ ] 3.6 Regime-conditioned SHAP stability computed
+- [ ] 3.7 Momentum SHAP by regime computed
+- [ ] 3.8 All figures generated
+- [ ] 3.9 reports/step3_regime_analysis.md complete
+- [ ] 3.10 Tests added + ≥97 passing
+- [ ] 3.11 Final commit + Step 3 closed
+
+### Notes / decisions
+- Banxico rate already in mock macro DataFrame (field: banxico_rate). No lookahead: regime at rebalance t uses macro data up to end of month t-1.
+- IPC proxy = equal-weighted daily return of equity sub-universe (no IPC index ticker exists). 60d rolling std × sqrt(252) = annualised IPC vol.
+- Stress threshold = 75th percentile of all 108 computed IPC vols. Research-only; documented here.
+- Rate regime: 3-month trailing change in banxico_rate. TIGHTENING > 0, EASING < 0, NEUTRAL = 0.
+- Per-rebalance IC computed from forecast_df.expected_return vs realized 21d log forward returns from prices.
+- Per-regime portfolio metrics from backtest.returns sliced to rebalance windows within that regime.
+
+### Next step on resume
+3.3 — write src/macro_regimes.py and commit
