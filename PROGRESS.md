@@ -161,3 +161,30 @@ None found.
 
 ### Next step on resume
 Step 5 DONE. No further steps defined.
+
+---
+
+## Step 6: Code cleanup
+
+Status: DONE
+Last updated: 2026-05-13T00:00:00Z
+Last commit hash: e3ab9ab
+
+### Checkpoints
+- [x] 6.A _render_pdf_fpdf2 refactored into page builders
+- [x] 6.B Named constants in render_step3_report.py
+- [x] 6.C _holdout_cut extracted + 3 unit tests
+- [x] 6.D SHAP error handling consolidated
+- [x] 6.E fpdf2 ln= deprecation warnings eliminated
+- [x] 6.F Final: 107 tests passing, 0 DeprecationWarnings
+- [x] 6.G chore(progress): close Step 6
+
+### Notes / decisions
+- Fix A: Colour palette moved to _PDF_BG/_PDF_SURF/etc. module-level constants. Inner closures became _pdf_set_primary/muted/accent, _pdf_section_header, _pdf_add_img_safe. Five page builders: _pdf_page_cover/model_comparison/shap/regime/risk_methodology. _render_pdf_fpdf2 is now a 20-line orchestrator.
+- Fix B: SHAP_STABILITY_FLOOR=0.30, SIGNAL_SHRINKAGE_TIGHTENING=0.70 at module level in render_step3_report.py.
+- Fix C: _holdout_cut(n, holdout_frac) extracted with guard for n<=1. Three new unit tests added to test_xgboost_model.py.
+- Fix D: Split the monolithic try/except in signals.py so fit() failure alone triggers continue; collect_rebalance_shap call is now unwrapped (it never raises).
+- Fix E: All ln=True/False replaced with XPos/YPos enums. Zero DeprecationWarning lines confirmed with python -W error::DeprecationWarning.
+
+### Next step on resume
+Step 6 DONE. No further steps defined.
