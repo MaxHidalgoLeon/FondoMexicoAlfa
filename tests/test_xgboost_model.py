@@ -172,3 +172,36 @@ def test_forecast_returns_rejects_unknown_model() -> None:
     )
     with pytest.raises(ValueError, match="Unsupported forecast_model"):
         forecast_returns(feature_df, returns=pd.DataFrame(), settings={"forecast_model": "rf"})
+
+
+# ---------------------------------------------------------------------------
+# Fix C — _holdout_cut unit tests
+# ---------------------------------------------------------------------------
+
+def test_holdout_cut_small_n() -> None:
+    """n=10 must return a valid split: training >= 1, holdout >= 1."""
+    from src.xgboost_model import _holdout_cut
+
+    cut = _holdout_cut(n=10, holdout_frac=0.2)
+    assert 1 <= cut <= 9, f"Expected 1 <= cut <= 9, got {cut}"
+
+
+def test_holdout_cut_normal_n() -> None:
+    """n=300, holdout_frac=0.2 → cut should be max(240, max(50, 100)) = 240."""
+    from src.xgboost_model import _holdout_cut
+
+    cut = _holdout_cut(n=300, holdout_frac=0.2)
+    # int(300 * 0.8)=240, max(50, 300-200)=100 → max(240,100)=240
+    # then min(240, 300-10)=240
+    assert cut == 240, f"Expected 240, got {cut}"
+
+
+def test_holdout_cut_large_n() -> None:
+    """n=1000 caps holdout at 200 samples (cut >= n-200 = 800)."""
+    from src.xgboost_model import _holdout_cut
+
+    cut = _holdout_cut(n=1000, holdout_frac=0.2)
+    # int(1000*0.8)=800, max(50, 1000-200)=800 → max(800,800)=800
+    # holdout = 1000 - 800 = 200 (capped)
+    assert cut == 800, f"Expected 800, got {cut}"
+    assert (1000 - cut) <= 200, f"Holdout {1000 - cut} exceeds 200-sample cap"

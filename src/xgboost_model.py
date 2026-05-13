@@ -72,6 +72,26 @@ def _spearman_ic_scorer(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 _IC_SCORER = make_scorer(_spearman_ic_scorer, greater_is_better=True)
 
 
+def _holdout_cut(n: int, holdout_frac: float) -> int:
+    """Return the training/holdout split index for a sample of size n.
+
+    Guarantees a minimum training size of min(50, n-1) and a maximum
+    holdout of 200 samples.
+
+    Args:
+        n: Total number of samples.
+        holdout_frac: Fraction reserved for holdout (0 < holdout_frac < 1).
+
+    Returns:
+        Integer index where training ends and holdout begins.
+    """
+    if n <= 1:
+        return max(1, n - 1)
+    cut = max(int(n * (1.0 - holdout_frac)), max(50, n - 200))
+    cut = min(cut, n - 10) if n > 20 else max(1, n - 1)
+    return int(cut)
+
+
 def _resolve_config(overrides: Mapping[str, Any] | None) -> dict[str, Any]:
     """Merge caller-supplied overrides into a copy of DEFAULT_CONFIG.
 
@@ -283,8 +303,7 @@ class XGBoostModel:
         # Refit with early stopping on a chronological holdout.
         holdout_frac = 1.0 / (cv_splits + 1)
         n = X_scaled.shape[0]
-        cut = max(int(n * (1.0 - holdout_frac)), max(50, n - 200))
-        cut = min(cut, n - 10) if n > 20 else max(1, n - 1)
+        cut = _holdout_cut(n, holdout_frac)
 
         X_tr, X_val = X_scaled[:cut], X_scaled[cut:]
         y_tr, y_val = y_arr[:cut], y_arr[cut:]
