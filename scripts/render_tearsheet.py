@@ -640,11 +640,327 @@ def _ascii(text: str) -> str:
             .encode("latin-1", errors="replace").decode("latin-1"))
 
 
+# ---------------------------------------------------------------------------
+# fpdf2 colour palette (module-level so page builders can reference them)
+# ---------------------------------------------------------------------------
+
+_PDF_BG   = (13,  17,  23)
+_PDF_SURF = (22,  27,  34)
+_PDF_TXT  = (230, 237, 243)
+_PDF_MUT  = (139, 148, 158)
+_PDF_ACC  = (57,  211, 83)
+_PDF_RED  = (248, 81,  73)
+
+
+def _pdf_set_primary(pdf) -> None:
+    """Set fpdf2 text colour to primary light."""
+    pdf.set_text_color(*_PDF_TXT)
+
+
+def _pdf_set_muted(pdf) -> None:
+    """Set fpdf2 text colour to muted grey."""
+    pdf.set_text_color(*_PDF_MUT)
+
+
+def _pdf_set_accent(pdf) -> None:
+    """Set fpdf2 text colour to accent green."""
+    pdf.set_text_color(*_PDF_ACC)
+
+
+def _pdf_section_header(pdf, title: str) -> None:
+    """Render a bold section-header cell with a green left-border rule."""
+    from fpdf.enums import XPos, YPos
+    pdf.set_fill_color(*_PDF_SURF)
+    pdf.set_draw_color(*_PDF_ACC)
+    pdf.set_line_width(0.8)
+    pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x(), pdf.get_y() + 6)
+    pdf.set_x(pdf.get_x() + 2)
+    pdf.set_font("Helvetica", "B", 9)
+    _pdf_set_muted(pdf)
+    pdf.cell(0, 6, title.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_line_width(0.1)
+    pdf.ln(2)
+
+
+def _pdf_add_img_safe(pdf, path: Path, x=None, y=None, w=None, h=None) -> None:
+    """Insert an image at the given position, silently skipping if the file is absent."""
+    if path.exists():
+        try:
+            if x is not None:
+                pdf.image(str(path), x=x, y=y, w=w, h=h)
+            else:
+                pdf.image(str(path), w=w or 240, h=h or 0)
+        except Exception:
+            pass
+
+
+def _pdf_page_cover(pdf, step1_rows: list[dict]) -> None:
+    """Render Page 1 — cover with headline stat strip."""
+    from fpdf.enums import XPos, YPos
+    stats = _extract_cover_stats(step1_rows)
+    pdf.add_page()
+    pdf.set_fill_color(*_PDF_BG)
+
+    pdf.set_font("Helvetica", "B", 24)
+    _pdf_set_accent(pdf)
+    pdf.cell(0, 12, "FondoMexicoAlfa (FMIA)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_font("Helvetica", "", 10)
+    _pdf_set_muted(pdf)
+    pdf.cell(0, 6, "Systematic Long-Only Equity & FIBRA  |  Quantitative Research Report",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(4)
+
+    labels = [("XGBoost Sharpe", stats.get("sharpe", "-"), _PDF_ACC),
+              ("XGBoost ICIR",   stats.get("icir",   "-"), _PDF_ACC),
+              ("Max Drawdown",   stats.get("mdd",    "-"), _PDF_RED)]
+    col_w = pdf.epw / 3
+
+    for i, (label, val, color) in enumerate(labels):
+        x = pdf.l_margin + i * col_w
+        pdf.set_xy(x, pdf.get_y())
+        pdf.set_fill_color(*_PDF_SURF)
+        pdf.rect(x, pdf.get_y(), col_w - 3, 20, style="F")
+        pdf.set_xy(x + 2, pdf.get_y() + 2)
+        pdf.set_font("Helvetica", "B", 18)
+        pdf.set_text_color(*color)
+        pdf.cell(col_w - 5, 10, str(val), align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.set_xy(x + 2, pdf.get_y() + 12)
+        pdf.set_font("Helvetica", "", 7)
+        _pdf_set_muted(pdf)
+        pdf.cell(col_w - 5, 4, label, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
+
+    pdf.set_xy(pdf.l_margin, pdf.get_y() + 26)
+    pdf.set_font("Helvetica", "I", 8)
+    _pdf_set_muted(pdf)
+    pdf.cell(0, 5,
+             "Walk-forward validated  *  Bloomberg data  *  Mexican equities & FIBRAs (BMV)"
+             "  *  Monthly rebalancing  *  10 bp transaction cost",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Helvetica", "", 7)
+    pdf.cell(0, 5, f"Report date: {date.today().isoformat()}",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+
+def _pdf_page_model_comparison(pdf, step1_rows: list[dict]) -> None:
+    """Render Page 2 — XGBoost vs ElasticNet comparison table and figures."""
+    pdf.add_page()
+    _pdf_section_header(pdf, "01 * Model Performance - XGBoost vs ElasticNetCV")
+
+    col_widths = [70, 35, 35, 35]
+    headers = ["Metric", "ElasticNetCV", "XGBoost", "D (xgb - elastic)"]
+    pdf.set_font("Helvetica", "B", 7)
+    _pdf_set_muted(pdf)
+    pdf.set_fill_color(*_PDF_SURF)
+    for w, h in zip(col_widths, headers):
+        pdf.cell(w, 5, h, border=0, fill=True, align="R" if h != "Metric" else "L")
+    pdf.ln()
+
+    pdf.set_font("Helvetica", "", 7)
+    for i, row in enumerate(step1_rows):
+        pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
+        _pdf_set_primary(pdf)
+        pdf.cell(col_widths[0], 4.5, row["metric"], fill=True)
+        _pdf_set_muted(pdf)
+        for val, w in [(row["elastic"], col_widths[1]),
+                       (row["xgboost"], col_widths[2]),
+                       (row["delta"],   col_widths[3])]:
+            pdf.cell(w, 4.5, str(val), fill=True, align="R")
+        pdf.ln()
+
+    pdf.ln(3)
+    y_fig = pdf.get_y()
+    w_fig = pdf.epw / 2 - 2
+    _pdf_add_img_safe(pdf, FIGURES / "step1_equity_mock.png",
+                      x=pdf.l_margin, y=y_fig, w=w_fig)
+    _pdf_add_img_safe(pdf, FIGURES / "step1_ic_mock.png",
+                      x=pdf.l_margin + w_fig + 4, y=y_fig, w=w_fig)
+
+
+def _pdf_page_shap(pdf, top10: list[dict], stability: list[dict]) -> None:
+    """Render Page 3 — SHAP feature attribution tables and figures."""
+    from fpdf.enums import XPos, YPos
+    pdf.add_page()
+    _pdf_section_header(pdf, "02 * Feature Attribution (SHAP) - XGBoost Walk-forward")
+
+    half = pdf.epw / 2 - 2
+    y0 = pdf.get_y()
+
+    pdf.set_font("Helvetica", "B", 8)
+    _pdf_set_primary(pdf)
+    pdf.cell(0, 5, "Top-10 Features by Mean |SHAP|",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Helvetica", "B", 7)
+    _pdf_set_muted(pdf)
+    pdf.set_fill_color(*_PDF_SURF)
+    for hdr, w in [("#", 8), ("Feature", 38), ("Mean |SHAP|", 28), ("Std", 26)]:
+        pdf.cell(w, 4.5, hdr, fill=True, align="C")
+    pdf.ln()
+    for i, r in enumerate(top10[:10]):
+        pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
+        pdf.set_font("Helvetica", "", 7)
+        _pdf_set_primary(pdf)
+        pdf.cell(8,  4.5, r["rank"],     fill=True, align="C")
+        pdf.cell(38, 4.5, r["feature"],  fill=True)
+        _pdf_set_muted(pdf)
+        pdf.cell(28, 4.5, r["mean_abs"], fill=True, align="R")
+        pdf.cell(26, 4.5, r["std_abs"],  fill=True, align="R")
+        pdf.ln()
+
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 8)
+    _pdf_set_primary(pdf)
+    pdf.cell(0, 5, "Feature Stability (Spearman rank-corr.)",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Helvetica", "B", 7)
+    _pdf_set_muted(pdf)
+    pdf.set_fill_color(*_PDF_SURF)
+    for hdr, w in [("K", 16), ("Pairs", 18), ("Mean r", 28), ("Std r", 28)]:
+        pdf.cell(w, 4.5, hdr, fill=True, align="C")
+    pdf.ln()
+    for i, r in enumerate(stability):
+        pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
+        pdf.set_font("Helvetica", "", 7)
+        _pdf_set_primary(pdf)
+        pdf.cell(16, 4.5, r["K"],     fill=True)
+        pdf.cell(18, 4.5, r["pairs"], fill=True, align="C")
+        _pdf_set_muted(pdf)
+        pdf.cell(28, 4.5, r["mean"],  fill=True, align="R")
+        pdf.cell(28, 4.5, r["std"],   fill=True, align="R")
+        pdf.ln()
+
+    x_right = pdf.l_margin + half + 4
+    _pdf_add_img_safe(pdf, FIGURES / "step2_shap_beeswarm.png",
+                      x=x_right, y=y0, w=half, h=50)
+    _pdf_add_img_safe(pdf, FIGURES / "step2_shap_waterfall.png",
+                      x=x_right, y=y0 + 53, w=half, h=45)
+
+
+def _pdf_page_regime(pdf, regime_df: pd.DataFrame) -> None:
+    """Render Page 4 — macro regime performance table and equity curves."""
+    pdf.add_page()
+    _pdf_section_header(pdf, "03 * Performance by Macro Regime")
+
+    if not regime_df.empty:
+        pdf.set_font("Helvetica", "B", 7)
+        _pdf_set_muted(pdf)
+        pdf.set_fill_color(*_PDF_SURF)
+        cols4 = [("Rate regime", 40), ("Stress", 22), ("N", 12),
+                 ("IC mean", 24), ("Sharpe", 22), ("Top-5 stab.", 24)]
+        for hdr, w in cols4:
+            pdf.cell(w, 4.5, hdr, fill=True, align="C")
+        pdf.ln()
+
+        for i, (_, row) in enumerate(regime_df.iterrows()):
+            pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
+            pdf.set_font("Helvetica", "", 7)
+            _pdf_set_primary(pdf)
+            pdf.cell(40, 4.5, str(row.get("rate_regime",  "")), fill=True)
+            pdf.cell(22, 4.5, str(row.get("stress_regime", "")), fill=True)
+            pdf.cell(12, 4.5, str(int(row.get("n_rebalances", 0))), fill=True, align="C")
+            ic   = row.get("ic_mean", float("nan"))
+            sh   = row.get("sharpe",  float("nan"))
+            top5 = row.get("shap_stability_top5", float("nan"))
+            _pdf_set_muted(pdf)
+            pdf.cell(24, 4.5, f"{ic:+.3f}"  if pd.notna(ic)   else "-", fill=True, align="R")
+            pdf.cell(22, 4.5, f"{sh:+.2f}"  if pd.notna(sh)   else "-", fill=True, align="R")
+            pdf.cell(24, 4.5, f"{top5:.3f}" if pd.notna(top5) else "-", fill=True, align="R")
+            pdf.ln()
+
+    pdf.ln(3)
+    y_fig4 = pdf.get_y()
+    w3 = pdf.epw * 0.58
+    w4 = pdf.epw * 0.38
+    _pdf_add_img_safe(pdf, FIGURES / "step3_regime_equity_curves.png",
+                      x=pdf.l_margin, y=y_fig4, w=w3)
+    _pdf_add_img_safe(pdf, FIGURES / "step3_ic_by_regime.png",
+                      x=pdf.l_margin + w3 + 4, y=y_fig4, w=w4)
+
+
+def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
+    """Render Page 5 — risk metrics table and methodology summary."""
+    from fpdf.enums import XPos, YPos
+    pdf.add_page()
+    _pdf_section_header(pdf, "04 * Risk Profile & Methodology")
+
+    lookup = {r["metric"]: r.get("xgboost", "-") for r in step1_rows}
+    risk_items = [
+        ("Annualized return",      lookup.get("Annualized return",     "-")),
+        ("Annualized vol",         lookup.get("Annualized vol",        "-")),
+        ("Sharpe ratio",           lookup.get("Sharpe",                "-")),
+        ("Sortino ratio",          lookup.get("Sortino",               "-")),
+        ("Max drawdown",           lookup.get("Max drawdown",          "-")),
+        ("CVaR 95% (daily)",       lookup.get("CVaR 95% (daily)",      "-")),
+        ("Avg turnover/rebalance", lookup.get("Turnover (per rebalance)", "-")),
+    ]
+    method_items = [
+        ("Universe",        "Mexican equities + FIBRAs (BMV), ~26 instruments"),
+        ("Signal",          "XGBoost cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)"),
+        ("Baseline signal", "ElasticNetCV (interchangeable via config flag)"),
+        ("Optimizer",       "Mean-variance (SLSQP) with market-impact penalty"),
+        ("Rebalance",       "Monthly (end-of-month), walk-forward OOS"),
+        ("Validation",      "108 rebalances, 2017-2026"),
+        ("Costs",           "10 bp per side applied each rebalance"),
+        ("Regimes",         "Banxico rate (TIGHTENING/EASING/NEUTRAL) x IPC vol stress"),
+        ("Attribution",     "Per-rebalance SHAP via TreeExplainer (shap 0.51)"),
+        ("Data",            "Bloomberg (production) * mock data (research)"),
+        ("Framework",       "CNBV position limits, LFI structure"),
+    ]
+
+    half5 = pdf.epw / 2 - 3
+    y5 = pdf.get_y()
+
+    pdf.set_font("Helvetica", "B", 8)
+    _pdf_set_primary(pdf)
+    pdf.cell(half5, 5, "XGBoost Risk Metrics (Walk-forward OOS)",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Helvetica", "B", 7)
+    _pdf_set_muted(pdf)
+    pdf.set_fill_color(*_PDF_SURF)
+    pdf.cell(half5 * 0.55, 4.5, "Metric", fill=True)
+    pdf.cell(half5 * 0.45, 4.5, "Value",  fill=True, align="R")
+    pdf.ln()
+    for i, (label, val) in enumerate(risk_items):
+        pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
+        pdf.set_font("Helvetica", "", 7)
+        _pdf_set_primary(pdf)
+        pdf.cell(half5 * 0.55, 4.5, label,    fill=True)
+        _pdf_set_muted(pdf)
+        pdf.cell(half5 * 0.45, 4.5, str(val), fill=True, align="R")
+        pdf.ln()
+
+    pdf.set_xy(pdf.l_margin + half5 + 6, y5)
+    pdf.set_font("Helvetica", "B", 8)
+    _pdf_set_primary(pdf)
+    pdf.cell(half5, 5, "Methodology", new_x=XPos.RIGHT, new_y=YPos.TOP)
+    pdf.set_xy(pdf.l_margin + half5 + 6, y5 + 7)
+    for i, (label, desc) in enumerate(method_items):
+        pdf.set_xy(pdf.l_margin + half5 + 6, pdf.get_y())
+        pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
+        pdf.set_font("Helvetica", "B", 7)
+        _pdf_set_primary(pdf)
+        pdf.cell(28, 4.5, label + ":", fill=True)
+        pdf.set_font("Helvetica", "", 7)
+        _pdf_set_muted(pdf)
+        pdf.cell(half5 - 28, 4.5, desc[:70], fill=True)
+        pdf.ln()
+
+    pdf.set_y(-45)
+    pdf.set_font("Helvetica", "I", 6)
+    pdf.set_text_color(*_PDF_MUT)
+    pdf.set_fill_color(*_PDF_SURF)
+    pdf.multi_cell(0, 3.5,
+        "DISCLAIMER: For research purposes only. Past performance does not guarantee future results. "
+        "All results based on walk-forward out-of-sample simulation. Mock data used where Bloomberg "
+        "data unavailable. This document is confidential and intended solely for internal research use.",
+        fill=True,
+    )
+
+
 def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stability, regime_df) -> None:
     """Build a compact multi-page PDF using fpdf2 (no system library deps)."""
     from fpdf import FPDF
     from fpdf.enums import XPos, YPos
-    import io
 
     class TearsheetPDF(FPDF):
         def normalize_text(self, text: str) -> str:
@@ -670,294 +986,11 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
     pdf.set_margins(18, 18, 18)
     pdf.set_auto_page_break(auto=True, margin=14)
 
-    # Colours
-    BG   = (13,  17,  23)
-    SURF = (22,  27,  34)
-    TXT  = (230, 237, 243)
-    MUT  = (139, 148, 158)
-    ACC  = (57,  211, 83)
-    RED  = (248, 81,  73)
-
-    def set_primary():   """Set text colour to primary (light)."""; pdf.set_text_color(*TXT)
-    def set_muted():     """Set text colour to muted grey."""; pdf.set_text_color(*MUT)
-    def set_accent():    """Set text colour to accent green."""; pdf.set_text_color(*ACC)
-    def set_red():       """Set text colour to warning red."""; pdf.set_text_color(*RED)
-
-    def section_header(title: str):
-        """Render a bold section-header cell with a green left-border rule."""
-        pdf.set_fill_color(*SURF)
-        pdf.set_draw_color(*ACC)
-        pdf.set_line_width(0.8)
-        pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x(), pdf.get_y() + 6)
-        pdf.set_x(pdf.get_x() + 2)
-        pdf.set_font("Helvetica", "B", 9)
-        set_muted()
-        pdf.cell(0, 6, title.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.set_line_width(0.1)
-        pdf.ln(2)
-
-    def add_img_safe(path: Path, x=None, y=None, w=None, h=None):
-        """Insert an image at the given position, silently skipping if the file is absent."""
-        if path.exists():
-            try:
-                if x is not None:
-                    pdf.image(str(path), x=x, y=y, w=w, h=h)
-                else:
-                    pdf.image(str(path), w=w or 240, h=h or 0)
-            except Exception:
-                pass
-
-    # ---- Page 1: Cover ----
-    pdf.add_page()
-    pdf.set_fill_color(*BG)
-    stats = _extract_cover_stats(step1_rows)
-
-    pdf.set_font("Helvetica", "B", 24)
-    set_accent()
-    pdf.cell(0, 12, "FondoMéxicoAlfa (FMIA)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-    pdf.set_font("Helvetica", "", 10)
-    set_muted()
-    pdf.cell(0, 6, "Systematic Long-Only Equity & FIBRA  |  Quantitative Research Report", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.ln(4)
-
-    # Stat strip
-    labels = [("XGBoost Sharpe", stats.get("sharpe","—"), ACC),
-              ("XGBoost ICIR",   stats.get("icir",  "—"), ACC),
-              ("Max Drawdown",   stats.get("mdd",   "—"), RED)]
-    col_w = (pdf.epw) / 3
-
-    for i, (label, val, color) in enumerate(labels):
-        x = pdf.l_margin + i * col_w
-        pdf.set_xy(x, pdf.get_y())
-        pdf.set_fill_color(*SURF)
-        pdf.rect(x, pdf.get_y(), col_w - 3, 20, style="F")
-        pdf.set_xy(x + 2, pdf.get_y() + 2)
-        pdf.set_font("Helvetica", "B", 18)
-        pdf.set_text_color(*color)
-        pdf.cell(col_w - 5, 10, str(val), align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.set_xy(x + 2, pdf.get_y() + 12)
-        pdf.set_font("Helvetica", "", 7)
-        set_muted()
-        pdf.cell(col_w - 5, 4, label, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
-
-    pdf.set_xy(pdf.l_margin, pdf.get_y() + 26)
-    pdf.set_font("Helvetica", "I", 8)
-    set_muted()
-    pdf.cell(0, 5,
-        "Walk-forward validated  ·  Bloomberg data  ·  Mexican equities & FIBRAs (BMV)  ·  Monthly rebalancing  ·  10 bp transaction cost",
-        new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("Helvetica", "", 7)
-    pdf.cell(0, 5, f"Report date: {date.today().isoformat()}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-    # ---- Page 2: Model Comparison ----
-    pdf.add_page()
-    section_header("01 · Model Performance — XGBoost vs ElasticNetCV")
-
-    # Table
-    col_widths = [70, 35, 35, 35]
-    headers = ["Metric", "ElasticNetCV", "XGBoost", "Δ (xgb − elastic)"]
-    pdf.set_font("Helvetica", "B", 7)
-    set_muted()
-    pdf.set_fill_color(*SURF)
-    for w, h in zip(col_widths, headers):
-        pdf.cell(w, 5, h, border=0, fill=True, align="R" if h != "Metric" else "L")
-    pdf.ln()
-
-    pdf.set_font("Helvetica", "", 7)
-    for i, row in enumerate(step1_rows):
-        pdf.set_fill_color(*(SURF if i % 2 else BG))
-        set_primary()
-        pdf.cell(col_widths[0], 4.5, row["metric"], fill=True)
-        set_muted()
-        for val, w in [(row["elastic"], col_widths[1]), (row["xgboost"], col_widths[2]), (row["delta"], col_widths[3])]:
-            set_muted()
-            pdf.cell(w, 4.5, str(val), fill=True, align="R")
-        pdf.ln()
-
-    pdf.ln(3)
-    # Figures side-by-side
-    y_fig = pdf.get_y()
-    w_fig = pdf.epw / 2 - 2
-    add_img_safe(FIGURES / "step1_equity_mock.png",
-                 x=pdf.l_margin, y=y_fig, w=w_fig)
-    add_img_safe(FIGURES / "step1_ic_mock.png",
-                 x=pdf.l_margin + w_fig + 4, y=y_fig, w=w_fig)
-
-    # ---- Page 3: SHAP ----
-    pdf.add_page()
-    section_header("02 · Feature Attribution (SHAP) — XGBoost Walk-forward")
-
-    half = pdf.epw / 2 - 2
-
-    # Left: tables
-    y0 = pdf.get_y()
-    pdf.set_font("Helvetica", "B", 8)
-    set_primary()
-    pdf.cell(0, 5, "Top-10 Features by Mean |SHAP|", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("Helvetica", "B", 7)
-    set_muted()
-    pdf.set_fill_color(*SURF)
-    for hdr, w in [("#", 8), ("Feature", 38), ("Mean |SHAP|", 28), ("Std", 26)]:
-        pdf.cell(w, 4.5, hdr, fill=True, align="C")
-    pdf.ln()
-    for i, r in enumerate(top10[:10]):
-        pdf.set_fill_color(*(SURF if i % 2 else BG))
-        pdf.set_font("Helvetica", "", 7)
-        set_primary()
-        pdf.cell(8,  4.5, r["rank"],    fill=True, align="C")
-        pdf.cell(38, 4.5, r["feature"], fill=True)
-        set_muted()
-        pdf.cell(28, 4.5, r["mean_abs"], fill=True, align="R")
-        pdf.cell(26, 4.5, r["std_abs"],  fill=True, align="R")
-        pdf.ln()
-
-    pdf.ln(3)
-    pdf.set_font("Helvetica", "B", 8)
-    set_primary()
-    pdf.cell(0, 5, "Feature Stability (Spearman rank-corr.)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("Helvetica", "B", 7)
-    set_muted()
-    pdf.set_fill_color(*SURF)
-    for hdr, w in [("K", 16), ("Pairs", 18), ("Mean ρ", 28), ("Std ρ", 28)]:
-        pdf.cell(w, 4.5, hdr, fill=True, align="C")
-    pdf.ln()
-    for i, r in enumerate(stability):
-        pdf.set_fill_color(*(SURF if i % 2 else BG))
-        pdf.set_font("Helvetica", "", 7)
-        set_primary()
-        pdf.cell(16, 4.5, r["K"],     fill=True)
-        pdf.cell(18, 4.5, r["pairs"], fill=True, align="C")
-        set_muted()
-        pdf.cell(28, 4.5, r["mean"],  fill=True, align="R")
-        pdf.cell(28, 4.5, r["std"],   fill=True, align="R")
-        pdf.ln()
-
-    # Right: figures
-    x_right = pdf.l_margin + half + 4
-    y_right  = y0
-    add_img_safe(FIGURES / "step2_shap_beeswarm.png",
-                 x=x_right, y=y_right, w=half, h=50)
-    add_img_safe(FIGURES / "step2_shap_waterfall.png",
-                 x=x_right, y=y_right + 53, w=half, h=45)
-
-    # ---- Page 4: Regime ----
-    pdf.add_page()
-    section_header("03 · Performance by Macro Regime")
-
-    if not regime_df.empty:
-        pdf.set_font("Helvetica", "B", 7)
-        set_muted()
-        pdf.set_fill_color(*SURF)
-        cols4 = [("Rate regime", 40), ("Stress", 22), ("N", 12),
-                 ("IC mean", 24), ("Sharpe", 22), ("Top-5 stab.", 24)]
-        for hdr, w in cols4:
-            pdf.cell(w, 4.5, hdr, fill=True, align="C")
-        pdf.ln()
-
-        for i, (_, row) in enumerate(regime_df.iterrows()):
-            pdf.set_fill_color(*(SURF if i % 2 else BG))
-            pdf.set_font("Helvetica", "", 7)
-            set_primary()
-            pdf.cell(40, 4.5, str(row.get("rate_regime","")),   fill=True)
-            pdf.cell(22, 4.5, str(row.get("stress_regime","")), fill=True)
-            pdf.cell(12, 4.5, str(int(row.get("n_rebalances",0))), fill=True, align="C")
-            ic  = row.get("ic_mean", float("nan"))
-            sh  = row.get("sharpe",  float("nan"))
-            top5= row.get("shap_stability_top5", float("nan"))
-            set_muted()
-            pdf.cell(24, 4.5, f"{ic:+.3f}" if pd.notna(ic) else "—",  fill=True, align="R")
-            pdf.cell(22, 4.5, f"{sh:+.2f}" if pd.notna(sh) else "—",  fill=True, align="R")
-            pdf.cell(24, 4.5, f"{top5:.3f}" if pd.notna(top5) else "—", fill=True, align="R")
-            pdf.ln()
-
-    pdf.ln(3)
-    y_fig4 = pdf.get_y()
-    w3 = pdf.epw * 0.58
-    w4 = pdf.epw * 0.38
-    add_img_safe(FIGURES / "step3_regime_equity_curves.png",
-                 x=pdf.l_margin, y=y_fig4, w=w3)
-    add_img_safe(FIGURES / "step3_ic_by_regime.png",
-                 x=pdf.l_margin + w3 + 4, y=y_fig4, w=w4)
-
-    # ---- Page 5: Risk & Methodology ----
-    pdf.add_page()
-    section_header("04 · Risk Profile & Methodology")
-
-    lookup = {r["metric"]: r.get("xgboost", "—") for r in step1_rows}
-    risk_items = [
-        ("Annualized return",     lookup.get("Annualized return", "—")),
-        ("Annualized vol",        lookup.get("Annualized vol", "—")),
-        ("Sharpe ratio",          lookup.get("Sharpe", "—")),
-        ("Sortino ratio",         lookup.get("Sortino", "—")),
-        ("Max drawdown",          lookup.get("Max drawdown", "—")),
-        ("CVaR 95% (daily)",      lookup.get("CVaR 95% (daily)", "—")),
-        ("Avg turnover/rebalance",lookup.get("Turnover (per rebalance)", "—")),
-    ]
-    method_items = [
-        ("Universe",       "Mexican equities + FIBRAs (BMV), ~26 instruments"),
-        ("Signal",         "XGBoost cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)"),
-        ("Baseline signal","ElasticNetCV (interchangeable via config flag)"),
-        ("Optimizer",      "Mean-variance (SLSQP) with market-impact penalty"),
-        ("Rebalance",      "Monthly (end-of-month), walk-forward OOS"),
-        ("Validation",     "108 rebalances, 2017–2026"),
-        ("Costs",          "10 bp per side applied each rebalance"),
-        ("Regimes",        "Banxico rate (TIGHTENING/EASING/NEUTRAL) × IPC vol stress"),
-        ("Attribution",    "Per-rebalance SHAP via TreeExplainer (shap 0.51)"),
-        ("Data",           "Bloomberg (production) · mock data (research)"),
-        ("Framework",      "CNBV position limits, LFI structure"),
-    ]
-
-    half5 = pdf.epw / 2 - 3
-    y5 = pdf.get_y()
-
-    # Left: Risk metrics
-    pdf.set_font("Helvetica", "B", 8)
-    set_primary()
-    pdf.cell(half5, 5, "XGBoost Risk Metrics (Walk-forward OOS)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("Helvetica", "B", 7)
-    set_muted()
-    pdf.set_fill_color(*SURF)
-    pdf.cell(half5 * 0.55, 4.5, "Metric", fill=True)
-    pdf.cell(half5 * 0.45, 4.5, "Value",  fill=True, align="R")
-    pdf.ln()
-    for i, (label, val) in enumerate(risk_items):
-        pdf.set_fill_color(*(SURF if i % 2 else BG))
-        pdf.set_font("Helvetica", "", 7)
-        set_primary()
-        pdf.cell(half5 * 0.55, 4.5, label, fill=True)
-        set_muted()
-        pdf.cell(half5 * 0.45, 4.5, str(val), fill=True, align="R")
-        pdf.ln()
-
-    # Right: Methodology
-    pdf.set_xy(pdf.l_margin + half5 + 6, y5)
-    pdf.set_font("Helvetica", "B", 8)
-    set_primary()
-    pdf.cell(half5, 5, "Methodology", new_x=XPos.RIGHT, new_y=YPos.TOP)
-    pdf.set_xy(pdf.l_margin + half5 + 6, y5 + 7)
-    for i, (label, desc) in enumerate(method_items):
-        pdf.set_xy(pdf.l_margin + half5 + 6, pdf.get_y())
-        pdf.set_fill_color(*(SURF if i % 2 else BG))
-        pdf.set_font("Helvetica", "B", 7)
-        set_primary()
-        pdf.cell(28, 4.5, label + ":", fill=True)
-        pdf.set_font("Helvetica", "", 7)
-        set_muted()
-        pdf.cell(half5 - 28, 4.5, desc[:70], fill=True)
-        pdf.ln()
-
-    # Disclaimer
-    pdf.set_y(-45)
-    pdf.set_font("Helvetica", "I", 6)
-    pdf.set_text_color(*MUT)
-    pdf.set_fill_color(*SURF)
-    pdf.multi_cell(0, 3.5,
-        "DISCLAIMER: For research purposes only. Past performance does not guarantee future results. "
-        "All results based on walk-forward out-of-sample simulation. Mock data used where Bloomberg "
-        "data unavailable. This document is confidential and intended solely for internal research use.",
-        fill=True,
-    )
+    _pdf_page_cover(pdf, step1_rows)
+    _pdf_page_model_comparison(pdf, step1_rows)
+    _pdf_page_shap(pdf, top10, stability)
+    _pdf_page_regime(pdf, regime_df)
+    _pdf_page_risk_methodology(pdf, step1_rows)
 
     pdf.output(str(pdf_path))
 
