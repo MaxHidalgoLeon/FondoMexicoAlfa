@@ -643,6 +643,7 @@ def _ascii(text: str) -> str:
 def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stability, regime_df) -> None:
     """Build a compact multi-page PDF using fpdf2 (no system library deps)."""
     from fpdf import FPDF
+    from fpdf.enums import XPos, YPos
     import io
 
     class TearsheetPDF(FPDF):
@@ -691,7 +692,7 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
         pdf.set_x(pdf.get_x() + 2)
         pdf.set_font("Helvetica", "B", 9)
         set_muted()
-        pdf.cell(0, 6, title.upper(), ln=True)
+        pdf.cell(0, 6, title.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_line_width(0.1)
         pdf.ln(2)
 
@@ -713,11 +714,11 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
 
     pdf.set_font("Helvetica", "B", 24)
     set_accent()
-    pdf.cell(0, 12, "FondoMéxicoAlfa (FMIA)", ln=True)
+    pdf.cell(0, 12, "FondoMéxicoAlfa (FMIA)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_font("Helvetica", "", 10)
     set_muted()
-    pdf.cell(0, 6, "Systematic Long-Only Equity & FIBRA  |  Quantitative Research Report", ln=True)
+    pdf.cell(0, 6, "Systematic Long-Only Equity & FIBRA  |  Quantitative Research Report", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(4)
 
     # Stat strip
@@ -734,20 +735,20 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
         pdf.set_xy(x + 2, pdf.get_y() + 2)
         pdf.set_font("Helvetica", "B", 18)
         pdf.set_text_color(*color)
-        pdf.cell(col_w - 5, 10, str(val), align="C", ln=False)
+        pdf.cell(col_w - 5, 10, str(val), align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
         pdf.set_xy(x + 2, pdf.get_y() + 12)
         pdf.set_font("Helvetica", "", 7)
         set_muted()
-        pdf.cell(col_w - 5, 4, label, align="C", ln=False)
+        pdf.cell(col_w - 5, 4, label, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
 
     pdf.set_xy(pdf.l_margin, pdf.get_y() + 26)
     pdf.set_font("Helvetica", "I", 8)
     set_muted()
     pdf.cell(0, 5,
         "Walk-forward validated  ·  Bloomberg data  ·  Mexican equities & FIBRAs (BMV)  ·  Monthly rebalancing  ·  10 bp transaction cost",
-        ln=True)
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "", 7)
-    pdf.cell(0, 5, f"Report date: {date.today().isoformat()}", ln=True)
+    pdf.cell(0, 5, f"Report date: {date.today().isoformat()}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     # ---- Page 2: Model Comparison ----
     pdf.add_page()
@@ -793,7 +794,7 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
     y0 = pdf.get_y()
     pdf.set_font("Helvetica", "B", 8)
     set_primary()
-    pdf.cell(0, 5, "Top-10 Features by Mean |SHAP|", ln=True)
+    pdf.cell(0, 5, "Top-10 Features by Mean |SHAP|", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "B", 7)
     set_muted()
     pdf.set_fill_color(*SURF)
@@ -814,7 +815,7 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 8)
     set_primary()
-    pdf.cell(0, 5, "Feature Stability (Spearman rank-corr.)", ln=True)
+    pdf.cell(0, 5, "Feature Stability (Spearman rank-corr.)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "B", 7)
     set_muted()
     pdf.set_fill_color(*SURF)
@@ -913,7 +914,7 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
     # Left: Risk metrics
     pdf.set_font("Helvetica", "B", 8)
     set_primary()
-    pdf.cell(half5, 5, "XGBoost Risk Metrics (Walk-forward OOS)", ln=True)
+    pdf.cell(half5, 5, "XGBoost Risk Metrics (Walk-forward OOS)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "B", 7)
     set_muted()
     pdf.set_fill_color(*SURF)
@@ -933,7 +934,7 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
     pdf.set_xy(pdf.l_margin + half5 + 6, y5)
     pdf.set_font("Helvetica", "B", 8)
     set_primary()
-    pdf.cell(half5, 5, "Methodology", ln=False)
+    pdf.cell(half5, 5, "Methodology", new_x=XPos.RIGHT, new_y=YPos.TOP)
     pdf.set_xy(pdf.l_margin + half5 + 6, y5 + 7)
     for i, (label, desc) in enumerate(method_items):
         pdf.set_xy(pdf.l_margin + half5 + 6, pdf.get_y())
