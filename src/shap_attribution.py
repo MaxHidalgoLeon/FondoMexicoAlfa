@@ -59,8 +59,8 @@ def collect_rebalance_shap(
     Returns:
         List of dicts, one per (ticker, feature) pair, with keys:
         ``date``, ``ticker``, ``feature``, ``shap_value``, ``feature_value``.
-        Returns an empty list on any error so the walk-forward loop can
-        continue without crashing.
+        Returns an empty list on any SHAP error — this function never raises,
+        so callers do not need a surrounding try/except.
     """
     try:
         import shap as _shap

@@ -246,18 +246,19 @@ def forecast_returns(
                 _xgb_model = XGBoostModel(config=_xgboost_cfg_from_settings(cfg))
                 try:
                     _xgb_model.fit(X_train, y_train)
-                    shap_records.extend(
-                        collect_rebalance_shap(
-                            _xgb_model,
-                            X_pred,
-                            date,
-                            current_data["ticker"].tolist(),
-                            feature_cols,
-                        )
-                    )
                 except Exception as exc:
-                    logger.warning("XGBoostModel fit/SHAP failed at %s: %s", date, exc)
+                    logger.warning("XGBoostModel fit failed at %s: %s", date, exc)
                     continue
+                # collect_rebalance_shap returns [] on any SHAP error — no try/except needed.
+                shap_records.extend(
+                    collect_rebalance_shap(
+                        _xgb_model,
+                        X_pred,
+                        date,
+                        current_data["ticker"].tolist(),
+                        feature_cols,
+                    )
+                )
                 preds = _xgb_model.predict(X_pred)
             else:
                 preds = fit_predict(X_train, y_train, X_pred, cfg)
