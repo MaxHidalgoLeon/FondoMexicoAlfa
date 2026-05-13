@@ -36,6 +36,9 @@ REPORT_PATH     = ROOT / "reports" / "step3_regime_analysis.md"
 PERF_TABLE_CSV  = ROOT / "reports" / "regime_performance_table.csv"
 REGIME_TABLE_CSV = ROOT / "reports" / "regime_table.csv"
 
+SHAP_STABILITY_FLOOR        = 0.30  # below this, revert to ElasticNet signal
+SIGNAL_SHRINKAGE_TIGHTENING = 0.70  # scale XGBoost signal in TIGHTENING regime
+
 
 # ---------------------------------------------------------------------------
 # Per-rebalance IC
@@ -492,9 +495,10 @@ def _write_recommendation(perf_df: pd.DataFrame, stab_df: pd.DataFrame) -> str:
         f"Feature stability is lowest in the {'TIGHTENING' if not stab_df.empty and stab_df.set_index('rate_regime').loc[TIGHTENING,'shap_stability_top5'] == worst_stab else 'most volatile'} regime "
         f"(mean Spearman={_fmt(worst_stab)}), confirming that tightening cycles destabilise the model's feature hierarchy. "
         f"The actionable recommendation is to implement a **soft regime filter**: "
-        f"when rate_regime==TIGHTENING, scale the gross XGBoost signal by 0.7 (a 30% shrinkage) "
+        f"when rate_regime==TIGHTENING, scale the gross XGBoost signal by {SIGNAL_SHRINKAGE_TIGHTENING} "
+        f"(a {round((1 - SIGNAL_SHRINKAGE_TIGHTENING) * 100):.0f}% shrinkage) "
         f"rather than a hard on/off gate, and monitor the top-5 SHAP stability metric — "
-        f"if it drops below 0.30 in any three consecutive rebalances, suspend the XGBoost overlay and revert to ElasticNet. "
+        f"if it drops below {SHAP_STABILITY_FLOOR} in any three consecutive rebalances, suspend the XGBoost overlay and revert to ElasticNet. "
         f"Stress regime triggers can be revisited with a larger universe (≥50 tickers) or live Bloomberg data."
     )
     return rec
