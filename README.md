@@ -3,7 +3,9 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Tests](https://img.shields.io/badge/tests-107%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
-![Status](https://img.shields.io/badge/status-research-orange)
+![Status](https://img.shields.io/badge/status-research%20prototype-orange)
+![XGBoost](https://img.shields.io/badge/model-XGBoost%202.0-red)
+![SHAP](https://img.shields.io/badge/attribution-SHAP-blueviolet)
 
 Systematic long-short equity and FIBRA pipeline for Mexican public markets.
 Walk-forward cross-sectional return forecasting with XGBoost, SHAP attribution,
