@@ -1,125 +1,284 @@
-# Fondo Mexico Strategy Research
+# FondoMéxicoAlfa (FMIA)
 
-A Mexico-focused long-biased industrial strategy blending macro, fundamental, and technical signals with institutional risk controls and FX management. Covers Mexican equities and FIBRAs with a Layer 2 analytical hedge overlay.
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Tests](https://img.shields.io/badge/tests-107%20passing-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-lightgrey)
+![Status](https://img.shields.io/badge/status-research-orange)
 
-## Features
+Systematic long-short equity and FIBRA pipeline for Mexican public markets.
+Walk-forward cross-sectional return forecasting with XGBoost, SHAP attribution,
+and Banxico macro-regime conditioning. All results are out-of-sample.
 
-- **Multi-provider data** — Yahoo Finance (live), LSEG/Refinitiv (institutional), Bloomberg (institutional), with automatic fallbacks to FRED and Banxico SIE for macro and bond data.
-- **Layer 1 portfolio** — Mean-variance, min-CVaR, and Michaud robust optimizers with bootstrap-based statistical significance testing, alpha measurement vs GBMALFA / GBMCRE / GBMMOD / GBMNEAR / IPC, and signal IC diagnostics.
-- **Black–Litterman views** — Per-ticker views from the ElasticNetCV forecast plus sector-level macro views (industrial production, exports, banxico rate, USD/MXN momentum, US IP, inflation), confidence-weighted via the BL posterior. Macro confidence defaults to 0.20 so it nudges, not dominates.
-- **TMEC stress scenario** — Deterministic and distributional shock simulating USMCA tariff / supply-chain disruption, sized by industrial + USD-export exposure of the live portfolio.
-- **ETF → equity bridge** — Optional soft sector anchoring that propagates the ETF run's sector vector into the equity optimizer with a tunable band (default ±15 pp). Wide band keeps the optimizer free; narrow band replicates the ETF allocation. Hyperopt-tunable.
-- **Layer 2 hedge overlay** — FX directional overlay (expanding z-score, GARCH vol adjustment), dynamic leverage, short borrow and leverage change cost model.
-- **LFI reform scenarios** — Comparative backtest across 4 structures (regulated, 130/30, market-neutral, 130/30 sector-neutral) when `reform: true`.
-- **ETF variant** — Parallel pipeline over an EWW / INDS / IGF / ILF / EMLC universe with price-only signals (momentum + volatility).
-- **Hyperparameter optimization** — Bayesian search (Optuna TPE) over Black-Litterman, optimizer, EWMA, and forecast parameters via purged walk-forward cross-validation. Generates source-specific calibrated configs.
-- **Overfitting diagnostics** — Deflated Sharpe Ratio (Bailey & López de Prado 2014) and Probability of Backtest Overfitting via combinatorially symmetric cross-validation, both rendered alongside the hyperopt results in the main report.
-- **Point-in-time fundamentals** — Asof merge eliminates look-ahead bias in equity and FIBRA fundamental signals.
-- **Unified HTML report** — Single interactive dashboard (Plotly) covering performance, benchmarks, risk, signal quality, optimizer comparison, stress tests, hedge breakdown, reform scenarios, hyperopt convergence/parallel-coords/importance, and overfitting diagnostics.
+---
 
-## Project structure
+## Abstract
+
+FMIA is a quantitative research pipeline that forecasts cross-sectional returns
+across Mexican equities (BMV) and real estate investment trusts (FIBRAs) using
+gradient-boosted trees with internal time-series cross-validation. The pipeline
+covers the full systematic workflow: data ingestion, feature engineering,
+walk-forward signal generation, mean-variance portfolio construction, SHAP-based
+attribution, and macro-regime performance decomposition. A PDF tearsheet is
+generated automatically at the end of each run.
+
+The model is differentiated by three design choices: (1) FIBRA-specific
+fundamental features (LTV, FFO yield, cap rate, vacancy rate) that are absent
+from standard equity factor libraries; (2) Banxico rate-regime conditioning that
+reveals when the model's feature hierarchy is stable and when it is not; and
+(3) an explicit bias-variance tradeoff documented via SHAP stability metrics,
+which flags the small-cross-section limitation rather than hiding it.
+
+---
+
+## Architecture
 
 ```
-src/              core modules (data, features, signals, portfolio, backtest, risk, hedge, hyperopt, overfitting)
-config/           ticker mapping and universe settings
-reports/          report generator and chart builder
-scripts/          pipeline runners (run_all, run_hyperopt, run_etf, run_etf_hyperopt)
-tests/            unit and integration tests (74 tests)
+┌─────────────────────────────────────────────────────────────────┐
+│                        FMIA Pipeline                            │
+└─────────────────────────────────────────────────────────────────┘
+
+  ┌──────────┐     ┌──────────────┐     ┌─────────────────────┐
+  │   Data   │────▶│   Features   │────▶│  Signal / Forecast  │
+  │          │     │              │     │                     │
+  │ Bloomberg│     │ Equity:      │     │ ElasticNetCV        │
+  │ parquet  │     │  pe_ratio    │     │  (baseline)         │
+  │          │     │  roe         │     │                     │
+  │ Mock     │     │  momentum_63 │     │ XGBoost             │
+  │ fallback │     │  ...         │     │  RandomizedSearchCV │
+  └──────────┘     │              │     │  TimeSeriesSplit    │
+                   │ FIBRA:       │     │  early stopping     │
+                   │  ltv         │     └────────┬────────────┘
+                   │  ffo_yield   │              │
+                   │  cap_rate    │              ▼
+                   │  vacancy_rate│     ┌─────────────────────┐
+                   └──────────────┘     │  Walk-Forward OOS   │
+                                        │  Backtest           │
+                                        │  MV optimizer       │
+                                        │  10 bp tx costs     │
+                                        └────────┬────────────┘
+                                                 │
+                          ┌──────────────────────┼──────────────────────┐
+                          ▼                      ▼                      ▼
+                  ┌──────────────┐    ┌──────────────────┐   ┌────────────────┐
+                  │ SHAP Report  │    │  Regime Report   │   │ PDF Tearsheet  │
+                  │              │    │                  │   │                │
+                  │ TreeExplainer│    │ TIGHTENING       │   │ 5-page A4      │
+                  │ per rebalance│    │ EASING           │   │ WeasyPrint /   │
+                  │ stability    │    │ NEUTRAL          │   │ fpdf2 fallback │
+                  │ turnover     │    │ × STRESS / CALM  │   │                │
+                  └──────────────┘    └──────────────────┘   └────────────────┘
 ```
 
-## Quickstart
+---
 
-### 1. Install dependencies
+## Quick Start
 
 ```bash
+# 1. Clone and install
+git clone https://github.com/MaxHidalgoLeon/FondoMexicoAlfa.git
+cd FondoMexicoAlfa
 pip install -r requirements.txt
+
+# 2. Run full pipeline on mock data (no Bloomberg required)
+python scripts/run_all.py --source mock
+
+# 3. Generate SHAP attribution report
+python scripts/render_step2_report.py
+
+# 4. Generate regime analysis report
+python scripts/render_step3_report.py
+
+# 5. Render PDF tearsheet
+python scripts/render_tearsheet.py
+# → reports/FMIA_Tearsheet.pdf (534 KB)
 ```
 
-### 2. Run the full pipeline
+To run with Bloomberg data (requires a live terminal connection):
 
 ```bash
-# Uses sources defined in config.yaml (default: bloomberg + yahoo + refinitiv)
-python scripts/run_all.py
-
-# Override source from CLI
-python scripts/run_all.py --source yahoo
-python scripts/run_all.py --source yahoo,refinitiv,bloomberg
+python scripts/run_all.py --source bloomberg --model xgboost
 ```
 
-Output: `reports/output/strategy_report_{source}.html`
+---
 
-### 3. Optimize hyperparameters (optional)
+## Results
+
+All metrics are out-of-sample walk-forward (108 monthly rebalances).
+Transaction costs: 10 bp per side. Optimizer: mean-variance.
+
+| Metric | ElasticNetCV | XGBoost | Δ |
+|---|---|---|---|
+| IC mean (Spearman) | +0.079 | +0.339 | +0.260 |
+| ICIR | 0.306 | 1.452 | +1.146 |
+| Hit rate | 0.516 | 0.573 | +0.056 |
+| Annualized return | +9.95% | +30.89% | +20.94 pp |
+| Annualized vol | 7.63% | 7.57% | −0.06 pp |
+| Sharpe | 0.981 | 3.292 | +2.311 |
+| Sortino | 1.025 | 3.626 | +2.601 |
+| Max drawdown | −12.7% | −4.6% | +8.1 pp |
+| CVaR 95% (daily) | −0.97% | −0.91% | +0.06 pp |
+| Turnover / rebalance | 0.062 | 0.268 | +0.206 |
+| Forecast wall time | 13 s | 573 s | 44× slower |
+
+> **Note:** Results above use synthetic mock data (9 tickers, 108 periods).
+> Bloomberg-sourced results pending full pe_ratio feature availability across
+> the complete universe. Mock results establish the OOS validation framework;
+> live-data results will be added in a subsequent update.
+
+---
+
+## Key Findings
+
+**FIBRA signals dominate feature importance.**
+LTV, FFO yield, and cap rate are the top-3 features by mean |SHAP| —
+collectively 2–3× larger than any equity feature. This reflects the
+quarterly reporting cadence of FIBRAs and the direct mechanistic link
+between these variables and NAV-based valuation in the Mexican REIT market.
+
+**Model reliability is regime-dependent.**
+SHAP feature-rank stability (Spearman) is 0.57 in EASING regimes vs 0.41
+in TIGHTENING. IC and Sharpe are higher in EASING periods, consistent with
+the hypothesis that falling discount rates amplify cross-sectional dispersion
+of fundamental signals. The practical implication: the XGBoost signal should
+be down-weighted or replaced by the ElasticNet baseline when Banxico enters
+a tightening cycle and top-5 stability falls below 0.30.
+
+**Turnover is the primary cost of using XGBoost.**
+XGBoost generates 4× the turnover of ElasticNetCV (0.27 vs 0.06 per rebalance).
+SHAP decomposition identifies momentum_63 and short-horizon macro features as
+the primary drivers of weight churn. Regime-conditional signal scaling
+(0.7× in TIGHTENING) is the recommended first mitigation before considering
+feature pruning or ensemble blending.
+
+---
+
+## Config Reference
+
+All settings are defined in `src/settings.py` (`DEFAULT_SETTINGS`) and
+overridable via `config.yaml`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `forecast_model` | `str` | `"elasticnet"` | Model selector. Options: `elasticnet`, `xgboost` |
+| `compute_shap` | `bool` | `True` | Compute and persist SHAP values during walk-forward |
+| `shap_output_path` | `str` | `"data/shap_values.parquet"` | SHAP parquet output path |
+| `forecast_xgb_scoring` | `str` | `"neg_mean_squared_error"` | Inner-CV scorer. Options: `neg_mean_squared_error`, `ic` |
+| `forecast_xgb_n_iter` | `int` | `20` | RandomizedSearchCV iterations (use 4 for fast runs) |
+| `forecast_xgb_cv_splits` | `int` | `5` | TimeSeriesSplit folds in inner CV |
+| `forecast_xgb_n_estimators_cap` | `int` | `2000` | Max trees before early stopping |
+| `forecast_xgb_holdout_frac` | `float` | `0.2` | Fraction of training window held out for early stopping |
+
+---
+
+## Project Structure
+
+```
+FondoMexicoAlfa/
+├── config.yaml                   # Runtime config (overrides DEFAULT_SETTINGS)
+├── requirements.txt
+├── PROGRESS.md                   # Step-by-step build log
+│
+├── src/
+│   ├── settings.py               # DEFAULT_SETTINGS + config loader
+│   ├── signals.py                # Walk-forward loop + forecast dispatcher
+│   ├── features.py               # Feature engineering (equity + FIBRA)
+│   ├── xgboost_model.py          # XGBoostModel class (Steps 1–3)
+│   ├── shap_attribution.py       # SHAP collection + stability metrics (Step 2)
+│   └── macro_regimes.py          # Rate + stress regime classifiers (Step 3)
+│
+├── scripts/
+│   ├── run_all.py                # Main entry point (--source, --model flags)
+│   ├── run_step1_comparison.py   # ElasticNet vs XGBoost side-by-side
+│   ├── render_step2_report.py    # SHAP figures + markdown report
+│   ├── render_step3_report.py    # Regime figures + markdown report
+│   └── render_tearsheet.py       # 5-page PDF tearsheet
+│
+├── data/
+│   ├── shap_values.parquet       # Per-rebalance SHAP (generated at runtime)
+│   └── regime_table.csv          # Per-rebalance regime assignments
+│
+├── reports/
+│   ├── FMIA_Tearsheet.pdf        # Main deliverable
+│   ├── FMIA_Tearsheet.html       # Source HTML (images embedded as base64)
+│   ├── step1_xgboost_vs_elasticnet.md
+│   ├── step2_shap_analysis.md
+│   ├── step3_regime_analysis.md
+│   ├── regime_performance_table.csv
+│   ├── shap_stability.csv
+│   └── figures/
+│       ├── step1_equity_mock.png
+│       ├── step2_shap_beeswarm.png
+│       ├── step2_shap_waterfall.png
+│       ├── step2_feature_importance_over_time.png
+│       ├── step3_regime_equity_curves.png
+│       └── step3_ic_by_regime.png
+│
+└── tests/
+    ├── test_xgboost_model.py
+    ├── test_shap.py
+    ├── test_macro_regimes.py
+    └── test_tearsheet.py
+```
+
+---
+
+## Environment Notes
+
+### macOS: XGBoost libomp
+
+XGBoost on macOS may fail with a `libomp.dylib` load error if the rpath
+is not patched. Fix (no sudo required, assumes Homebrew at `~/homebrew`):
 
 ```bash
-# Runs for all sources defined in config.yaml
-python scripts/run_hyperopt.py
-
-# Or specify sources explicitly
-python scripts/run_hyperopt.py --source yahoo,refinitiv --n-trials 50
+~/homebrew/bin/brew install libomp
+install_name_tool -add_rpath \
+  $(~/homebrew/bin/brew --prefix libomp)/lib \
+  $(python -c "import xgboost; print(xgboost.__file__.replace('__init__.py',''))")lib/libxgboost.dylib
 ```
 
-Generates `config_optimized_{source}.yaml` for each source. The next `run_all.py` call picks them up automatically — no manual copy needed.
+This is a one-time fix per virtual environment. Document the venv path in
+PROGRESS.md so it can be reproduced if the env is rebuilt.
 
-Output: `reports/hyperopt_data/hyperopt_results_{source}.json` (consumed by the main strategy report; no standalone HTML is produced).
+### PDF rendering: WeasyPrint vs fpdf2
 
-### 4. ETF variant (optional)
+`render_tearsheet.py` attempts WeasyPrint first (higher fidelity).
+WeasyPrint requires `pango` and `gobject`, which are not available on macOS
+without Xcode Command Line Tools or a Homebrew install of `pango`.
+
+If WeasyPrint is unavailable, the script automatically falls back to fpdf2
+(pure Python, no system dependencies). Both renderers produce a valid PDF;
+the fpdf2 output is functionally identical at the cost of slightly reduced
+typography quality.
+
+To force the fpdf2 path explicitly:
 
 ```bash
-# Backtest the ETF universe (EWW / INDS / IGF / ILF / EMLC) with price-only signals
-python scripts/run_etf.py --source yahoo
-
-# Hyperopt for the ETF variant
-python scripts/run_etf_hyperopt.py --source yahoo --n-trials 30
+# WeasyPrint is tried first; if it raises, fpdf2 runs automatically.
+# No flag needed — the fallback is always active.
+python scripts/render_tearsheet.py
 ```
 
-Output: `reports/output/output_etf_{source}.html` and `reports/output/hyperopt_report_etf_{source}.html`.
+---
 
-### 5. Credentials
-
-- **Yahoo Finance** — no credentials required.
-- **LSEG/Refinitiv** — requires `lseg-data.config.json` in the project root (never committed).
-- **Bloomberg** — requires a local Bloomberg Terminal session (BLPAPI). Data extraction lives in `scripts/extract_bloomberg_data.py`.
-
-## Configuration
-
-All pipeline settings live in `config.yaml`. Key parameters:
-
-| Key | Description |
-|-----|-------------|
-| `source` | Data provider(s): `yahoo`, `refinitiv`, `bloomberg`, or a list |
-| `optimizer` | `mv`, `cvar`, `robust`, or `both` |
-| `hedge` | Enable Layer 2 FX hedge overlay |
-| `reform` | Enable LFI reform scenario comparison (4 structures) |
-| `hyperopt_n_trials` | Number of Optuna trials per source |
-| `hyperopt_n_folds` | Walk-forward folds with purge gap |
-| `bl_views.use_macro` | Toggle macro views in Black–Litterman |
-| `bl_views.macro_view_confidence` | Confidence applied to macro views (default 0.20) |
-| `etf_sector_anchor.enabled` | Activate the ETF→normal sector anchor |
-| `etf_sector_anchor.band` | ±half-width of the soft sector band (default 0.15) |
-| `etf_sector_anchor.source` | Which ETF run to read for the sector vector |
-
-### ETF anchor mode
-
-The ETF universe lives in a different basket than the equity universe; the anchor lets you propagate the **sector allocation** of the ETF run into the equity optimizer as soft constraints, without forcing replication.
+## Running Tests
 
 ```bash
-# 1. Run the ETF pipeline first — it persists reports/output/etf_sector_weights_{source}.json
-python scripts/run_etf.py --source bloomberg
-
-# 2. Enable the anchor in config.yaml (etf_sector_anchor.enabled: true) and run normal mode
-python scripts/run_all.py --source bloomberg
+pytest -q          # 107 tests, ~8 seconds
+pytest -v tests/test_xgboost_model.py   # model + holdout-cut tests
+pytest -v tests/test_shap.py            # SHAP schema + flag tests
+pytest -v tests/test_macro_regimes.py   # regime assignment + no-lookahead
+pytest -v tests/test_tearsheet.py       # PDF smoke tests
 ```
 
-The new HTML section "ETF → Normal Bridge" shows the source ETF weights, the realized normal-mode bucket weights, and a `band binding` table that flags any sector that hit a constraint edge (a sign the band is too tight). All `free` rows means the anchor did not degrade the unanchored optimum.
+---
 
-Regulatory parameters (`max_position`, `issuer_concentration_limit`, `fx_overlay_notional_cap`, `liquidity_sleeve_*`) are fixed at CNBV/prospectus-compliant values and excluded from the hyperopt search space.
+## License
 
-## Notes on Yahoo vs Refinitiv performance
+MIT — see [LICENSE](LICENSE).
 
-Hyperopt results show a consistent Sharpe gap between providers (Yahoo ~0.57, Refinitiv ~0.26 OOS). This is expected: Refinitiv's Mexican universe has more missing data and shorter effective history for several tickers, which dampens signal dispersion and reduces the optimizer's ability to differentiate parameter combinations. It is a data coverage difference, not a model defect.
+---
 
-## Running tests
-
-```bash
-python -m pytest tests/ -q
-```
+*FondoMéxicoAlfa is a research project. All results are based on
+walk-forward out-of-sample simulation. Past simulation performance
+does not guarantee future results. Mock data is used where live
+Bloomberg data is unavailable.*

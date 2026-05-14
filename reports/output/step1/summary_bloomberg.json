@@ -1,0 +1,21 @@
+{
+  "xgboost": {
+    "ic_mean": 0.15870369746814678,
+    "ic_std": 0.2618452139424299,
+    "icir": 0.6060973774492585,
+    "hit_rate": 0.4507474128018398,
+    "annualized_return": 0.10353388330498703,
+    "annualized_vol": 0.12770612895010378,
+    "sharpe": 0.6149485088842425,
+    "sortino": 0.6444861083109382,
+    "max_drawdown": -0.33544330920877824,
+    "cvar_95": -0.018305823921605943,
+    "turnover": 0.23486787842506668,
+    "n_periods_ic": 108,
+    "n_periods_returns": 2609,
+    "transaction_cost": 0.001,
+    "model": "xgboost",
+    "forecast_seconds": 44.23590016365051,
+    "backtest_seconds": 6.401354074478149
+  }
+}
