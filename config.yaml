@@ -10,6 +10,8 @@
 # run_hyperopt.py generates a config_optimized_{source}.yaml per listed source.
 source:
   - bloomberg
+  - refinitiv
+  - yahoo
 
 # Analysis period
 start_date: "2017-01-01"
@@ -40,7 +42,7 @@ benchmark_tickers:
 #   "elasticnet" — ElasticNetCV (baseline, default)
 #   "xgboost"    — XGBRegressor with RandomizedSearchCV + TimeSeriesSplit
 # CLI override: --model {elasticnet|xgboost} on scripts/run_all.py.
-forecast_model: "elasticnet"
+forecast_model: "xgboost"
 
 # XGBoost-specific knobs — only consumed when forecast_model == "xgboost".
 # Defaults (n_iter=20, cv_splits=5, n_estimators_cap=2000) live in
@@ -49,7 +51,7 @@ forecast_xgb_n_iter: 20                    # RandomizedSearchCV draws
 forecast_xgb_cv_splits: 5                  # inner TimeSeriesSplit folds
 forecast_xgb_n_estimators_cap: 2000        # early-stopping ceiling
 forecast_xgb_early_stopping_rounds: 50
-forecast_xgb_scoring: "neg_mean_squared_error"   # or "ic" for Spearman rank-IC
+forecast_xgb_scoring: "ic"   #  "ic" for Spearman rank-IC
 
 # SHAP feature attribution — only consumed when forecast_model == "xgboost".
 # Set false to skip SHAP computation and save ~10% runtime per rebalance.

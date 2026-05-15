@@ -181,11 +181,9 @@ def _normalize_sources(raw_source: str | list[str] | tuple[str, ...]) -> list[st
     return list(dict.fromkeys(candidates))
 
 
-def _output_path_for_source(base_out: str, source: str, multi_source: bool) -> str:
-    if not multi_source:
-        return base_out
+def _output_path_for_source(base_out: str, source: str, forecast_model: str) -> str:
     out_path = Path(base_out)
-    return str(out_path.with_name(f"{out_path.stem}_{source}{out_path.suffix}"))
+    return str(out_path.with_name(f"{out_path.stem}_{source}_{forecast_model}{out_path.suffix}"))
 
 # ---------------------------------------------------------------------------
 # Step 1 — Tests
@@ -311,13 +309,12 @@ def main() -> None:
     else:
         print("\n[WARNING] Tests skipped via --skip-tests")
 
-    multi_source = len(sources) > 1
     successful_sources: list[str] = []
     failed_sources: list[tuple[str, str]] = []
 
     for source in sources:
         benchmark_tickers = _benchmarks_for_source(source)
-        out_for_source = _output_path_for_source(out, source, multi_source)
+        out_for_source = _output_path_for_source(out, source, forecast_model)
         source_settings = _apply_optimized_params(dict(pipeline_settings), source)
         print(
             f"\n[RUN] source={source} | benchmarks={', '.join(benchmark_tickers) if benchmark_tickers else 'N/A'} "

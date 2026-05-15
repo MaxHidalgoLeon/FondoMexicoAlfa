@@ -4,7 +4,7 @@ run_etf.py — Pipeline for the ETF version of Fondo Mexico.
 
 Universe: EWW (45-65%) | INDS (20-35%) | IGF (5-15%) | ILF (0-10%) | EMLC (complement)
 Signals:  momentum + volatility (price-only, no fundamentals)
-Output:   reports/output/output_etf_{source}.html
+Output:   reports/output/output_etf_{source}_{model}.html
 
 Usage:
     python scripts/run_etf.py
@@ -76,9 +76,9 @@ def _normalize_sources(raw: str | list) -> list[str]:
     return list(dict.fromkeys(candidates))
 
 
-def _output_for_source(base: str, source: str, multi: bool) -> str:
+def _output_for_source(base: str, source: str, forecast_model: str) -> str:
     p = Path(base)
-    return str(p.with_name(f"{p.stem}_{source}{p.suffix}"))
+    return str(p.with_name(f"{p.stem}_{source}_{forecast_model}{p.suffix}"))
 
 
 DEFAULT_BENCHMARKS = ["IPC", "GBMCRE", "GBMNEAR", "GBMMOD", "GBMALFA"]
@@ -95,6 +95,8 @@ def _parse_args(config: dict) -> argparse.Namespace:
                    help="Comma-separated benchmarks. Default: IPC,GBMCRE,GBMNEAR,GBMMOD,GBMALFA")
     p.add_argument("--hedge", action="store_true", default=None,
                    help="Enable hedge overlay (Layer 2)")
+    p.add_argument("--model", dest="forecast_model", choices=["elasticnet", "xgboost"], default=None,
+                   help=f"Forecast model (config.yaml: {config.get('forecast_model', 'elasticnet')})")
     return p.parse_args()
 
 
@@ -151,12 +153,13 @@ def main() -> None:
     config = _load_config()
     args   = _parse_args(config)
 
-    raw_source  = args.source  or config.get("source", "yahoo")
-    start       = args.start   or config["start_date"]
-    end         = args.end     or config["end_date"]
-    optimizer   = args.optimizer or config.get("optimizer", "mv")
-    hedge       = args.hedge if args.hedge else config.get("hedge", False)
-    out         = args.out     or DEFAULT_REPORT_BASE
+    raw_source     = args.source  or config.get("source", "yahoo")
+    start          = args.start   or config["start_date"]
+    end            = args.end     or config["end_date"]
+    optimizer      = args.optimizer or config.get("optimizer", "mv")
+    hedge          = args.hedge if args.hedge else config.get("hedge", False)
+    out            = args.out     or DEFAULT_REPORT_BASE
+    forecast_model = args.forecast_model or config.get("forecast_model", "elasticnet")
     # CLI benchmarks override config; if neither, default to GBM funds
     if args.benchmarks:
         benchmarks = [x.strip() for x in args.benchmarks.split(",") if x.strip()]
@@ -175,12 +178,15 @@ def main() -> None:
     print(f"  Optimizer  : {optimizer}")
     print(f"  Universe   : EWW | INDS | IGF | ILF | CETES28 | CETES91 | MBONO3Y")
     print(f"  Benchmarks : {', '.join(benchmarks) if benchmarks else 'GBM (default)'}")
+    print(f"  Forecast   : {forecast_model}")
 
     successful, failed = [], []
+    etf_settings = dict(config)
+    etf_settings["forecast_model"] = forecast_model
     for source in sources:
-        out_for = _output_for_source(out, source, multi)
+        out_for = _output_for_source(out, source, forecast_model)
         try:
-            run_report(source, start, end, out_for, optimizer, benchmarks, hedge, dict(config))
+            run_report(source, start, end, out_for, optimizer, benchmarks, hedge, etf_settings)
             successful.append(source)
         except Exception as exc:
             failed.append((source, str(exc)))
