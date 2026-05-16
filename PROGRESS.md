@@ -193,8 +193,9 @@ Step 6 DONE. No further steps defined.
 
 ## Step Tearsheet Redesign
 
-Status: IN_PROGRESS
-Last commit hash: 580f609
+Status: DONE
+Last updated: 2026-05-15T00:00:00Z
+Last commit hash: 8ce1c39
 
 ### Checkpoints
 - [x] T.1 Discovery scan complete
@@ -205,7 +206,7 @@ Last commit hash: 580f609
 - [x] T.6 Regime analysis page
 - [x] T.7 Risk & methodology page
 - [x] T.8 PDF renders cleanly, figures framed, all real numbers
-- [ ] T.9 Commit + close
+- [x] T.9 Commit + close
 
 ### Notes / decisions
 - Colour palette: NAVY(27,43,75) / WHITE / OFFWHITE(247,248,250) / TEXT(26,26,26) / MUTED(107,114,128) / GREEN(22,163,74) / RED(220,38,38) / ACCENT(37,99,235) / RULE(209,213,219)
