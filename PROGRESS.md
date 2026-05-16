@@ -188,3 +188,32 @@ Last commit hash: e3ab9ab
 
 ### Next step on resume
 Step 6 DONE. No further steps defined.
+
+---
+
+## Step Tearsheet Redesign
+
+Status: IN_PROGRESS
+Last commit hash: 580f609
+
+### Checkpoints
+- [x] T.1 Discovery scan complete
+- [x] T.2 Design system implemented (colors, typography, helpers)
+- [x] T.3 Cover page redesigned
+- [x] T.4 Model comparison page with real data table
+- [x] T.5 SHAP attribution page
+- [x] T.6 Regime analysis page
+- [x] T.7 Risk & methodology page
+- [x] T.8 PDF renders cleanly, figures framed, all real numbers
+- [ ] T.9 Commit + close
+
+### Notes / decisions
+- Colour palette: NAVY(27,43,75) / WHITE / OFFWHITE(247,248,250) / TEXT(26,26,26) / MUTED(107,114,128) / GREEN(22,163,74) / RED(220,38,38) / ACCENT(37,99,235) / RULE(209,213,219)
+- Section headers: full-width NAVY strip, 7mm tall, WHITE Helvetica-Bold 11pt (fpdf2) / NAVY bg H2 (HTML)
+- Figures: RULE 0.3mm border frame, 3mm inner padding, 7.5pt italic MUTED caption below via `_pdf_add_img_safe`
+- Footer: three-column (left: fund name, center: page N of M, right: May 2026) with RULE separator line above
+- Margins changed 18mm → 14mm (effective print width 269mm)
+- HTML CSS updated from dark theme to institutional light theme
+
+### Next step on resume
+T.9 — commit and close

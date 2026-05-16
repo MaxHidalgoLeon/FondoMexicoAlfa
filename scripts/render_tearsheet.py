@@ -172,72 +172,70 @@ def _extract_cover_stats(step1_rows: list[dict]) -> dict:
 CSS = """
 @page {
   size: A4 landscape;
-  margin: 18mm;
-  @bottom-center {
-    content: "Page " counter(page) " of " counter(pages) " | FMIA — FondoMéxicoAlfa | Confidential";
-    font-size: 7pt;
-    color: #8b949e;
-    font-family: -apple-system, Segoe UI, Arial, sans-serif;
-  }
+  margin: 14mm;
+  @bottom-left   { content: "FondoMexicoAlfa — Confidential Research"; font-size: 7pt; color: #6B7280; font-family: Arial, sans-serif; }
+  @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 7pt; color: #6B7280; font-family: Arial, sans-serif; }
+  @bottom-right  { content: "May 2026"; font-size: 7pt; color: #6B7280; font-family: Arial, sans-serif; }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, Segoe UI, Arial, sans-serif;
-  background: #0d1117;
-  color: #e6edf3;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #F7F8FA;
+  color: #1A1A1A;
   font-size: 8.5pt;
   line-height: 1.45;
 }
 .page {
   page-break-after: always;
-  min-height: 190mm;
+  min-height: 180mm;
   padding: 4mm 0;
 }
 .page:last-child { page-break-after: auto; }
 
 /* Typography */
-h1 { font-size: 26pt; font-weight: 700; color: #39d353; letter-spacing: -0.5px; }
-h2 { font-size: 11pt; font-weight: 600; color: #8b949e; margin-bottom: 6mm; letter-spacing: 1px; text-transform: uppercase; }
-h3 { font-size: 9pt; font-weight: 600; color: #e6edf3; margin: 3mm 0 2mm; }
-p  { margin-bottom: 2mm; color: #8b949e; }
+h1 { font-size: 22pt; font-weight: 700; color: #FFFFFF; letter-spacing: -0.5px; }
+h2 { font-size: 9pt; font-weight: 700; color: #FFFFFF; letter-spacing: 0.5px; text-transform: uppercase; }
+h3 { font-size: 8.5pt; font-weight: 700; color: #1B2B4B; margin: 3mm 0 2mm; }
+p  { margin-bottom: 2mm; color: #6B7280; }
 
 /* Colours */
-.pos { color: #39d353; }
-.neg { color: #f85149; }
-.amber { color: #f0883e; }
-.muted { color: #8b949e; }
-
-/* Stat strip (cover) */
-.stat-strip { display: flex; gap: 12mm; margin: 8mm 0; }
-.stat-box {
-  flex: 1;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  padding: 6mm 8mm;
-  text-align: center;
-}
-.stat-box .big { font-size: 28pt; font-weight: 700; }
-.stat-box .label { font-size: 7.5pt; color: #8b949e; margin-top: 1mm; }
-
-/* Cover */
-.cover-header {
-  margin-bottom: 4mm;
-  border-bottom: 2px solid #39d353;
-  padding-bottom: 3mm;
-}
-.cover-sub { font-size: 11pt; color: #8b949e; margin-top: 2mm; }
-.tagline { font-size: 8pt; color: #8b949e; margin-top: 4mm; }
-.cover-date { font-size: 8pt; color: #30363d; margin-top: 2mm; }
+.pos { color: #16A34A; font-weight: 600; }
+.neg { color: #DC2626; font-weight: 600; }
+.muted { color: #6B7280; }
+.accent { color: #2563EB; }
 
 /* Section header bar */
 .section-header {
-  background: #161b22;
-  border-left: 4px solid #39d353;
+  background: #1B2B4B;
   padding: 2mm 4mm;
   margin-bottom: 4mm;
 }
-.section-header h2 { margin: 0; font-size: 10pt; }
+.section-header h2 { margin: 0; color: #FFFFFF; }
+
+/* Cover header */
+.cover-header {
+  background: #1B2B4B;
+  padding: 6mm 8mm;
+  margin-bottom: 5mm;
+}
+.cover-header h1 { color: #FFFFFF; margin-bottom: 1mm; }
+.cover-sub { font-size: 9pt; color: #D1D5DB; margin-top: 2mm; }
+
+/* Stat strip (cover) */
+.stat-strip { display: flex; gap: 6mm; margin: 5mm 0; }
+.stat-box {
+  flex: 1;
+  background: #FFFFFF;
+  border: 1px solid #D1D5DB;
+  padding: 5mm 7mm;
+  text-align: center;
+}
+.stat-box .big { font-size: 24pt; font-weight: 700; }
+.stat-box .label { font-size: 7.5pt; color: #6B7280; margin-top: 1mm; }
+
+/* Tagline */
+.tagline { font-size: 7.5pt; color: #6B7280; margin-top: 3mm; }
+.cover-date { font-size: 7pt; color: #6B7280; margin-top: 2mm; }
 
 /* Tables */
 table {
@@ -247,37 +245,42 @@ table {
   margin-bottom: 3mm;
 }
 th {
-  background: #161b22;
-  color: #8b949e;
+  background: #1B2B4B;
+  color: #FFFFFF;
   padding: 2mm 3mm;
   text-align: right;
-  border-bottom: 1px solid #30363d;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
 }
 th:first-child { text-align: left; }
 td {
   padding: 1.5mm 3mm;
   text-align: right;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid #D1D5DB;
+  color: #6B7280;
 }
-td:first-child { text-align: left; color: #e6edf3; }
-tr:nth-child(even) td { background: #0d1117; }
-tr:nth-child(odd)  td { background: #161b22; }
+td:first-child { text-align: left; color: #1A1A1A; font-weight: 500; }
+tr:nth-child(even) td { background: #F7F8FA; }
+tr:nth-child(odd)  td { background: #FFFFFF; }
 
 /* Figures */
+.fig-frame {
+  border: 1px solid #D1D5DB;
+  padding: 3mm;
+  background: #FFFFFF;
+  margin: 2mm 0;
+}
+.fig-frame img { width: 100%; height: auto; display: block; }
+.fig-caption { font-size: 7pt; color: #6B7280; font-style: italic; text-align: center; margin-top: 1mm; }
 .fig-row { display: flex; gap: 4mm; margin: 2mm 0; }
-.fig-row img { flex: 1; max-width: 50%; height: auto; border: 1px solid #30363d; border-radius: 4px; }
-img { max-width: 100%; height: auto; }
-.fig-full img { width: 100%; border: 1px solid #30363d; border-radius: 4px; }
+.fig-row .fig-frame { flex: 1; }
 .missing {
-  background: #161b22;
-  border: 1px dashed #30363d;
-  color: #8b949e;
+  background: #F7F8FA;
+  border: 1px dashed #D1D5DB;
+  color: #6B7280;
   padding: 4mm;
   text-align: center;
   font-size: 7.5pt;
-  border-radius: 4px;
 }
 
 /* Two-column layout */
@@ -288,21 +291,20 @@ img { max-width: 100%; height: auto; }
 .method-list { list-style: none; }
 .method-list li {
   padding: 1.5mm 0;
-  border-bottom: 1px solid #21262d;
-  color: #8b949e;
+  border-bottom: 1px solid #D1D5DB;
+  color: #6B7280;
   font-size: 7.5pt;
 }
-.method-list li strong { color: #e6edf3; }
+.method-list li strong { color: #1B2B4B; }
 
 /* Disclaimer */
 .disclaimer {
   margin-top: 4mm;
   padding: 3mm;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 4px;
+  background: #FFFFFF;
+  border: 1px solid #D1D5DB;
   font-size: 6.5pt;
-  color: #8b949e;
+  color: #6B7280;
   line-height: 1.4;
 }
 """
@@ -314,7 +316,6 @@ def _page_cover(stats: dict) -> str:
     icir   = stats.get("icir",   "—")
     mdd    = stats.get("mdd",    "—")
 
-    # Colour-code sharpe and icir green, mdd red
     sharpe_html = f'<span class="pos">{sharpe}</span>' if sharpe != "—" else sharpe
     icir_html   = f'<span class="pos">{icir}</span>'   if icir   != "—" else icir
     mdd_html    = f'<span class="neg">{mdd}</span>'    if mdd    != "—" else mdd
@@ -323,7 +324,7 @@ def _page_cover(stats: dict) -> str:
 <div class="page">
   <div class="cover-header">
     <h1>FondoMéxicoAlfa (FMIA)</h1>
-    <div class="cover-sub">Systematic Long-Only Equity &amp; FIBRA &nbsp;|&nbsp; Quantitative Research Report</div>
+    <div class="cover-sub">Systematic Long-Only Equity &amp; FIBRA &nbsp;·&nbsp; Quantitative Research Report</div>
   </div>
 
   <div class="stat-strip">
@@ -365,10 +366,8 @@ def _page_model_comparison(step1_rows: list[dict]) -> str:
           <td>{r['delta']}</td>
         </tr>"""
 
-    eq_img = _img(FIGURES / "step1_equity_mock.png",
-                  "width:100%;border:1px solid #30363d;border-radius:4px;")
-    ic_img = _img(FIGURES / "step1_ic_mock.png",
-                  "width:100%;border:1px solid #30363d;border-radius:4px;")
+    eq_img = _img(FIGURES / "step1_equity_mock.png", "width:100%;")
+    ic_img = _img(FIGURES / "step1_ic_mock.png", "width:100%;")
 
     return f"""
 <div class="page">
@@ -376,17 +375,23 @@ def _page_model_comparison(step1_rows: list[dict]) -> str:
 
   <table>
     <thead>
-      <tr><th>Metric</th><th>ElasticNetCV</th><th>XGBoost</th><th>Δ (xgb − elastic)</th></tr>
+      <tr><th>Metric</th><th>ElasticNetCV</th><th>XGBoost</th><th>&Delta; (xgb &minus; elastic)</th></tr>
     </thead>
     <tbody>{rows_html}</tbody>
   </table>
 
   <div class="fig-row" style="margin-top:3mm;">
-    <div style="flex:1;">{eq_img}</div>
-    <div style="flex:1;">{ic_img}</div>
+    <div class="fig-frame">
+      {eq_img}
+      <div class="fig-caption">Cumulative equity curves — XGBoost vs ElasticNetCV (108 rebalances)</div>
+    </div>
+    <div class="fig-frame">
+      {ic_img}
+      <div class="fig-caption">Rolling information coefficient time series</div>
+    </div>
   </div>
 
-  <p style="margin-top:2mm;font-size:6.5pt;">
+  <p style="margin-top:2mm;font-size:6.5pt;color:#6B7280;">
     Same mock panel · same rebalance schedule · same MV optimizer · same 10 bp transaction cost.
     Only the cross-sectional return predictor changes. Walk-forward OOS: 108 monthly rebalances.
   </p>
@@ -410,10 +415,8 @@ def _page_shap(top10: list[dict], stability: list[dict]) -> str:
     else:
         stab_rows = '<tr><td colspan="4" class="missing">Stability data not found.</td></tr>'
 
-    bee_img = _img(FIGURES / "step2_shap_beeswarm.png",
-                   "max-height:90mm;width:auto;border:1px solid #30363d;border-radius:4px;")
-    wf_img  = _img(FIGURES / "step2_shap_waterfall.png",
-                   "max-height:90mm;width:auto;border:1px solid #30363d;border-radius:4px;")
+    bee_img = _img(FIGURES / "step2_shap_beeswarm.png", "width:100%;")
+    wf_img  = _img(FIGURES / "step2_shap_waterfall.png", "width:100%;")
 
     return f"""
 <div class="page">
@@ -429,19 +432,23 @@ def _page_shap(top10: list[dict], stability: list[dict]) -> str:
 
       <h3 style="margin-top:3mm;">Feature Stability (Spearman rank-correlation)</h3>
       <table>
-        <thead><tr><th>K</th><th>Pairs</th><th>Mean ρ</th><th>Std ρ</th></tr></thead>
+        <thead><tr><th>K</th><th>Pairs</th><th>Mean &rho;</th><th>Std &rho;</th></tr></thead>
         <tbody>{stab_rows}</tbody>
       </table>
       <p style="font-size:6.5pt;margin-top:1mm;">
-        Target for live deployment: ≥ 0.80 on top-5. Current: 0.44 (mock data).
+        Target for live deployment: &ge; 0.80 on top-5. Current: 0.44 (mock data).
         FIBRA fundamental features (ltv, ffo_yield, cap_rate) dominate importance.
       </p>
     </div>
     <div>
-      <h3>Beeswarm — Midpoint Rebalance (2021-10-29)</h3>
-      {bee_img}
-      <h3 style="margin-top:2mm;">Waterfall — Highest-Predicted Stock</h3>
-      {wf_img}
+      <div class="fig-frame">
+        {bee_img}
+        <div class="fig-caption">Beeswarm — Midpoint Rebalance (2021-10-29)</div>
+      </div>
+      <div class="fig-frame" style="margin-top:3mm;">
+        {wf_img}
+        <div class="fig-caption">Waterfall — Highest-Predicted Stock</div>
+      </div>
     </div>
   </div>
 </div>
@@ -450,7 +457,6 @@ def _page_shap(top10: list[dict], stability: list[dict]) -> str:
 
 def _page_regime(regime_df: pd.DataFrame) -> str:
     """Return the HTML string for Page 4 (macro regime performance table and equity curves figure)."""
-    # Regime counts
     if not regime_df.empty:
         count_rows = ""
         for _, row in regime_df.iterrows():
@@ -460,9 +466,8 @@ def _page_regime(regime_df: pd.DataFrame) -> str:
             ic = float(row.get("ic_mean", float("nan")))
             sh = float(row.get("sharpe", float("nan")))
             top5 = row.get("shap_stability_top5", float("nan"))
-            mom  = float("nan")  # not in this CSV, skip
             count_rows += f"""<tr>
-              <td>{rr}</td><td>{sr}</td><td>{n}</td>
+              <td>{rr}</td><td>{sr}</td><td style="text-align:center;">{n}</td>
               <td>{_fmt(ic, '+.3f')}</td>
               <td>{_fmt(sh, '+.2f')}</td>
               <td>{_fmt(top5 if pd.notna(top5) else float('nan'), '.3f', color=False)}</td>
@@ -470,16 +475,14 @@ def _page_regime(regime_df: pd.DataFrame) -> str:
     else:
         count_rows = '<tr><td colspan="6" class="missing">Regime performance data not found.</td></tr>'
 
-    eq_img = _img(FIGURES / "step3_regime_equity_curves.png",
-                  "width:100%;border:1px solid #30363d;border-radius:4px;")
-    ic_img = _img(FIGURES / "step3_ic_by_regime.png",
-                  "width:100%;border:1px solid #30363d;border-radius:4px;")
+    eq_img = _img(FIGURES / "step3_regime_equity_curves.png", "width:100%;")
+    ic_img = _img(FIGURES / "step3_ic_by_regime.png", "width:100%;")
 
     return f"""
 <div class="page">
   <div class="section-header"><h2>03 · Performance by Macro Regime</h2></div>
 
-  <h3>Regime Performance Table (Banxico rate × IPC vol stress)</h3>
+  <h3>Regime Performance Table (Banxico rate &times; IPC vol stress)</h3>
   <table>
     <thead>
       <tr><th>Rate regime</th><th>Stress</th><th>N</th>
@@ -493,8 +496,14 @@ def _page_regime(regime_df: pd.DataFrame) -> str:
   </p>
 
   <div class="fig-row">
-    <div style="flex:3;">{eq_img}</div>
-    <div style="flex:2;">{ic_img}</div>
+    <div class="fig-frame" style="flex:3;">
+      {eq_img}
+      <div class="fig-caption">Regime-conditioned equity curves</div>
+    </div>
+    <div class="fig-frame" style="flex:2;">
+      {ic_img}
+      <div class="fig-caption">IC distribution by regime</div>
+    </div>
   </div>
 </div>
 """
@@ -502,7 +511,6 @@ def _page_regime(regime_df: pd.DataFrame) -> str:
 
 def _page_risk_methodology(step1_rows: list[dict]) -> str:
     """Return the HTML string for Page 5 (risk metrics, factor exposures, methodology summary)."""
-    # Extract XGBoost risk metrics from step1 table
     lookup = {r["metric"]: r.get("xgboost", "—") for r in step1_rows}
     sharpe  = lookup.get("Sharpe", "—")
     mdd     = lookup.get("Max drawdown", "—")
@@ -535,8 +543,8 @@ def _page_risk_methodology(step1_rows: list[dict]) -> str:
       <h3 style="margin-top:3mm;">Regime Filter Recommendation</h3>
       <ul class="method-list">
         <li><strong>EASING:</strong> Full XGBoost signal (stability 0.57)</li>
-        <li><strong>TIGHTENING:</strong> Scale signal ×0.7 (stability 0.41)</li>
-        <li><strong>STRESS trigger:</strong> IPC vol &gt; p75 → reduce exposure</li>
+        <li><strong>TIGHTENING:</strong> Scale signal &times;0.7 (stability 0.41)</li>
+        <li><strong>STRESS trigger:</strong> IPC vol &gt; p75 &rarr; reduce exposure</li>
         <li><strong>Safety valve:</strong> if top-5 stability &lt; 0.30 for 3 periods, revert to ElasticNet</li>
       </ul>
     </div>
@@ -550,7 +558,7 @@ def _page_risk_methodology(step1_rows: list[dict]) -> str:
         <li><strong>Rebalance frequency:</strong> Monthly (end-of-month)</li>
         <li><strong>Validation:</strong> Walk-forward OOS, 108 rebalances (2017–2026)</li>
         <li><strong>Transaction costs:</strong> 10 bp per side, applied each rebalance</li>
-        <li><strong>Regime conditioning:</strong> Banxico rate (TIGHTENING / EASING / NEUTRAL) × IPC vol stress</li>
+        <li><strong>Regime conditioning:</strong> Banxico rate (TIGHTENING / EASING / NEUTRAL) &times; IPC vol stress</li>
         <li><strong>Feature attribution:</strong> Per-rebalance SHAP values via TreeExplainer</li>
         <li><strong>Data sources:</strong> Bloomberg (production) · mock data (research)</li>
         <li><strong>Regulatory framework:</strong> CNBV position limits, LFI structure</li>
@@ -558,7 +566,7 @@ def _page_risk_methodology(step1_rows: list[dict]) -> str:
 
       <h3 style="margin-top:3mm;">SHAP Feature Stability</h3>
       <ul class="method-list">
-        <li><strong>Overall top-5 stability:</strong> 0.44 mean Spearman (target ≥ 0.80)</li>
+        <li><strong>Overall top-5 stability:</strong> 0.44 mean Spearman (target &ge; 0.80)</li>
         <li><strong>Best regime (EASING):</strong> 0.57 — model most reliable</li>
         <li><strong>Top turnover drivers:</strong> ffo_yield (18%), ltv (15%), momentum_63 (14%)</li>
       </ul>
@@ -635,103 +643,155 @@ def _ascii(text: str) -> str:
             .replace("—", "-").replace("–", "-")  # em/en dash
             .replace("→", "->").replace("≥", ">=").replace("≤", "<=")
             .replace("Δ", "D").replace("−", "-")  # Delta, minus sign
-            .replace("ρ", "r")                          # rho
+            .replace("ρ", "r")                     # rho
             .replace("é", "e").replace("á", "a")  # accented vowels
             .encode("latin-1", errors="replace").decode("latin-1"))
 
 
 # ---------------------------------------------------------------------------
-# fpdf2 colour palette (module-level so page builders can reference them)
+# fpdf2 colour palette — institutional navy/white design system
 # ---------------------------------------------------------------------------
 
-_PDF_BG   = (13,  17,  23)
-_PDF_SURF = (22,  27,  34)
-_PDF_TXT  = (230, 237, 243)
-_PDF_MUT  = (139, 148, 158)
-_PDF_ACC  = (57,  211, 83)
-_PDF_RED  = (248, 81,  73)
+_PDF_NAVY     = (27,  43,  75)   # #1B2B4B
+_PDF_WHITE    = (255, 255, 255)  # #FFFFFF
+_PDF_OFFWHITE = (247, 248, 250)  # #F7F8FA
+_PDF_TEXT     = (26,  26,  26)   # #1A1A1A
+_PDF_MUTED    = (107, 114, 128)  # #6B7280
+_PDF_GREEN    = (22,  163, 74)   # #16A34A
+_PDF_RED      = (220, 38,  38)   # #DC2626
+_PDF_ACCENT   = (37,  99,  235)  # #2563EB
+_PDF_RULE     = (209, 213, 219)  # #D1D5DB
 
 
-def _pdf_set_primary(pdf) -> None:
-    """Set fpdf2 text colour to primary light."""
-    pdf.set_text_color(*_PDF_TXT)
+def _pdf_set_text(pdf) -> None:
+    """Set fpdf2 text colour to body TEXT."""
+    pdf.set_text_color(*_PDF_TEXT)
 
 
 def _pdf_set_muted(pdf) -> None:
-    """Set fpdf2 text colour to muted grey."""
-    pdf.set_text_color(*_PDF_MUT)
+    """Set fpdf2 text colour to MUTED grey."""
+    pdf.set_text_color(*_PDF_MUTED)
 
 
-def _pdf_set_accent(pdf) -> None:
-    """Set fpdf2 text colour to accent green."""
-    pdf.set_text_color(*_PDF_ACC)
+def _pdf_set_white(pdf) -> None:
+    """Set fpdf2 text colour to WHITE."""
+    pdf.set_text_color(*_PDF_WHITE)
 
 
 def _pdf_section_header(pdf, title: str) -> None:
-    """Render a bold section-header cell with a green left-border rule."""
+    """Render a full-width NAVY strip with WHITE bold text (11pt, 7mm tall)."""
     from fpdf.enums import XPos, YPos
-    pdf.set_fill_color(*_PDF_SURF)
-    pdf.set_draw_color(*_PDF_ACC)
-    pdf.set_line_width(0.8)
-    pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x(), pdf.get_y() + 6)
-    pdf.set_x(pdf.get_x() + 2)
-    pdf.set_font("Helvetica", "B", 9)
-    _pdf_set_muted(pdf)
-    pdf.cell(0, 6, title.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_line_width(0.1)
-    pdf.ln(2)
+    pdf.set_fill_color(*_PDF_NAVY)
+    _pdf_set_white(pdf)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _ascii(title), fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(3)
 
 
-def _pdf_add_img_safe(pdf, path: Path, x=None, y=None, w=None, h=None) -> None:
-    """Insert an image at the given position, silently skipping if the file is absent."""
-    if path.exists():
-        try:
-            if x is not None:
-                pdf.image(str(path), x=x, y=y, w=w, h=h)
-            else:
-                pdf.image(str(path), w=w or 240, h=h or 0)
-        except Exception:
-            pass
+def _pdf_add_img_safe(
+    pdf,
+    path: Path,
+    x: float | None = None,
+    y: float | None = None,
+    w: float | None = None,
+    h: float | None = None,
+    caption: str = "",
+) -> float:
+    """Insert a framed image with a RULE-colored border and optional caption.
 
+    The frame is ``w`` mm wide total; the image inside has 3mm padding on each
+    side.  Returns the total height consumed (frame + caption) in mm, or 0 if
+    the file is missing or an error occurs.
+    """
+    if not path.exists():
+        return 0
+    PAD = 3.0
+    try:
+        cx = x if x is not None else pdf.get_x()
+        cy = y if y is not None else pdf.get_y()
+        cw = w if w is not None else pdf.epw
+        img_w = cw - 2 * PAD
+
+        # Place image; retrieve rendered height from fpdf2
+        info = pdf.image(str(path), x=cx + PAD, y=cy + PAD, w=img_w, h=h or 0)
+        disp_h = info.rendered_height
+        frame_h = disp_h + 2 * PAD
+
+        # Draw RULE border over image edges
+        pdf.set_draw_color(*_PDF_RULE)
+        pdf.set_line_width(0.3)
+        pdf.rect(cx, cy, cw, frame_h)
+
+        total = frame_h
+        if caption:
+            pdf.set_xy(cx, cy + frame_h + 1)
+            pdf.set_font("Helvetica", "I", 7.5)
+            _pdf_set_muted(pdf)
+            pdf.cell(cw, 4, _ascii(caption), align="C")
+            total += 5
+
+        return total
+    except Exception:
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# PDF page builders (new institutional design)
+# ---------------------------------------------------------------------------
 
 def _pdf_page_cover(pdf, step1_rows: list[dict]) -> None:
-    """Render Page 1 — cover with headline stat strip."""
+    """Render Page 1 — institutional cover with NAVY header and stat strip."""
     from fpdf.enums import XPos, YPos
     stats = _extract_cover_stats(step1_rows)
     pdf.add_page()
-    pdf.set_fill_color(*_PDF_BG)
 
-    pdf.set_font("Helvetica", "B", 24)
-    _pdf_set_accent(pdf)
-    pdf.cell(0, 12, "FondoMexicoAlfa (FMIA)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-    pdf.set_font("Helvetica", "", 10)
-    _pdf_set_muted(pdf)
-    pdf.cell(0, 6, "Systematic Long-Only Equity & FIBRA  |  Quantitative Research Report",
+    # NAVY header block
+    header_h = 22
+    pdf.set_fill_color(*_PDF_NAVY)
+    pdf.rect(pdf.l_margin, pdf.get_y(), pdf.epw, header_h, style="F")
+    pdf.set_xy(pdf.l_margin + 3, pdf.get_y() + 3)
+    pdf.set_font("Helvetica", "B", 20)
+    _pdf_set_white(pdf)
+    pdf.cell(0, 10, "FondoMexicoAlfa (FMIA)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_xy(pdf.l_margin + 3, pdf.get_y())
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(*_PDF_RULE)
+    pdf.cell(0, 5, "Systematic Long-Only Equity & FIBRA  |  Quantitative Research Report",
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.ln(4)
 
-    labels = [("XGBoost Sharpe", stats.get("sharpe", "-"), _PDF_ACC),
-              ("XGBoost ICIR",   stats.get("icir",   "-"), _PDF_ACC),
-              ("Max Drawdown",   stats.get("mdd",    "-"), _PDF_RED)]
+    pdf.set_y(pdf.get_y() + (header_h - (pdf.get_y() - pdf.t_margin - 0)) + 6)
+    pdf.set_y(pdf.t_margin + header_h + 5)
+
+    # Stat strip — three boxes
+    labels = [
+        ("XGBoost Sharpe", stats.get("sharpe", "-"), _PDF_GREEN),
+        ("XGBoost ICIR",   stats.get("icir",   "-"), _PDF_GREEN),
+        ("Max Drawdown",   stats.get("mdd",    "-"), _PDF_RED),
+    ]
     col_w = pdf.epw / 3
+    box_h = 22
+    y_stat = pdf.get_y()
 
     for i, (label, val, color) in enumerate(labels):
-        x = pdf.l_margin + i * col_w
-        pdf.set_xy(x, pdf.get_y())
-        pdf.set_fill_color(*_PDF_SURF)
-        pdf.rect(x, pdf.get_y(), col_w - 3, 20, style="F")
-        pdf.set_xy(x + 2, pdf.get_y() + 2)
+        bx = pdf.l_margin + i * col_w
+        # Box fill
+        pdf.set_fill_color(*_PDF_WHITE)
+        pdf.set_draw_color(*_PDF_RULE)
+        pdf.set_line_width(0.3)
+        pdf.rect(bx, y_stat, col_w - 2, box_h, style="FD")
+        # Value
+        pdf.set_xy(bx + 2, y_stat + 3)
         pdf.set_font("Helvetica", "B", 18)
         pdf.set_text_color(*color)
-        pdf.cell(col_w - 5, 10, str(val), align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.set_xy(x + 2, pdf.get_y() + 12)
+        pdf.cell(col_w - 6, 10, str(val), align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
+        # Label
+        pdf.set_xy(bx + 2, y_stat + 14)
         pdf.set_font("Helvetica", "", 7)
         _pdf_set_muted(pdf)
-        pdf.cell(col_w - 5, 4, label, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.cell(col_w - 6, 4, label, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
 
-    pdf.set_xy(pdf.l_margin, pdf.get_y() + 26)
-    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_xy(pdf.l_margin, y_stat + box_h + 5)
+    pdf.set_font("Helvetica", "I", 7.5)
     _pdf_set_muted(pdf)
     pdf.cell(0, 5,
              "Walk-forward validated  *  Bloomberg data  *  Mexican equities & FIBRAs (BMV)"
@@ -743,154 +803,187 @@ def _pdf_page_cover(pdf, step1_rows: list[dict]) -> None:
 
 
 def _pdf_page_model_comparison(pdf, step1_rows: list[dict]) -> None:
-    """Render Page 2 — XGBoost vs ElasticNet comparison table and figures."""
+    """Render Page 2 — XGBoost vs ElasticNet comparison table and framed figures."""
+    from fpdf.enums import XPos, YPos
     pdf.add_page()
-    _pdf_section_header(pdf, "01 * Model Performance - XGBoost vs ElasticNetCV")
+    _pdf_section_header(pdf, "01  MODEL PERFORMANCE - XGBoost vs ElasticNetCV")
 
-    col_widths = [70, 35, 35, 35]
+    # Table header
+    col_widths = [72, 38, 38, 40]
     headers = ["Metric", "ElasticNetCV", "XGBoost", "D (xgb - elastic)"]
+    pdf.set_fill_color(*_PDF_NAVY)
+    _pdf_set_white(pdf)
     pdf.set_font("Helvetica", "B", 7)
-    _pdf_set_muted(pdf)
-    pdf.set_fill_color(*_PDF_SURF)
     for w, h in zip(col_widths, headers):
-        pdf.cell(w, 5, h, border=0, fill=True, align="R" if h != "Metric" else "L")
+        pdf.cell(w, 5.5, h, fill=True, align="R" if h != "Metric" else "L")
     pdf.ln()
 
+    # Table rows
     pdf.set_font("Helvetica", "", 7)
     for i, row in enumerate(step1_rows):
-        pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
-        _pdf_set_primary(pdf)
-        pdf.cell(col_widths[0], 4.5, row["metric"], fill=True)
+        bg = _PDF_OFFWHITE if i % 2 == 0 else _PDF_WHITE
+        pdf.set_fill_color(*bg)
+        _pdf_set_text(pdf)
+        pdf.cell(col_widths[0], 4.5, _ascii(row["metric"]), fill=True)
         _pdf_set_muted(pdf)
-        for val, w in [(row["elastic"], col_widths[1]),
-                       (row["xgboost"], col_widths[2]),
-                       (row["delta"],   col_widths[3])]:
-            pdf.cell(w, 4.5, str(val), fill=True, align="R")
+        for val, cw in [(row["elastic"], col_widths[1]),
+                        (row["xgboost"], col_widths[2]),
+                        (row["delta"],   col_widths[3])]:
+            pdf.cell(cw, 4.5, _ascii(str(val)), fill=True, align="R")
         pdf.ln()
 
-    pdf.ln(3)
+    # RULE line below table
+    pdf.set_draw_color(*_PDF_RULE)
+    pdf.set_line_width(0.3)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + sum(col_widths), pdf.get_y())
+
+    pdf.ln(4)
     y_fig = pdf.get_y()
     w_fig = pdf.epw / 2 - 2
+
     _pdf_add_img_safe(pdf, FIGURES / "step1_equity_mock.png",
-                      x=pdf.l_margin, y=y_fig, w=w_fig)
+                      x=pdf.l_margin, y=y_fig, w=w_fig,
+                      caption="Cumulative equity curves (108 rebalances)")
     _pdf_add_img_safe(pdf, FIGURES / "step1_ic_mock.png",
-                      x=pdf.l_margin + w_fig + 4, y=y_fig, w=w_fig)
+                      x=pdf.l_margin + w_fig + 4, y=y_fig, w=w_fig,
+                      caption="Rolling information coefficient (IC) time series")
 
 
 def _pdf_page_shap(pdf, top10: list[dict], stability: list[dict]) -> None:
-    """Render Page 3 — SHAP feature attribution tables and figures."""
+    """Render Page 3 — SHAP feature attribution tables and framed figures."""
     from fpdf.enums import XPos, YPos
     pdf.add_page()
-    _pdf_section_header(pdf, "02 * Feature Attribution (SHAP) - XGBoost Walk-forward")
+    _pdf_section_header(pdf, "02  FEATURE ATTRIBUTION (SHAP) - XGBoost Walk-forward")
 
-    half = pdf.epw / 2 - 2
+    half = pdf.epw / 2 - 3
     y0 = pdf.get_y()
 
+    # Left column: top-10 table
     pdf.set_font("Helvetica", "B", 8)
-    _pdf_set_primary(pdf)
-    pdf.cell(0, 5, "Top-10 Features by Mean |SHAP|",
+    _pdf_set_text(pdf)
+    pdf.cell(half, 5, "Top-10 Features by Mean |SHAP|",
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_fill_color(*_PDF_NAVY)
+    _pdf_set_white(pdf)
     pdf.set_font("Helvetica", "B", 7)
-    _pdf_set_muted(pdf)
-    pdf.set_fill_color(*_PDF_SURF)
-    for hdr, w in [("#", 8), ("Feature", 38), ("Mean |SHAP|", 28), ("Std", 26)]:
-        pdf.cell(w, 4.5, hdr, fill=True, align="C")
+    for hdr, cw in [("#", 10), ("Feature", 45), ("Mean |SHAP|", 30), ("Std", 27)]:
+        pdf.cell(cw, 5, hdr, fill=True, align="C" if hdr != "Feature" else "L")
     pdf.ln()
+
+    pdf.set_font("Helvetica", "", 7)
     for i, r in enumerate(top10[:10]):
-        pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
-        pdf.set_font("Helvetica", "", 7)
-        _pdf_set_primary(pdf)
-        pdf.cell(8,  4.5, r["rank"],     fill=True, align="C")
-        pdf.cell(38, 4.5, r["feature"],  fill=True)
+        bg = _PDF_OFFWHITE if i % 2 == 0 else _PDF_WHITE
+        pdf.set_fill_color(*bg)
+        _pdf_set_text(pdf)
+        pdf.cell(10, 4.5, r["rank"],    fill=True, align="C")
+        pdf.cell(45, 4.5, r["feature"], fill=True)
         _pdf_set_muted(pdf)
-        pdf.cell(28, 4.5, r["mean_abs"], fill=True, align="R")
-        pdf.cell(26, 4.5, r["std_abs"],  fill=True, align="R")
+        pdf.cell(30, 4.5, r["mean_abs"], fill=True, align="R")
+        pdf.cell(27, 4.5, r["std_abs"],  fill=True, align="R")
         pdf.ln()
 
     pdf.ln(3)
+    # Stability table
     pdf.set_font("Helvetica", "B", 8)
-    _pdf_set_primary(pdf)
-    pdf.cell(0, 5, "Feature Stability (Spearman rank-corr.)",
+    _pdf_set_text(pdf)
+    pdf.cell(half, 5, "Feature Stability (Spearman rank-correlation)",
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_fill_color(*_PDF_NAVY)
+    _pdf_set_white(pdf)
     pdf.set_font("Helvetica", "B", 7)
-    _pdf_set_muted(pdf)
-    pdf.set_fill_color(*_PDF_SURF)
-    for hdr, w in [("K", 16), ("Pairs", 18), ("Mean r", 28), ("Std r", 28)]:
-        pdf.cell(w, 4.5, hdr, fill=True, align="C")
+    for hdr, cw in [("K", 20), ("Pairs", 22), ("Mean r", 30), ("Std r", 30)]:
+        pdf.cell(cw, 5, hdr, fill=True, align="C")
     pdf.ln()
+
+    pdf.set_font("Helvetica", "", 7)
     for i, r in enumerate(stability):
-        pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
-        pdf.set_font("Helvetica", "", 7)
-        _pdf_set_primary(pdf)
-        pdf.cell(16, 4.5, r["K"],     fill=True)
-        pdf.cell(18, 4.5, r["pairs"], fill=True, align="C")
+        bg = _PDF_OFFWHITE if i % 2 == 0 else _PDF_WHITE
+        pdf.set_fill_color(*bg)
+        _pdf_set_text(pdf)
+        pdf.cell(20, 4.5, r["K"],     fill=True)
         _pdf_set_muted(pdf)
-        pdf.cell(28, 4.5, r["mean"],  fill=True, align="R")
-        pdf.cell(28, 4.5, r["std"],   fill=True, align="R")
+        pdf.cell(22, 4.5, r["pairs"], fill=True, align="C")
+        pdf.cell(30, 4.5, r["mean"],  fill=True, align="R")
+        pdf.cell(30, 4.5, r["std"],   fill=True, align="R")
         pdf.ln()
 
-    x_right = pdf.l_margin + half + 4
+    # Right column: two stacked framed figures
+    x_right = pdf.l_margin + half + 6
+    fig_w = half
     _pdf_add_img_safe(pdf, FIGURES / "step2_shap_beeswarm.png",
-                      x=x_right, y=y0, w=half, h=50)
+                      x=x_right, y=y0, w=fig_w, h=48,
+                      caption="Beeswarm - Midpoint Rebalance (2021-10-29)")
     _pdf_add_img_safe(pdf, FIGURES / "step2_shap_waterfall.png",
-                      x=x_right, y=y0 + 53, w=half, h=45)
+                      x=x_right, y=y0 + 60, w=fig_w, h=44,
+                      caption="Waterfall - Highest-Predicted Stock")
 
 
 def _pdf_page_regime(pdf, regime_df: pd.DataFrame) -> None:
-    """Render Page 4 — macro regime performance table and equity curves."""
+    """Render Page 4 — macro regime performance table and framed equity curves."""
+    from fpdf.enums import XPos, YPos
     pdf.add_page()
-    _pdf_section_header(pdf, "03 * Performance by Macro Regime")
+    _pdf_section_header(pdf, "03  PERFORMANCE BY MACRO REGIME")
 
     if not regime_df.empty:
+        cols4 = [("Rate regime", 48), ("Stress", 28), ("N", 14),
+                 ("IC mean", 28), ("Sharpe", 26), ("SHAP top-5 stab.", 30)]
+        pdf.set_fill_color(*_PDF_NAVY)
+        _pdf_set_white(pdf)
         pdf.set_font("Helvetica", "B", 7)
-        _pdf_set_muted(pdf)
-        pdf.set_fill_color(*_PDF_SURF)
-        cols4 = [("Rate regime", 40), ("Stress", 22), ("N", 12),
-                 ("IC mean", 24), ("Sharpe", 22), ("Top-5 stab.", 24)]
-        for hdr, w in cols4:
-            pdf.cell(w, 4.5, hdr, fill=True, align="C")
+        for hdr, cw in cols4:
+            pdf.cell(cw, 5.5, hdr, fill=True, align="C" if hdr != "Rate regime" else "L")
         pdf.ln()
 
+        pdf.set_font("Helvetica", "", 7)
         for i, (_, row) in enumerate(regime_df.iterrows()):
-            pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
-            pdf.set_font("Helvetica", "", 7)
-            _pdf_set_primary(pdf)
-            pdf.cell(40, 4.5, str(row.get("rate_regime",  "")), fill=True)
-            pdf.cell(22, 4.5, str(row.get("stress_regime", "")), fill=True)
-            pdf.cell(12, 4.5, str(int(row.get("n_rebalances", 0))), fill=True, align="C")
-            ic   = row.get("ic_mean", float("nan"))
-            sh   = row.get("sharpe",  float("nan"))
-            top5 = row.get("shap_stability_top5", float("nan"))
+            bg = _PDF_OFFWHITE if i % 2 == 0 else _PDF_WHITE
+            pdf.set_fill_color(*bg)
+            _pdf_set_text(pdf)
+            pdf.cell(48, 4.5, _ascii(str(row.get("rate_regime",  ""))), fill=True)
+            pdf.cell(28, 4.5, _ascii(str(row.get("stress_regime", ""))), fill=True)
+            pdf.cell(14, 4.5, str(int(row.get("n_rebalances", 0))), fill=True, align="C")
             _pdf_set_muted(pdf)
-            pdf.cell(24, 4.5, f"{ic:+.3f}"  if pd.notna(ic)   else "-", fill=True, align="R")
-            pdf.cell(22, 4.5, f"{sh:+.2f}"  if pd.notna(sh)   else "-", fill=True, align="R")
-            pdf.cell(24, 4.5, f"{top5:.3f}" if pd.notna(top5) else "-", fill=True, align="R")
+            ic   = row.get("ic_mean",             float("nan"))
+            sh   = row.get("sharpe",               float("nan"))
+            top5 = row.get("shap_stability_top5",  float("nan"))
+            pdf.cell(28, 4.5, f"{ic:+.3f}"  if pd.notna(ic)   else "-", fill=True, align="R")
+            pdf.cell(26, 4.5, f"{sh:+.2f}"  if pd.notna(sh)   else "-", fill=True, align="R")
+            pdf.cell(30, 4.5, f"{top5:.3f}" if pd.notna(top5) else "-", fill=True, align="R")
             pdf.ln()
 
-    pdf.ln(3)
+        pdf.set_draw_color(*_PDF_RULE)
+        pdf.set_line_width(0.3)
+        pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + sum(c for _, c in cols4), pdf.get_y())
+
+    pdf.ln(4)
     y_fig4 = pdf.get_y()
     w3 = pdf.epw * 0.58
-    w4 = pdf.epw * 0.38
+    w4 = pdf.epw * 0.40
+
     _pdf_add_img_safe(pdf, FIGURES / "step3_regime_equity_curves.png",
-                      x=pdf.l_margin, y=y_fig4, w=w3)
+                      x=pdf.l_margin, y=y_fig4, w=w3,
+                      caption="Regime-conditioned cumulative equity curves")
     _pdf_add_img_safe(pdf, FIGURES / "step3_ic_by_regime.png",
-                      x=pdf.l_margin + w3 + 4, y=y_fig4, w=w4)
+                      x=pdf.l_margin + w3 + 4, y=y_fig4, w=w4,
+                      caption="IC distribution by macro regime")
 
 
 def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
     """Render Page 5 — risk metrics table and methodology summary."""
     from fpdf.enums import XPos, YPos
     pdf.add_page()
-    _pdf_section_header(pdf, "04 * Risk Profile & Methodology")
+    _pdf_section_header(pdf, "04  RISK PROFILE & METHODOLOGY")
 
     lookup = {r["metric"]: r.get("xgboost", "-") for r in step1_rows}
     risk_items = [
-        ("Annualized return",      lookup.get("Annualized return",     "-")),
-        ("Annualized vol",         lookup.get("Annualized vol",        "-")),
-        ("Sharpe ratio",           lookup.get("Sharpe",                "-")),
-        ("Sortino ratio",          lookup.get("Sortino",               "-")),
-        ("Max drawdown",           lookup.get("Max drawdown",          "-")),
-        ("CVaR 95% (daily)",       lookup.get("CVaR 95% (daily)",      "-")),
+        ("Annualized return",      lookup.get("Annualized return",        "-")),
+        ("Annualized vol",         lookup.get("Annualized vol",           "-")),
+        ("Sharpe ratio",           lookup.get("Sharpe",                   "-")),
+        ("Sortino ratio",          lookup.get("Sortino",                  "-")),
+        ("Max drawdown",           lookup.get("Max drawdown",             "-")),
+        ("CVaR 95% (daily)",       lookup.get("CVaR 95% (daily)",         "-")),
         ("Avg turnover/rebalance", lookup.get("Turnover (per rebalance)", "-")),
     ]
     method_items = [
@@ -910,50 +1003,62 @@ def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
     half5 = pdf.epw / 2 - 3
     y5 = pdf.get_y()
 
+    # Left: risk table
     pdf.set_font("Helvetica", "B", 8)
-    _pdf_set_primary(pdf)
+    _pdf_set_text(pdf)
     pdf.cell(half5, 5, "XGBoost Risk Metrics (Walk-forward OOS)",
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_fill_color(*_PDF_NAVY)
+    _pdf_set_white(pdf)
     pdf.set_font("Helvetica", "B", 7)
-    _pdf_set_muted(pdf)
-    pdf.set_fill_color(*_PDF_SURF)
-    pdf.cell(half5 * 0.55, 4.5, "Metric", fill=True)
-    pdf.cell(half5 * 0.45, 4.5, "Value",  fill=True, align="R")
+    m_w, v_w = half5 * 0.58, half5 * 0.42
+    pdf.cell(m_w, 5, "Metric", fill=True)
+    pdf.cell(v_w, 5, "Value",  fill=True, align="R")
     pdf.ln()
+
+    pdf.set_font("Helvetica", "", 7)
     for i, (label, val) in enumerate(risk_items):
-        pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
-        pdf.set_font("Helvetica", "", 7)
-        _pdf_set_primary(pdf)
-        pdf.cell(half5 * 0.55, 4.5, label,    fill=True)
+        bg = _PDF_OFFWHITE if i % 2 == 0 else _PDF_WHITE
+        pdf.set_fill_color(*bg)
+        _pdf_set_text(pdf)
+        pdf.cell(m_w, 4.5, label,         fill=True)
         _pdf_set_muted(pdf)
-        pdf.cell(half5 * 0.45, 4.5, str(val), fill=True, align="R")
+        pdf.cell(v_w, 4.5, _ascii(str(val)), fill=True, align="R")
         pdf.ln()
 
+    # Right: methodology list
     pdf.set_xy(pdf.l_margin + half5 + 6, y5)
     pdf.set_font("Helvetica", "B", 8)
-    _pdf_set_primary(pdf)
+    _pdf_set_text(pdf)
     pdf.cell(half5, 5, "Methodology", new_x=XPos.RIGHT, new_y=YPos.TOP)
+
     pdf.set_xy(pdf.l_margin + half5 + 6, y5 + 7)
+    pdf.set_font("Helvetica", "", 7)
     for i, (label, desc) in enumerate(method_items):
         pdf.set_xy(pdf.l_margin + half5 + 6, pdf.get_y())
-        pdf.set_fill_color(*(_PDF_SURF if i % 2 else _PDF_BG))
+        bg = _PDF_OFFWHITE if i % 2 == 0 else _PDF_WHITE
+        pdf.set_fill_color(*bg)
         pdf.set_font("Helvetica", "B", 7)
-        _pdf_set_primary(pdf)
-        pdf.cell(28, 4.5, label + ":", fill=True)
+        _pdf_set_text(pdf)
+        pdf.cell(30, 4.5, label + ":", fill=True)
         pdf.set_font("Helvetica", "", 7)
         _pdf_set_muted(pdf)
-        pdf.cell(half5 - 28, 4.5, desc[:70], fill=True)
+        pdf.cell(half5 - 30, 4.5, _ascii(desc[:68]), fill=True)
         pdf.ln()
 
-    pdf.set_y(-45)
+    # Disclaimer at bottom
+    pdf.set_y(-40)
+    pdf.set_fill_color(*_PDF_OFFWHITE)
+    pdf.set_draw_color(*_PDF_RULE)
+    pdf.set_line_width(0.3)
     pdf.set_font("Helvetica", "I", 6)
-    pdf.set_text_color(*_PDF_MUT)
-    pdf.set_fill_color(*_PDF_SURF)
+    _pdf_set_muted(pdf)
     pdf.multi_cell(0, 3.5,
         "DISCLAIMER: For research purposes only. Past performance does not guarantee future results. "
         "All results based on walk-forward out-of-sample simulation. Mock data used where Bloomberg "
         "data unavailable. This document is confidential and intended solely for internal research use.",
-        fill=True,
+        fill=True, border=1,
     )
 
 
@@ -972,18 +1077,24 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
             pass
 
         def footer(self):
-            """Render the centred page-counter footer on every page."""
-            self.set_y(-10)
-            self.set_font("Helvetica", "I", 6)
-            self.set_text_color(139, 148, 158)
-            self.cell(0, 4,
-                f"Page {self.page_no()} of {{nb}} | FMIA - FondoMexicoAlfa | Confidential",
-                align="C",
-            )
+            """Render three-column footer with RULE separator line."""
+            self.set_y(-12)
+            # RULE line above footer
+            self.set_draw_color(*_PDF_RULE)
+            self.set_line_width(0.3)
+            self.line(self.l_margin, self.get_y() - 1,
+                      self.w - self.r_margin, self.get_y() - 1)
+            self.set_font("Helvetica", "", 7)
+            _pdf_set_muted(self)
+            col_w = self.epw / 3
+            self.set_x(self.l_margin)
+            self.cell(col_w, 4, "FondoMexicoAlfa - Confidential Research", align="L")
+            self.cell(col_w, 4, f"Page {self.page_no()} of {{nb}}", align="C")
+            self.cell(col_w, 4, "May 2026", align="R")
 
     pdf = TearsheetPDF(orientation="L", unit="mm", format="A4")
     pdf.alias_nb_pages()
-    pdf.set_margins(18, 18, 18)
+    pdf.set_margins(14, 14, 14)
     pdf.set_auto_page_break(auto=True, margin=14)
 
     _pdf_page_cover(pdf, step1_rows)
@@ -1000,7 +1111,7 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    """Load all source data, build HTML, write it, then render PDF (WeasyPrint → fpdf2 fallback)."""
+    """Load all source data, build HTML, write it, then render PDF (WeasyPrint -> fpdf2 fallback)."""
     print("[tearsheet] Loading source data ...")
 
     step1_rows = _parse_step1_table(REPORTS / "step1_xgboost_vs_elasticnet.md")
@@ -1027,7 +1138,7 @@ def main() -> None:
     if local_refs:
         print(f"  [warn] {len(local_refs)} non-data-URI image ref(s) found: {local_refs[:3]}")
     else:
-        print(f"  all {len(img_srcs)} image(s) embedded as data URIs ✓")
+        print(f"  all {len(img_srcs)} image(s) embedded as data URIs OK")
 
     # Render PDF
     print("[tearsheet] Rendering PDF ...")
