@@ -22,7 +22,6 @@ body {
 }
 .page {
   page-break-after: always;
-  min-height: 180mm;
   padding: 4mm 0;
 }
 .page:last-child { page-break-after: auto; }
@@ -132,6 +131,34 @@ tr:nth-child(odd)  td { background: #FFFFFF; }
 }
 .method-list li strong { color: #1B2B4B; }
 
+/* Strategy overview (cover) */
+.cover-overview {
+  margin-top: 5mm;
+  display: flex;
+  gap: 8mm;
+}
+.cover-overview-col { flex: 1; }
+.cover-overview h3 {
+  color: #1B2B4B;
+  font-size: 8.5pt;
+  font-weight: 700;
+  margin-bottom: 2mm;
+  padding-bottom: 1mm;
+  border-bottom: 1px solid #D1D5DB;
+}
+.cover-overview dl { font-size: 7.5pt; }
+.cover-overview dt {
+  display: inline;
+  font-weight: 700;
+  color: #1B2B4B;
+}
+.cover-overview dd {
+  display: inline;
+  color: #6B7280;
+  margin-left: 2px;
+}
+.cover-overview dd::after { content: ""; display: block; margin-bottom: 1.5mm; }
+
 /* Disclaimer */
 .disclaimer {
   margin-top: 4mm;
@@ -173,6 +200,31 @@ tr:nth-child(odd)  td { background: #FFFFFF; }
     Monthly rebalancing · 10 bp transaction cost · Banxico regime conditioning
   </p>
   <p class="cover-date">Report date: 2026-05-15</p>
+
+  <div class="cover-overview">
+    <div class="cover-overview-col">
+      <h3>Strategy</h3>
+      <dl>
+        <dt>Universe:</dt><dd>~26 Mexican equities + FIBRAs listed on BMV</dd>
+        <dt>Signal:</dt><dd>XGBoost cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)</dd>
+        <dt>Baseline:</dt><dd>ElasticNetCV — interchangeable via config flag</dd>
+        <dt>Optimizer:</dt><dd>Mean-variance (SLSQP) with market-impact penalty</dd>
+        <dt>Rebalance:</dt><dd>Monthly, end-of-month, walk-forward OOS</dd>
+        <dt>Validation:</dt><dd>108 rebalances, 2017–2026</dd>
+      </dl>
+    </div>
+    <div class="cover-overview-col">
+      <h3>Risk Controls &amp; Attribution</h3>
+      <dl>
+        <dt>Transaction costs:</dt><dd>10 bp per side applied each rebalance</dd>
+        <dt>Regime conditioning:</dt><dd>Banxico rate (TIGHTENING / EASING / NEUTRAL) × IPC vol stress</dd>
+        <dt>Feature attribution:</dt><dd>Per-rebalance SHAP values via TreeExplainer</dd>
+        <dt>Safety valve:</dt><dd>Revert to ElasticNet if top-5 SHAP stability &lt; 0.30 for 3 periods</dd>
+        <dt>Data:</dt><dd>Bloomberg (production) · mock data (research)</dd>
+        <dt>Framework:</dt><dd>CNBV position limits, LFI structure</dd>
+      </dl>
+    </div>
+  </div>
 </div>
 
 <div class="page">

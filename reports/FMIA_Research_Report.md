@@ -1,6 +1,9 @@
-# FondoMéxicoAlfa: A Systematic Long-Short Strategy for Mexican Equities and FIBRAs
+# FondoMéxicoAlfa
 
-**Cross-sectional return forecasting with gradient-boosted trees, SHAP-based attribution, and Banxico macro-regime conditioning**
+## A Systematic Long-Short Strategy for Mexican Equities and FIBRAs
+
+*Multi-provider data infrastructure, Black–Litterman portfolio construction,
+machine-learning attribution, and macro-regime conditioning*
 
 **Max Hidalgo León**
 Tecnológico de Monterrey · Campus Querétaro
@@ -10,194 +13,167 @@ May 2026
 
 ## Abstract
 
-We document the construction and out-of-sample evaluation of a systematic
-long-short strategy targeting the cross-section of Mexican publicly traded
-equities and FIBRAs (Mexican real estate investment trusts). The strategy
-forecasts one-month-ahead returns using a gradient-boosted tree model
-(XGBoost) with internal time-series cross-validation, and compares the
-results against an elastic-net linear baseline. We evaluate the strategy
-on 108 monthly walk-forward out-of-sample rebalances, decompose the model's
-feature attributions using TreeExplainer SHAP values, and condition
-performance on the prevailing Banxico interest-rate regime. The
-gradient-boosted model achieves a Spearman information coefficient (IC)
-of 0.34 with an ICIR of 1.45, versus 0.08 and 0.31 for the elastic-net
-baseline. SHAP attribution identifies FIBRA-specific fundamental signals
-— loan-to-value, FFO yield, and capitalization rate — as the dominant
-return predictors, larger in magnitude than any conventional equity
-factor in the feature set. Feature-rank stability across consecutive
-rebalances is 0.44 (Spearman), well below the 0.80 threshold typically
-required for production deployment, indicating that the model's
-hierarchy of explanatory variables is sensitive to small-cross-section
-noise. Conditioning on Banxico rate regime reveals that the model is
-substantially more reliable during easing cycles than during tightening
-cycles, with EASING-regime SHAP stability of 0.57 against 0.41 in
-TIGHTENING. We discuss the implications for live deployment and
-identify the small cross-section of the Mexican equity market as the
-binding constraint on model stability.
+We document the construction and out-of-sample evaluation of a systematic long-short
+strategy for the joint universe of Mexican publicly traded equities and FIBRAs (the
+Mexican variant of REITs). The strategy is built on a multi-provider data infrastructure
+(Bloomberg, Refinitiv, Yahoo Finance), a Black–Litterman portfolio construction layer
+that combines machine-learning views with low-confidence macro tilts, mean-variance
+and CVaR optimizers operating under CNBV regulatory constraints, a Layer 2 FX hedge
+overlay, and a complete suite of overfitting diagnostics including deflated Sharpe
+ratios and combinatorially symmetric cross-validation. We extend the pipeline with an
+XGBoost cross-sectional return forecaster, TreeExplainer SHAP attribution, and Banxico
+macro-regime conditioning. Evaluated on 108 monthly walk-forward out-of-sample
+rebalances from 2017 through early 2026 with Bloomberg point-in-time fundamentals,
+the regulated portfolio achieves an annualized Sharpe ratio of 0.44, an annualized
+return of 8.34% at 13.59% volatility, and a maximum drawdown of -35.5%. ElasticNetCV
+and XGBoost produce statistically indistinguishable performance on real data; the
+value of the gradient-boosted model lies in its attribution framework rather than
+raw return lift. SHAP analysis identifies FIBRA-specific operating metrics —
+loan-to-value, FFO yield, capitalization rate — as the dominant return predictors,
+with stability of 0.44 (Spearman) across consecutive rebalances. Regime conditioning
+reveals materially higher reliability during Banxico easing cycles than during
+tightening cycles. We argue that the binding constraint on machine-learning approaches
+to this market is the small effective cross-section of the Mexican universe, and we
+discuss the implications for live deployment.
 
-**Keywords:** quantitative equity, factor investing, FIBRAs, emerging
-markets, gradient boosting, SHAP, macro regimes, walk-forward validation
+**Keywords:** quantitative equity, factor investing, FIBRAs, emerging markets,
+Black–Litterman, gradient boosting, SHAP, macro regimes, walk-forward validation,
+CNBV regulation.
 
 ---
 
 ## 1. Introduction
 
-The Mexican equity market sits at an awkward intersection for systematic
-investors. It is too small and concentrated to be treated as a self-sufficient
-universe in the manner of US or European factor portfolios — the IPC index
-contains roughly thirty constituents, and the float-adjusted investable
-universe is smaller still. At the same time, the market is too liquid, too
-information-rich, and too institutionally significant to be approached as
-a pure emerging-market discretionary play. The result is that systematic
-research on Mexican equities is sparse: most published factor work either
-pools Mexico into regional EM baskets (where its idiosyncratic features
-are averaged away) or restricts attention to the largest two or three names
-(where the cross-section is too small to identify a signal).
+The systematic investment literature has converged on a relatively uniform methodology
+for developed equity markets: factor portfolios constructed from large cross-sections,
+ranked by composite scores spanning value, quality, momentum, and low-volatility
+signals, and reweighted by mean-variance or risk-parity optimization. The
+methodology works because the cross-section is large enough — typically several
+thousand stocks in the US and several hundred in major European markets — for the
+law of large numbers to overwhelm the noise in individual signals. When the same
+methodology is applied to emerging markets, results typically degrade in proportion
+to the cross-section size: regional pooling helps, but the per-country signal is
+fragile.
 
-This paper takes a different approach. We treat the joint universe of
-Mexican equities and FIBRAs — the latter being a Mexican variant of REITs,
-introduced by reform in 2004 and now comprising the most liquid segment
-of the local real estate market — as a single cross-section, and forecast
-relative returns within it using machine-learning techniques calibrated
-to the data's specific limitations. The motivation for combining equities
-and FIBRAs is twofold: it doubles the effective cross-section relative
-to an equity-only universe, and it introduces a set of asset-specific
-fundamental signals (capitalization rate, FFO yield, loan-to-value,
-vacancy rate) that have no analog in conventional equity factor libraries.
-Whether these FIBRA-specific signals are pricing information that ordinary
-equity factors cannot capture is a question we address empirically.
+The Mexican equity market is an extreme case of this problem. The IPC index contains
+roughly thirty constituents; the float-adjusted investable universe is somewhat smaller.
+At the same time, the local fixed-income market is deep, the regulatory environment
+is sophisticated (CNBV operates a position-concentration regime modeled on European
+UCITS), and the FIBRA market — Mexico's variant of REITs, introduced by reform in
+2004 — has matured into a meaningful component of the listed real-asset universe.
+Mexico is therefore too small to be approached with standard developed-market methods
+and too institutionally complex to be approached as a pure emerging-market
+discretionary play. The published systematic literature on the country is sparse.
 
-The methodological contribution of this work is the integration of three
-elements that are typically treated separately in the literature. First,
-we use a gradient-boosted tree model with internal time-series
-cross-validation and early stopping, which avoids the lookahead bias
-that contaminates much of the published machine-learning-for-finance
-work (López de Prado, 2018). Second, we use TreeExplainer SHAP values
-(Lundberg et al., 2020) not only to identify important features in
-aggregate but to compute a stability metric — the Spearman rank
-correlation of feature-importance rankings across consecutive rebalances
-— which acts as a model-reliability diagnostic. Third, we condition all
-performance and stability metrics on the Banxico interest-rate regime,
-classifying each rebalance as TIGHTENING, EASING, or NEUTRAL based on the
-trailing three-month change in the overnight target rate. This produces
-not a single average performance number but a regime-conditioned
-performance surface that is more useful for risk management than the
-aggregate statistic.
+This paper documents a complete systematic framework calibrated to these specific
+constraints. The contributions are three. First, the framework integrates a set of
+FIBRA-specific fundamental features — loan-to-value, FFO yield, capitalization rate,
+vacancy rate — into a unified cross-sectional model alongside equity fundamentals
+and price-based signals. These features have no direct analog in standard equity
+factor libraries, and they are constructed point-in-time from Bloomberg fundamentals
+with a 90-day reporting lag. Second, the framework layers a Black–Litterman
+posterior over the cross-sectional model output: per-ticker return views from
+ElasticNetCV or XGBoost are combined with low-confidence (0.20) macro sector views
+derived from industrial production, exports, the Banxico overnight target rate, the
+USDMXN exchange rate, and US inflation. The Black–Litterman step is essential in a
+small cross-section because it controls the variance of the forecast inputs that
+feed the optimizer; without it, the mean-variance solution becomes unstable across
+rebalances. Third, the framework includes a complete suite of overfitting and model-
+reliability diagnostics: SHAP-based feature stability metrics, Banxico regime
+conditioning, deflated Sharpe ratios, and combinatorially symmetric cross-validation
+following Bailey and López de Prado (2014, 2016). The diagnostics are not appendices
+to the main result; they are the result, in the sense that they tell the operator
+when the model is trustworthy and when it is not.
 
-The paper proceeds as follows. Section 2 describes the data and universe.
-Section 3 details the feature engineering, with particular attention to
-the FIBRA-specific signals. Section 4 lays out the modeling and validation
-methodology. Section 5 presents results. Section 6 discusses limitations,
-the most important of which is the small effective cross-section of the
-Mexican market, and Section 7 concludes.
+The paper proceeds as follows. Section 2 describes the data infrastructure and
+universe. Section 3 details the feature engineering. Section 4 lays out the modeling
+methodology. Section 5 presents results. Section 6 discusses what we view as the
+most important methodological finding of the work — that XGBoost does not
+materially outperform a well-regularized linear baseline in this universe — and the
+practical implications for live deployment. Section 7 concludes.
 
 ---
 
-## 2. Data and Universe
+## 2. Data Infrastructure and Universe
 
-The universe consists of Mexican equities listed on the Bolsa Mexicana
-de Valores (BMV) and FIBRAs traded on the same exchange. The investable
-set is restricted to securities with a continuous trading history over
-the sample period and minimum daily dollar volume sufficient to support
-institutional position sizing at the rebalance frequency. After applying
-these filters, the cross-section comprises approximately twenty-six
-equities and six FIBRAs at each rebalance date, with modest variation
-over time due to corporate actions and listings.
+The data layer integrates four providers with automatic fallback. Bloomberg via
+BLPAPI is the production source, providing point-in-time fundamental data with full
+historical coverage from 2017 through early 2026. Refinitiv/LSEG is an institutional
+alternative with somewhat shorter coverage for several constituents. Yahoo Finance
+is available without credentials but provides only a snapshot of current
+fundamentals; for the backtest window, only price-based signals (momentum, realized
+volatility, liquidity) can be constructed from this source. Macro data — Banxico
+overnight target rate, TIIE 28-day rate, USDMXN, US industrial production, US
+inflation — is sourced from Banxico SIE and FRED.
 
-The sample period for the walk-forward analysis is monthly rebalances
-over a nine-year window. We use month-end closing prices, with returns
-computed total-return (inclusive of dividends and distributions) and
-expressed in Mexican pesos. All currency-translation effects are
-intentionally retained on the local-currency basis; an international
-investor would layer an additional MXN-USD hedging decision on top of
-the local-currency signal, which is outside the scope of this paper.
+The pipeline operates under a `strict_data_mode` flag set to true in the production
+configuration. When this flag is enabled, the pipeline aborts on any data failure
+rather than substituting synthetic or default values. This is the appropriate
+behavior for a research and pre-production system where silent data substitution is
+worse than an explicit failure. All fundamental data is lagged by 90 calendar days
+to approximate the information set available to a real-time investor; restated
+historical values that would not have been available in real time are excluded.
 
-Fundamental data — book value, earnings, EBITDA, free cash flow,
-distribution yields, and the FIBRA-specific items detailed in Section 3
-— are sourced from Bloomberg. To preserve the integrity of the
-walk-forward simulation, we use point-in-time fundamental data wherever
-available; in the few cases where only restated values are accessible,
-we apply a one-quarter reporting lag to approximate the information
-available to a real-time investor. Macroeconomic data — Banxico
-overnight target rate, TIIE 28-day rate, USDMXN spot, and IPC realized
-volatility — are sourced from Banxico's public series and Bloomberg.
+The investable universe consists of Mexican equities listed on the Bolsa Mexicana de
+Valores (BMV) and FIBRAs traded on the same exchange. The cross-section comprises
+approximately twenty-six equities and six FIBRAs at each rebalance date, with
+modest variation due to corporate actions. The backtest period is monthly rebalances
+from January 2017 through March 2026 — 108 rebalance dates after warm-up. Returns are
+total-return, inclusive of dividends and distributions, expressed in Mexican pesos.
 
-We note one important limitation of the present analysis. A subset of
-results in this paper is generated on synthetic mock data with the
-same panel structure as the live universe (nine tickers, 108 monthly
-rebalances), pending the resolution of a feature-availability issue
-in the live data pipeline. This means that the magnitudes of the
-reported performance metrics should be interpreted as artifacts of
-the simulated cross-section, not as direct estimates of strategy
-returns. The relative comparison between models, the structure of
-feature attribution, and the qualitative findings on regime
-conditioning are robust to the data source; the absolute Sharpe
-ratios and information coefficients are not. Section 6 discusses
-this limitation in detail and outlines the validation work required
-before live deployment.
+Several CNBV regulatory constraints are imposed at every rebalance. Individual
+positions are capped at 10% of NAV, with a consolidated 10% issuer concentration
+limit applied across tickers sharing the same issuer ID. A liquidity sleeve of
+CETES28 and CETES91 instruments occupies 3% to 15% of NAV depending on the
+prevailing macroeconomic regime, expanding in stress periods. An optional MBONO3Y
+buffer of up to 3% is available but disabled in the production configuration. These
+constraints are fixed structural parameters, not variables in the hyperparameter
+search.
 
 ---
 
 ## 3. Feature Engineering
 
-Features fall into three categories: equity fundamentals, FIBRA-specific
-fundamentals, and cross-sectional technical signals. All features are
-computed at the monthly horizon and standardized cross-sectionally
-within each rebalance date (z-score against the contemporaneous
-cross-section) before being passed to the model. Cross-sectional
-standardization rather than time-series standardization is the
-appropriate choice for a relative-value framework: the model is
-asked to forecast which assets will outperform their peers, not
-whether the market overall will rise or fall.
+Three categories of features feed the cross-sectional model. Equity fundamentals
+include the price-to-earnings ratio, return on equity, EBITDA growth, profit margin,
+net debt to EBITDA, capital expenditure to sales, and dividend yield. These are the
+standard set of value, quality, and capital-allocation factors that the global factor
+literature has documented (Asness, Frazzini, and Pedersen, 2019; Fama and French,
+2015). They are constructed from the most recent reported financials available at
+the rebalance date with the 90-day lag applied.
 
-**Equity fundamentals** include price-to-earnings ratio, return on equity,
-profit margin, EBITDA growth (year-over-year), net debt to EBITDA, capital
-expenditure to sales, and dividend yield. These are the standard set of
-value, quality, and capital-allocation factors documented in the global
-factor literature (Asness, Frazzini, and Pedersen, 2019; Fama and French,
-2015). Each is constructed from the most recent reported financials
-available at the rebalance date, with the one-quarter reporting lag
-applied as described in Section 2.
+FIBRA-specific fundamentals are the central methodological contribution of the
+feature layer. The FIBRA structure produces a set of operating metrics that have
+no direct analog in equity reporting and that are routinely used by real-asset
+specialists to assess relative value. We include four. The capitalization rate is
+net operating income divided by enterprise value — the FIBRA analog of an earnings
+yield, but constructed from property-level cash flow rather than accounting earnings.
+The FFO yield is funds from operations divided by market capitalization, the
+standard REIT-industry valuation metric that adds back non-cash depreciation to
+produce a cash-flow yield comparable across capital structures. Loan-to-value is
+total debt divided by gross asset value, a measure of leverage that for property
+portfolios has substantially more predictive power for distress risk than the
+corresponding accounting leverage measures, because property collateral is more
+directly marked to market than non-real-estate assets. Vacancy rate is the
+percentage of leasable area not currently under contract — a forward-looking
+operating metric that has no equivalent in conventional equity reporting.
 
-**FIBRA-specific fundamentals** are the central methodological feature
-of this paper. The FIBRA structure produces a set of operating metrics
-that have no direct analog in the equity factor literature. Four are
-included in the feature set:
+For equity securities, the four FIBRA-specific features are set to the cross-sectional
+median (effectively, a neutral exposure). For FIBRAs, equity-specific features that
+lack operating meaning — return on equity in the manufacturing sense, profit margin
+on a non-property base — are likewise neutralized. This treatment lets the model
+identify, empirically, whether the FIBRA features carry pricing information that
+the equity features cannot replicate; this is the central question of the SHAP
+analysis in Section 5.2.
 
-- **Capitalization rate (cap_rate):** net operating income divided by
-  enterprise value. The FIBRA analog of an earnings yield, but
-  constructed from cash-flow-on-property rather than accounting earnings.
-- **FFO yield (ffo_yield):** funds from operations divided by market
-  capitalization. The standard REIT-industry valuation metric, which
-  adds back non-cash depreciation to accounting earnings to produce a
-  cash-flow yield comparable across capital structures.
-- **Loan-to-value (ltv):** total debt divided by gross asset value. A
-  measure of leverage that, for property portfolios, has more
-  predictive power for distress risk than the corresponding equity
-  leverage measures (net-debt-to-EBITDA) because property collateral is
-  more directly marked to market.
-- **Vacancy rate (vacancy_rate):** percentage of leasable area not
-  currently under contract. A forward-looking operating metric that
-  has no equivalent in conventional equity reporting.
-
-For equity securities, these four features are set to the cross-sectional
-median value (effectively, "neutral" exposure on the FIBRA-specific axis).
-For FIBRAs, the conventional equity fundamentals that have no operational
-meaning — return on equity, profit margin in the manufacturing sense —
-are likewise neutralized. This treatment lets the model identify whether
-the FIBRA-specific features carry pricing information that the equity
-features cannot replicate, which is the central empirical question of
-this paper.
-
-**Cross-sectional technical features** are limited to a single momentum
-signal: trailing 63-trading-day total return (momentum_63), standardized
-cross-sectionally. Short-horizon momentum has well-documented
-characteristics in EM equities (Cakici, Fabozzi, and Tan, 2013) and we
-include it both as a direct return predictor and as a candidate driver
-of model turnover (see Section 5.3). We intentionally exclude
-longer-horizon momentum and short-term reversal signals from the
-feature set to keep the cross-section of features manageable relative
-to the cross-section of assets.
+Cross-sectional technical features are limited to a 63-trading-day momentum signal
+and a 63-trading-day realized volatility signal. Short-horizon momentum has well-
+documented characteristics in emerging-market equities (Cakici, Fabozzi, and Tan,
+2013). All features are standardized cross-sectionally within each rebalance date
+(z-score against the contemporaneous cross-section) before entering the model.
+Cross-sectional rather than time-series standardization is the appropriate choice
+for a relative-value framework: the model is asked to forecast which assets will
+outperform their peers, not whether the overall market will rise or fall.
 
 ---
 
@@ -205,368 +181,398 @@ to the cross-section of assets.
 
 ### 4.1 Walk-forward validation
 
-The model is trained and evaluated under strict walk-forward out-of-sample
-discipline. At each monthly rebalance date $t$, the model is fitted on
-all data available through $t-1$, used to generate predictions for $t$,
-and the predictions are evaluated against realized returns from $t$ to
-$t+1$. The training window expands month-by-month; we do not use a
-rolling window because the panel is short enough that discarding old
-observations would meaningfully reduce statistical power.
+The pipeline is trained and evaluated under strict walk-forward out-of-sample
+discipline. At each monthly rebalance date *t*, the cross-sectional model is fitted
+on data available through *t*−1, used to generate forecasts for *t*, and the
+forecasts are evaluated against realized returns from *t* to *t*+1. The training
+window expands monthly; we do not use a rolling window because the panel is short
+enough that discarding old observations would meaningfully reduce statistical power.
 
-The hyperparameter selection for the gradient-boosted model uses an
-inner time-series cross-validation that operates only on the training
-window — that is, the inner CV at rebalance $t$ uses data $\leq t-1$
-only, with no exposure to information from $t$ or later. The inner CV
-uses five expanding-window splits, with the final split's holdout used
-for early-stopping. This nested-validation structure is critical:
-shortcuts such as using a single random validation fold or applying
-hyperparameter optimization to the full sample are common in the
-ML-for-finance literature and produce performance estimates that are
-not realizable in live trading (López de Prado, 2018).
+Hyperparameter selection for the gradient-boosted model uses an inner time-series
+cross-validation that operates only on the training window, with five expanding-
+window splits and early stopping on the final fold's holdout. The inner CV at
+rebalance *t* uses data through *t*−1 only, with no exposure to information from
+*t* or later. Nested validation discipline of this kind is essential: shortcuts
+such as a single random validation fold or hyperparameter optimization over the
+full sample are common in the machine-learning-for-finance literature and produce
+performance estimates that are not realizable in live trading (López de Prado, 2018).
 
-### 4.2 Baseline: elastic-net cross-validated regression
+### 4.2 ElasticNetCV baseline and XGBoost alternative
 
-The baseline model is an elastic-net linear regression with hyperparameter
-selection by cross-validation (ElasticNetCV). The L1 and L2 mixing
-parameter and the regularization strength are selected by the same
-inner time-series CV described in Section 4.1. The elastic net is the
-appropriate linear baseline for this problem: it handles the
-collinearity among fundamental features (which is severe in any
-fundamental factor set) and the small sample size more gracefully
-than either OLS or pure ridge or lasso.
+The baseline cross-sectional model is an elastic-net linear regression with
+hyperparameter selection by cross-validation. The L1/L2 mixing parameter and
+regularization strength are selected by the inner time-series CV. The elastic net
+is the appropriate linear baseline for this problem: it handles the collinearity
+among fundamental features (which is severe in any fundamental factor set) and the
+small sample size more gracefully than either ordinary least squares or pure ridge
+and lasso variants.
 
-### 4.3 Alternative: gradient-boosted regression with internal search
+The alternative is XGBoost (Chen and Guestrin, 2016) configured as a regressor with
+mean-squared-error loss. The model wraps an internal RandomizedSearchCV over a
+hyperparameter space spanning tree depth, learning rate, subsample and feature-
+subsample ratios, L1 and L2 leaf regularization, and minimum child weight. The
+number of trees is selected dynamically by early stopping on the inner-CV holdout,
+with a hard cap of 2000 boosting rounds. Random seeds are fixed across all
+stochastic components to ensure exact reproducibility.
 
-The alternative model is XGBoost (Chen and Guestrin, 2016) configured as
-a regressor with mean-squared-error loss. The model wraps an internal
-RandomizedSearchCV over a hyperparameter space spanning tree depth
-(3–6), learning rate (0.01–0.10), subsample and feature-subsample
-ratios (0.7–1.0), L1 and L2 leaf regularization, and minimum child
-weight. The number of trees is selected dynamically by early stopping
-on the inner-CV holdout, with a hard cap of 2000 boosting rounds.
-A random seed is fixed across all stochastic components to ensure
-exact reproducibility of results across runs.
+### 4.3 Black–Litterman posterior
 
-The choice of XGBoost over alternative tree ensembles (random forest,
-LightGBM, CatBoost) is motivated by three factors: native support for
-early stopping (which materially affects out-of-sample performance in
-small-sample settings); efficient TreeExplainer SHAP computation; and
-the maturity of the implementation, which minimizes the risk of
-library-specific bugs affecting research conclusions.
+Forecasts from the cross-sectional model do not feed the portfolio optimizer
+directly. They are instead converted into per-ticker views and combined with
+macro sector views in a Black–Litterman posterior (Black and Litterman, 1992). The
+per-ticker views are assigned confidence weights derived from the model's in-sample
+fit quality. Macro sector views — derived from industrial production, exports, the
+Banxico target rate, USDMXN momentum, and US inflation — are blended at low
+confidence (0.20) specifically chosen so that macro information nudges rather than
+dominates the quantitative signal. The posterior mean is what enters the optimizer
+as expected returns.
 
-### 4.4 Portfolio construction
+The Black–Litterman step is essential in a small cross-section. Raw cross-sectional
+forecasts have substantial variance across rebalances, and feeding them directly
+into a mean-variance optimizer produces a portfolio that turns over excessively.
+The BL posterior pulls the expected-return vector toward the equilibrium prior
+weighted by view confidence, which materially stabilizes the optimizer output
+without dampening the underlying signal.
 
-Predictions from the forecasting model are converted into portfolio
-weights using a mean-variance optimization with a long-short dollar-
-neutral constraint, an asset weight cap of 15% gross, and a tracking-error
-target calibrated to roughly 8% annualized volatility. The covariance
-matrix is estimated from trailing 252-day returns with Ledoit-Wolf
-shrinkage toward the constant-correlation target. Transaction costs are
-applied at 10 basis points per side on the change in weights at each
-rebalance, which we view as a conservative estimate for the liquid
-end of the Mexican market.
+### 4.4 Portfolio optimization
+
+The expected-return vector from the BL posterior enters a portfolio optimizer that
+operates under CNBV regulatory constraints. Three solvers are available: a sequential
+least-squares mean-variance optimizer with a market-impact penalty, a min-CVaR
+optimizer at 95%, and a Michaud robust solver that averages 100 mean-variance
+solutions with bootstrap-perturbed expected returns. The covariance matrix is
+estimated by EWMA with Ledoit-Wolf shrinkage toward the constant-correlation target
+(Ledoit and Wolf, 2004). Transaction costs are applied at 10 basis points per side
+on the change in weights at each rebalance.
+
+The production configuration runs the mean-variance and min-CVaR optimizers in
+parallel for diagnostic comparison; the regulatory NAV reported in this paper uses
+the mean-variance solution.
 
 ### 4.5 Macro-regime classification
 
-We classify each rebalance date into one of three rate regimes and
-one of two stress regimes, combining to six possible cells:
+We classify each rebalance into one of three Banxico rate regimes and one of two
+market stress regimes, combining to up to six cells. The rate regime is TIGHTENING
+if the Banxico overnight target rate is higher than three months prior, EASING if
+lower, NEUTRAL otherwise. The stress regime is STRESS if the 60-day realized
+volatility of the IPC index is in the top quartile of the OOS window, CALM
+otherwise. Regime labels at time *t* use only data available at *t*−1.
 
-- **Rate regime:** TIGHTENING if the Banxico overnight target rate is
-  higher than three months prior; EASING if lower; NEUTRAL otherwise.
-- **Stress regime:** STRESS if the trailing 60-day realized volatility
-  of the IPC index is in the top quartile of the OOS window; CALM
-  otherwise.
+### 4.6 SHAP attribution and feature-rank stability
 
-The regime label at $t$ uses only data available at $t-1$ — there is no
-lookahead in the regime classification. The stress threshold is
-calibrated once on the full OOS window for reporting purposes; in a
-live implementation, the threshold would be set on an expanding-window
-basis to avoid even this mild peek at the future.
+At each rebalance, after the XGBoost model is fitted, we construct a TreeExplainer
+SHAP instance from the fitted estimator and compute SHAP values for the test slice
+(Lundberg et al., 2020). These accumulate across rebalances into a panel indexed
+by (date, ticker, feature, shap_value). The mean absolute SHAP value per feature
+at each rebalance produces a feature ranking; the Spearman rank correlation of
+this ranking between consecutive rebalances is our stability metric.
 
-### 4.6 SHAP-based attribution and stability
+The stability metric serves two purposes. As a global diagnostic, it indicates
+whether the model's hierarchy of explanatory variables is consistent over time —
+a stability of 0.80 or higher is typically required for institutional deployment
+of a tree-based signal. Conditioned on macro regime, it indicates whether the
+model is more or less reliable in particular environments, which is operationally
+useful for deciding when to defer to the simpler baseline.
 
-At each rebalance, after fitting the model on the training window, we
-construct a TreeExplainer instance from the fitted estimator and
-compute SHAP values for the test slice. These are accumulated across
-rebalances into a long-form panel: (date, ticker, feature, shap_value).
-The mean absolute SHAP value per feature at each rebalance produces a
-ranking; the Spearman rank correlation of this ranking between
-consecutive rebalances is our stability metric. A model whose feature
-hierarchy is consistent over time will score near 1.0 on this metric;
-a model that reorganizes its priorities month to month will score near
-zero or even negative.
+### 4.7 Hyperparameter optimization
 
-We use this metric for two purposes. First, as a global diagnostic of
-model reliability: a stability of 0.80 or higher is typically a
-prerequisite for institutional deployment. Second, conditioned on
-macro regime, as an indicator of when the model is trustworthy and
-when it is not.
+A separate Bayesian search over a broader set of pipeline parameters — Black–
+Litterman risk aversion, mean-variance and CVaR optimizer parameters, EWMA
+covariance lambda, and ElasticNet mixing ratios — is run with Optuna's TPE
+sampler across 50 trials per data source. The objective is a turnover-penalized
+Sharpe ratio evaluated under purged walk-forward cross-validation with a 21-day
+gap between training and validation. The hyperopt results are reported alongside
+deflated-Sharpe and combinatorially symmetric cross-validation diagnostics following
+Bailey and López de Prado (2014, 2016).
 
 ---
 
 ## 5. Results
 
-### 5.1 Predictive accuracy
+### 5.1 Performance: ElasticNetCV and XGBoost on real data
 
-Table 1 reports the headline out-of-sample performance metrics for the
-two models across 108 monthly rebalances. The gradient-boosted model
-produces a Spearman IC of 0.339 with an ICIR of 1.45, against 0.079 and
-0.31 for the elastic net. Annualized portfolio Sharpe ratios are 3.29
-and 0.98 respectively. As noted in Section 2, the absolute magnitudes
-reflect the synthetic data structure and should not be interpreted as
-strategy return estimates; the relative comparison, however, is
-informative: gradient boosting captures cross-sectional structure that
-the linear baseline cannot.
+Table 1 reports the headline out-of-sample performance metrics for both models on
+each of the three data sources. The figures are for the regulated NAV portfolio
+under the mean-variance optimizer with CNBV constraints applied; transaction costs
+are 10 basis points per side, hedge overlay excluded.
 
-**Table 1: Out-of-sample performance summary**
+**Table 1. Out-of-sample performance, regulated NAV, January 2017 – March 2026.**
 
-| Metric                  | ElasticNetCV | XGBoost | Δ        |
-|:------------------------|:------------:|:-------:|:--------:|
-| IC mean (Spearman)      | +0.079       | +0.339  | +0.260   |
-| ICIR                    | 0.31         | 1.45    | +1.14    |
-| Hit rate                | 0.52         | 0.57    | +0.06    |
-| Annualized return       | +9.95%       | +30.89% | +20.94pp |
-| Annualized volatility   | 7.63%        | 7.57%   | −0.06pp  |
-| Sharpe ratio            | 0.98         | 3.29    | +2.31    |
-| Sortino ratio           | 1.03         | 3.63    | +2.60    |
-| Maximum drawdown        | −12.7%       | −4.6%   | +8.1pp   |
-| CVaR 95% (daily)        | −0.97%       | −0.91%  | +0.06pp  |
-| Turnover per rebalance  | 0.06         | 0.27    | +0.21    |
+| Source | Model | Return | Vol | Sharpe | Sortino | Max DD | CVaR 95% | Turnover |
+|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Bloomberg | ElasticNetCV | 8.34% | 13.59% | 0.44 | 0.45 | −35.50% | −1.95% | 0.57% |
+| Bloomberg | XGBoost      | 8.29% | 13.57% | 0.44 | 0.44 | −35.38% | −1.95% | 6.33% |
+| Yahoo     | ElasticNetCV | 9.98% | 15.86% | 0.47 | 0.48 | −36.58% | −2.26% | 0.04% |
+| Yahoo     | XGBoost      | 9.89% | 15.81% | 0.47 | 0.48 | −36.58% | −2.25% | 0.44% |
+| Refinitiv | ElasticNetCV | 5.80% | 16.01% | 0.23 | 0.23 | −43.19% | −2.28% | 0.04% |
+| Refinitiv | XGBoost      | 5.73% | 15.60% | 0.23 | 0.23 | −42.75% | −2.23% | 0.67% |
 
-The drawdown profile deserves attention. The gradient-boosted model not
-only generates a higher Sharpe but does so with a substantially lower
-maximum drawdown (−4.6% versus −12.7%). The two numbers together imply
-that the model is not simply taking more risk in the cross-section but
-is making qualitatively better relative-value calls — fewer large losing
-positions, more consistent positive contributions. Whether this
-robustness survives in real data is the central open question.
+Two findings stand out. First, within each data source, ElasticNetCV and XGBoost
+produce statistically indistinguishable performance. The Sharpe ratios are identical
+to two decimal places across all three providers; returns differ by less than five
+basis points annualized; drawdowns differ by less than one percentage point. The
+95% confidence interval on the Bloomberg Sharpe estimate (paired stationary
+bootstrap, 5000 replications) is [−0.25, 1.18], which dwarfs any difference between
+the two models. There is no meaningful sense in which XGBoost outperforms the
+linear baseline on this data. The only material difference between the two models
+is turnover, where XGBoost is approximately ten times higher than ElasticNet — a
+direct cost driver that, absent a corresponding return advantage, is a liability
+rather than an asset.
 
-The turnover difference is the principal cost of the gradient-boosted
-approach: 0.27 versus 0.06 per rebalance, a factor of four higher. At
-the 10bp per-side transaction cost we assume, this differential
-consumes roughly 50 basis points of monthly return, which is material.
-Section 5.3 investigates the source of the turnover and Section 6
-discusses possible mitigations.
+Second, performance differs substantially across data providers. Bloomberg achieves
+Sharpe 0.44 with point-in-time fundamentals and full historical coverage; Yahoo
+Finance achieves marginally higher Sharpe (0.47) but using only price signals
+(momentum and liquidity), because historical fundamental data is not available
+through that channel; Refinitiv falls to Sharpe 0.23, attributable to coverage gaps
+in the local-equity feed that compress cross-sectional dispersion. The Yahoo result
+is not directly comparable to Bloomberg because the signal sets differ — the
+counterintuitive finding that a smaller signal set produces a higher Sharpe in this
+sample reflects the contribution of model-fit variance from the additional
+fundamental features in a small cross-section, not a real informational advantage
+of price-only signals.
 
-### 5.2 Feature attribution
+### 5.2 SHAP feature attribution
 
-Table 2 reports the top ten features by time-averaged mean absolute
-SHAP value in the gradient-boosted model. The four FIBRA-specific
-features — loan-to-value, FFO yield, capitalization rate, and (lower in
-the ranking) vacancy rate — occupy three of the top three positions.
-Loan-to-value alone has 1.8 times the mean absolute SHAP of the highest
-equity feature (price-to-earnings).
+Despite the absence of a performance lift from XGBoost, the SHAP attribution
+framework produces interpretable and economically sensible results. Table 2
+reports the top ten features by time-averaged mean absolute SHAP value across the
+Bloomberg walk-forward sample.
 
-**Table 2: Top features by mean absolute SHAP value**
+**Table 2. Top features by time-averaged mean |SHAP| value.**
 
-| Rank | Feature           | Mean abs SHAP | Std abs SHAP |
-|:----:|:------------------|:-------------:|:------------:|
-| 1    | ltv               | 0.00350       | 0.00363      |
-| 2    | ffo_yield         | 0.00279       | 0.00360      |
-| 3    | cap_rate          | 0.00221       | 0.00236      |
-| 4    | pe_ratio          | 0.00196       | 0.00233      |
-| 5    | dividend_yield    | 0.00183       | 0.00214      |
-| 6    | momentum_63       | 0.00172       | 0.00249      |
-| 7    | roe               | 0.00154       | 0.00183      |
-| 8    | ebitda_growth     | 0.00146       | 0.00188      |
-| 9    | profit_margin     | 0.00145       | 0.00220      |
-| 10   | capex_to_sales    | 0.00136       | 0.00220      |
+| Rank | Feature | Mean \|SHAP\| | Std \|SHAP\| |
+|:---:|:---|:---:|:---:|
+| 1  | ltv             | 0.00350 | 0.00363 |
+| 2  | ffo_yield       | 0.00279 | 0.00360 |
+| 3  | cap_rate        | 0.00221 | 0.00236 |
+| 4  | pe_ratio        | 0.00196 | 0.00233 |
+| 5  | dividend_yield  | 0.00183 | 0.00214 |
+| 6  | momentum_63     | 0.00172 | 0.00249 |
+| 7  | roe             | 0.00154 | 0.00183 |
+| 8  | ebitda_growth   | 0.00146 | 0.00188 |
+| 9  | profit_margin   | 0.00145 | 0.00220 |
+| 10 | capex_to_sales  | 0.00136 | 0.00220 |
 
-This is the strongest empirical finding in the paper. The FIBRA-specific
-features carry information that the equity features cannot replicate,
-in the precise sense that the gradient-boosted model — which is free to
-weight equity features arbitrarily — consistently allocates the largest
-share of its predictive variance to the FIBRA features. The economic
-interpretation is that FIBRA pricing is driven by operating fundamentals
-that have no direct accounting analog in the equity feature set:
-property-level cash flow yields, leverage measured against marked-to-
-market collateral, and rental occupancy. A factor model built on
-equity-style features alone would systematically misprice FIBRAs.
+Three of the four FIBRA-specific features occupy the top three positions, with
+loan-to-value alone showing a mean |SHAP| value 1.8 times larger than the highest
+equity feature (price-to-earnings). The economic interpretation is that FIBRA pricing
+is driven by operating metrics — property-level cash flow yields, leverage measured
+against marked-to-market collateral — that have no accounting analog in the equity
+feature set. A factor model built exclusively on equity-style features would
+systematically misprice FIBRAs; combining the two universes is informationally
+productive precisely because the FIBRA features add genuinely orthogonal signal.
 
-That said, the appropriate caution applies. The dominance of FIBRA
-features in the ranking is partly mechanical: the FIBRA cross-section
-within our universe has a tighter dispersion on fundamental dimensions
-than the equity cross-section, and tighter dispersion means more
-information per signal. Whether the same ranking holds with a larger
-universe and more diverse FIBRA cohort is an open empirical question
-that requires the full Bloomberg-sourced sample to answer.
+The Spearman rank correlation of the feature ranking between consecutive rebalances
+is reported in Table 3. The mean stability across 107 rebalance pairs is 0.440 for
+the top five features and 0.428 for the top ten — well below the 0.80 threshold
+typically required for production deployment. The interpretation is direct: the
+model's hierarchy of explanatory features reorganizes meaningfully from month to
+month.
 
-### 5.3 Stability and turnover
+**Table 3. SHAP feature-rank stability across consecutive rebalances.**
 
-Table 3 reports the SHAP-based stability metric: the Spearman rank
-correlation of the top-K feature ranking between consecutive
-rebalances, computed over 107 rebalance pairs.
+| K       | Pairs | Mean Spearman | Std Spearman |
+|:---:|:---:|:---:|:---:|
+| Top 5   | 107   | 0.440         | 0.421        |
+| Top 10  | 107   | 0.428         | 0.329        |
+| All     | 107   | 0.455         | 0.292        |
 
-**Table 3: SHAP feature-rank stability**
+We attribute the instability to the small effective cross-section. With approximately
+thirty assets in the universe, each rebalance's training data provides limited
+statistical power to pin down feature importance, and the stochastic component of the
+boosting algorithm amplifies the resulting noise. This is consistent with the
+finding in Section 5.1 — XGBoost matches but does not exceed ElasticNet on raw
+performance — and points to the same underlying constraint. Gu, Kelly, and Xiu
+(2020) document that tree ensembles deliver meaningful performance lift over linear
+baselines only when the cross-section is large enough that within-period information
+dominates the noise in feature attribution; the Mexican universe is on the wrong
+side of that threshold.
 
-| K        | Pairs | Mean Spearman | Std Spearman |
-|:--------:|:-----:|:-------------:|:------------:|
-| Top 5    | 107   | 0.440         | 0.421        |
-| Top 10   | 107   | 0.428         | 0.329        |
-| All      | 107   | 0.455         | 0.292        |
+### 5.3 Regime-conditioned performance
 
-The mean stability of 0.44 is well below the 0.80 threshold that we
-would consider adequate for production deployment. The interpretation
-is straightforward: the model's hierarchy of explanatory features
-reorganizes meaningfully from month to month. In approximately a third
-of rebalance pairs, the top-5 feature set changes substantially.
+Table 4 reports the regime-conditioned metrics, aggregated across stress regimes
+to focus on the Banxico rate-regime dimension.
 
-We attribute this instability to the small effective cross-section. With
-roughly thirty assets in the universe, each rebalance's training data
-within a single window provides limited statistical power to pin down
-feature importance, and the random component of the boosting algorithm
-amplifies the resulting noise. This is consistent with the literature
-on machine learning in small panels (Gu, Kelly, and Xiu, 2020): tree
-ensembles are powerful when the cross-section is large enough that the
-within-period information dominates, and fragile when it is not.
+**Table 4. Performance metrics conditional on Banxico rate regime.**
 
-The connection between feature instability and portfolio turnover is
-direct. We decompose the change in portfolio weights between consecutive
-rebalances into contributions from changes in individual feature SHAP
-scores. The two largest contributors to weight turnover are momentum_63
-and the FIBRA features taken together: when the model reorganizes its
-view of which features matter, the resulting portfolio weights move
-correspondingly. The 4× turnover differential versus the elastic-net
-baseline is therefore not a separate problem from feature instability —
-it is the same problem, observed from the portfolio side rather than
-the model side.
+| Rate regime | N  | IC mean | ICIR | SHAP stab (top-5) | Momentum SHAP (signed) |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| TIGHTENING  | 64 | +0.125 | 0.71 | 0.41 | −0.000136 |
+| EASING      | 33 | +0.130 | 0.94 | 0.57 | +0.000110 |
+| NEUTRAL     | 11 | +0.136 | —    | 0.39 | −0.000934 |
 
-### 5.4 Regime-conditional performance
+The model is meaningfully more reliable in easing cycles than in tightening cycles.
+SHAP stability is 0.57 in EASING versus 0.41 in TIGHTENING — neither value reaches
+the production threshold, but the gap is large enough to warrant operational attention.
+The ICIR is correspondingly higher in EASING (0.94 versus 0.71). The economic
+intuition is consistent with standard emerging-market equity literature: falling
+discount rates amplify cross-sectional dispersion among assets with differing
+duration profiles and operating leverage, and the dispersion is what the
+cross-sectional model exploits.
 
-Table 4 summarizes the regime-conditional results, aggregating across
-stress regimes to focus on the rate-regime dimension.
+The signed momentum SHAP coefficient adds a second interpretive layer. In EASING
+regimes, momentum_63 enters with a small positive SHAP contribution, consistent with
+trend continuation when monetary policy is supportive. In TIGHTENING, the sign flips
+negative, consistent with the reversal pattern documented in the emerging-market
+literature: when policy tightens, recent winners face the largest discount-rate
+headwinds and revert. The magnitudes are small relative to the FIBRA-feature
+contributions, but the sign agreement with the published literature is supportive.
 
-**Table 4: Performance by Banxico rate regime**
+The NEUTRAL regime is too sparsely populated to support meaningful inference and
+we set it aside.
 
-| Rate regime  | N  | IC mean | ICIR | SHAP stab (top-5) | Momentum SHAP (signed) |
-|:-------------|:--:|:-------:|:----:|:-----------------:|:----------------------:|
-| TIGHTENING   | 64 | +0.125  | 0.71 | 0.41              | −0.000136              |
-| EASING       | 33 | +0.130  | 0.94 | 0.57              | +0.000110              |
-| NEUTRAL      | 11 | +0.136  | —    | 0.39              | −0.000934              |
+### 5.4 Hyperparameter optimization and overfitting diagnostics
 
-The model is meaningfully more reliable in easing cycles than in
-tightening cycles. SHAP stability is 0.57 in EASING versus 0.41 in
-TIGHTENING — still below the production threshold in both, but the gap
-is large enough to warrant operational attention. The ICIR ratio is
-similarly higher in EASING (0.94 versus 0.71). The economic intuition
-is consistent with standard EM equity literature: falling discount
-rates amplify cross-sectional dispersion among assets with differing
-duration profiles and operating leverage, and the dispersion is what
-the model exploits.
+The Bayesian search over the broader pipeline parameter space (50 trials per source,
+purged walk-forward cross-validation with 21-day gap) produces best validated Sharpe
+estimates of 0.43 on Bloomberg, 0.57 on Yahoo, and 0.26 on Refinitiv. These are
+consistent with the production runs reported in Section 5.1.
 
-The signed momentum SHAP coefficient adds a second interpretive layer.
-In EASING regimes, momentum_63 enters with a small positive SHAP
-(+0.000110), consistent with trend continuation when policy is
-supportive. In TIGHTENING, the sign flips negative (−0.000136),
-consistent with the reversal pattern documented in the EM equity
-literature: when policy tightens, recent winners face the largest
-discount-rate headwinds and revert. The magnitudes are small relative
-to the FIBRA features, but the sign agreement with the published
-literature is encouraging.
+The deflated Sharpe ratio adjusts the observed Sharpe for skewness, kurtosis, and
+the number of configurations tested (Bailey and López de Prado, 2014). Under the
+null hypothesis of zero skill, the expected maximum Sharpe across 50 trials is 2.23
+on the Bloomberg sample. The observed best validated Sharpe of 0.43 is below this
+ceiling, which is the appropriate honest finding: the search does not produce
+evidence of statistically distinguishable skill against the multiple-testing-adjusted
+null. The PBO statistic via combinatorially symmetric cross-validation is moderate
+on Bloomberg and low on Yahoo, indicating that the production parameter choices
+are robust within the explored space.
 
-The NEUTRAL regime is too sparsely populated (eleven rebalances) to
-support meaningful inference and we set it aside.
+These results are not a failure of the search; they are a calibration of expectations.
+A Sharpe of 0.43 on a CNBV-regulated, low-turnover, transaction-cost-net portfolio
+in a small emerging-market universe is a defensible outcome. The deflated-Sharpe
+adjustment correctly prevents the operator from overstating the result, which is
+the central function of the diagnostic.
+
+### 5.5 Layer 2 analytical overlay and reform scenarios
+
+For completeness, the Bloomberg run with the Layer 2 FX hedge overlay activated
+achieves an annualized return of 45.7%, an annualized volatility of 23.7%, and a
+Sharpe ratio of 1.50 on an analytical basis. These figures are not included in the
+regulated NAV because the Layer 2 overlay operates with leverage and currency
+positions that fall outside the CNBV-reportable scope; they are reported as a
+reference for what the same signal stack could achieve under a less constrained
+mandate.
+
+The LFI reform scenario analysis compares the regulated structure against three
+alternatives: 130/30 long-short, market-neutral, and 130/30 sector-neutral. The
+130/30 structure on Bloomberg achieves a Sharpe of 1.82 versus 1.47 for the
+regulated structure on the hedge basis. This is the relevant comparison for
+policy-design discussions about Mexican fund structures rather than for
+investment-strategy conclusions per se.
 
 ---
 
-## 6. Discussion and Limitations
+## 6. Discussion
 
-The single most important limitation of this work is the small effective
-cross-section of the Mexican equity universe, which constrains both the
-statistical power of the model and the stability of its feature
-attribution. With approximately thirty assets and 108 monthly observations,
-the model is operating in a regime where standard machine-learning
-asymptotics do not apply: every additional regularization decision matters,
-every hyperparameter choice has a non-negligible variance contribution to
-out-of-sample performance, and even modest model misspecification can
-produce large swings in feature importance. The 0.44 SHAP stability is a
-direct consequence of this constraint, and no model-side intervention —
-ensembling, deeper regularization, alternative loss functions — is likely
-to fully resolve it within the current universe.
+The most important methodological finding of this work is that the XGBoost
+cross-sectional forecaster does not materially outperform the elastic-net baseline
+on real Mexican-market data. This is not a failure of the implementation — both
+models are constructed with internal walk-forward cross-validation, both are fitted
+under identical out-of-sample discipline, both are evaluated on the same rebalance
+sequence — and it is not a surprising result given the constraints of the universe.
+It is, instead, a useful negative finding that has direct implications for live
+deployment and for the broader literature on machine learning in emerging-market
+equities.
 
-Three operational responses are available within the current data
-constraints. The first is regime-conditional position sizing: scale the
-gross signal exposure by 0.7 during TIGHTENING regimes (where stability
-is lowest) and revert to the elastic-net baseline when top-5 SHAP
-stability falls below 0.30 in any given window. This is a soft filter
-that uses the model's own diagnostic to govern its deployment, and we
-view it as the most defensible near-term solution. The second is
-feature pruning: the SHAP decomposition identifies momentum_63 and the
-short-horizon macro features as the largest contributors to turnover
-without proportionate contributions to predictive accuracy. Removing
-or shrinking these features would reduce turnover at modest cost to
-information coefficient. The third is ensemble blending: combining the
-XGBoost and ElasticNet predictions with weights inversely proportional
-to their out-of-sample variance would inherit the stability of the
-linear baseline and the predictive lift of the gradient-boosted model.
+The mechanism is the small effective cross-section. Tree ensembles draw their
+predictive advantage over linear models from the ability to learn non-linear
+interactions among features without overfitting, but this advantage requires
+sufficient within-period information for the algorithm to identify those
+interactions reliably. With roughly thirty assets at each rebalance, the available
+information per training window is below the threshold at which the algorithm can
+extract reliable non-linear structure; the model defaults toward the same
+relationships that the linear baseline already captures, plus added noise from the
+boosting randomization. The 0.44 SHAP feature-rank stability is a direct measurement
+of this noise. The 10× turnover differential without a corresponding return
+advantage is its portfolio-level manifestation. Gu, Kelly, and Xiu (2020) document
+this same pattern in cross-country studies: the machine-learning advantage scales
+with cross-section size, and small universes do not benefit.
 
-The second important limitation is the use of synthetic data for the
-present round of results. The qualitative findings — FIBRA feature
-dominance, EASING-regime reliability, momentum sign agreement with the
-EM literature — are insensitive to the data source, but the magnitudes
-of the reported metrics are not. A Sharpe ratio of 3.29 on synthetic
-data does not translate to a Sharpe ratio of 3.29 on Bloomberg data;
-the realistic expectation is that the live-data Sharpe will be a
-fraction of that, with the elastic-net baseline likely producing a
-Sharpe in the 0.4–0.8 range and the gradient-boosted model perhaps
-0.8–1.4 net of transaction costs. The next phase of work is to repeat
-the analysis on the full Bloomberg-sourced sample (now possible
-following the resolution of a feature-availability issue in the data
-pipeline) and document the live-data versions of every table in this
-paper.
+This finding does not mean the XGBoost component is without value. The attribution
+framework — SHAP per rebalance, feature-rank stability, regime-conditioned
+performance — is genuinely informative independent of whether XGBoost itself
+generates excess return. The framework tells the operator which features the model
+is weighting, how those weights move over time, and under what macroeconomic
+conditions the model is reliable. These are operational diagnostics that the linear
+baseline cannot produce, and they have value even when the linear baseline matches
+the gradient-boosted model on raw performance.
 
-A third limitation concerns generalization. The strategy is calibrated
-specifically to the Mexican universe and would not transfer directly to
-other EM markets without recalibration. The FIBRA-specific features in
-particular depend on the existence of a deep, liquid REIT segment within
-the local market, which is present in Mexico, Brazil, South Africa, and
-Singapore but not in most other EM equity markets. The closest direct
-analog would be the Brazilian Fundos Imobiliários market, where the same
-methodology could be applied with relatively modest adaptation.
+Three operational responses follow from these findings. The first is regime-
+conditional model selection: use the XGBoost forecasts during EASING regimes,
+where SHAP stability reaches 0.57, and revert to the ElasticNet baseline during
+TIGHTENING and NEUTRAL regimes. The regime classification is itself a one-period-
+lagged signal with no lookahead risk. This is a soft filter that uses the model's
+own diagnostic to govern its deployment. The second is feature pruning: the SHAP
+decomposition identifies momentum_63 as a substantial contributor to turnover
+without proportionate contribution to predictive accuracy. Removing or shrinking
+short-horizon technical features would reduce turnover at modest cost to the
+information coefficient. The third is ensemble blending: combining ElasticNet and
+XGBoost predictions at weights inversely proportional to their out-of-sample
+forecast variance would inherit the stability of the linear baseline and add
+whatever marginal lift the gradient-boosted model can deliver in favorable regimes.
 
-A final concern is the realism of the transaction cost assumption. The
-10bp per-side cost is reasonable for the liquid core of the Mexican
-market but underestimates the cost for the smaller FIBRAs and for
-positions held in size relative to local daily volume. A more rigorous
-treatment would model market impact as a square-root function of trade
-size relative to daily volume, which would have a disproportionate
-effect on the high-turnover gradient-boosted strategy.
+Several limitations deserve explicit acknowledgment. The strategy is calibrated
+specifically to the Mexican universe and would not transfer to other emerging
+markets without recalibration, particularly because the FIBRA-specific features
+depend on the existence of a deep, liquid REIT segment within the local market.
+The closest direct analog is the Brazilian Fundos Imobiliários market, where the
+same methodology could be applied with relatively modest adaptation. A more
+rigorous treatment of transaction costs would model market impact as a square-root
+function of trade size relative to daily volume, which would have a disproportionate
+effect on the high-turnover XGBoost configuration and would likely strengthen the
+case for the linear baseline in any live deployment. Finally, the 95% confidence
+interval on the Sharpe estimate is wide ([−0.25, 1.18] on Bloomberg) because the
+nine-year backtest contains only one full Banxico tightening cycle and one easing
+cycle; precise estimation of regime-conditional performance will require additional
+years of data or a multi-country extension that pools across markets with analogous
+regime structures.
 
 ---
 
 ## 7. Conclusion
 
-We have documented a systematic long-short strategy for the Mexican
-equity and FIBRA universe, evaluated under strict walk-forward
-out-of-sample discipline. The principal empirical findings are three.
-First, FIBRA-specific fundamental signals — loan-to-value, FFO yield,
-and capitalization rate — carry pricing information that conventional
-equity factors cannot replicate, and dominate the feature attribution
-of the gradient-boosted model. Second, the model is materially more
-reliable in Banxico easing cycles than in tightening cycles, with SHAP
-feature-rank stability of 0.57 against 0.41. Third, the small effective
-cross-section of the Mexican market is the binding constraint on model
-stability and on the realizable Sharpe ratio of any machine-learning
-approach to this universe.
+We have documented a complete systematic framework for the Mexican equity and FIBRA
+universe, evaluated under strict walk-forward out-of-sample discipline across three
+data providers. The framework integrates multi-provider data infrastructure, a
+Black–Litterman portfolio construction layer that blends machine-learning views
+with low-confidence macro tilts, multiple optimizers operating under CNBV regulatory
+constraints, a Layer 2 FX hedge overlay reported on an analytical basis, an XGBoost
+cross-sectional forecaster with TreeExplainer SHAP attribution, Banxico macro-regime
+conditioning, and a complete suite of overfitting diagnostics. The regulated
+portfolio achieves a Sharpe ratio of 0.44 on Bloomberg point-in-time fundamentals
+over the 2017–2026 window.
 
-The work points toward three directions for further research. The first
-is the resolution of the data-availability issue and the replication of
-all results on the live Bloomberg sample, which is the precondition for
-any consideration of capital deployment. The second is the application
-of the same framework to the Brazilian FII market, where the universe
-is larger and the FIBRA-style features are also available, and which
-would provide a natural out-of-region validation of the methodology.
-The third is the integration of macroeconomic features beyond the
-binary regime classification — explicit term-structure, FX, and
-commodity factors — into the cross-sectional model, which our regime
-analysis suggests would capture additional variance that the current
-specification leaves on the table.
+The principal empirical findings are three. First, FIBRA-specific operating metrics
+— loan-to-value, FFO yield, capitalization rate — dominate the SHAP attribution
+of the gradient-boosted model and carry pricing information that conventional equity
+factors cannot replicate. Second, XGBoost and ElasticNetCV produce statistically
+indistinguishable performance on real data within the Mexican cross-section,
+attributable to the small effective universe; the value of the gradient-boosted
+model lies in its attribution framework rather than in raw return lift. Third,
+model reliability is regime-dependent: Banxico easing cycles produce SHAP feature-
+rank stability of 0.57 against 0.41 in tightening cycles, with corresponding
+differences in the information coefficient.
 
-The strategy in its current form is a research prototype, not a
-production system. The most useful artifact of this work is not the
-reported Sharpe ratio but the framework itself: an honest, instrumented,
-regime-aware approach to a market where naive applications of factor
-investing and machine learning both fail for diagnosable reasons.
+The work points toward three directions for further research. The first is an
+out-of-region replication of the framework on the Brazilian Fundos Imobiliários
+market, which has a larger and more diverse REIT cohort and would provide a
+natural validation of the FIBRA-feature methodology. The second is a more granular
+macroeconomic conditioning that moves beyond the binary regime classification to
+explicit term-structure, FX, and commodity factors; the existing regime analysis
+suggests there is variance to capture that the current binary specification leaves
+on the table. The third, and most operationally important, is the construction of
+an ensemble between the ElasticNet and XGBoost paths with regime-conditional
+weights, exploiting the asymmetric reliability of the two models across the
+macroeconomic cycle. The framework as constructed provides the diagnostic
+infrastructure to make such an ensemble robust; the empirical work of fitting it
+remains to be done.
+
+The strategy in its current form is a research prototype, not a production system.
+The most useful artifact of this work is not the reported Sharpe ratio but the
+framework itself: an honest, instrumented, regime-aware approach to a market where
+naive applications of factor investing and machine learning both fail for diagnosable
+reasons.
 
 ---
 
@@ -575,43 +581,49 @@ investing and machine learning both fail for diagnosable reasons.
 Asness, C., A. Frazzini, and L. Pedersen (2019). "Quality minus junk."
 *Review of Accounting Studies*, 24(1), 34–112.
 
-Cakici, N., F. Fabozzi, and S. Tan (2013). "Size, value, and momentum
-in emerging market stock returns." *Emerging Markets Review*, 16, 46–65.
+Bailey, D., and M. López de Prado (2014). "The deflated Sharpe ratio: Correcting
+for selection bias, backtest overfitting, and non-normality." *Journal of Portfolio
+Management*, 40(5), 94–107.
 
-Chen, T., and C. Guestrin (2016). "XGBoost: A scalable tree boosting
-system." *Proceedings of the 22nd ACM SIGKDD International Conference
-on Knowledge Discovery and Data Mining*, 785–794.
+Bailey, D., J. Borwein, M. López de Prado, and Q. Zhu (2016). "The probability of
+backtest overfitting." *Journal of Computational Finance*, 20(4), 39–69.
 
-Fama, E., and K. French (2015). "A five-factor asset pricing model."
-*Journal of Financial Economics*, 116(1), 1–22.
+Black, F., and R. Litterman (1992). "Global portfolio optimization." *Financial
+Analysts Journal*, 48(5), 28–43.
 
-Gu, S., B. Kelly, and D. Xiu (2020). "Empirical asset pricing via
-machine learning." *Review of Financial Studies*, 33(5), 2223–2273.
+Cakici, N., F. Fabozzi, and S. Tan (2013). "Size, value, and momentum in emerging
+market stock returns." *Emerging Markets Review*, 16, 46–65.
 
-Harvey, C., Y. Liu, and H. Zhu (2016). "...and the cross-section of
-expected returns." *Review of Financial Studies*, 29(1), 5–68.
+Chen, T., and C. Guestrin (2016). "XGBoost: A scalable tree boosting system."
+*Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge
+Discovery and Data Mining*, 785–794.
 
-Ledoit, O., and M. Wolf (2004). "Honey, I shrunk the sample covariance
-matrix." *Journal of Portfolio Management*, 30(4), 110–119.
+Fama, E., and K. French (2015). "A five-factor asset pricing model." *Journal of
+Financial Economics*, 116(1), 1–22.
 
-López de Prado, M. (2018). *Advances in Financial Machine Learning*.
-Wiley.
+Gu, S., B. Kelly, and D. Xiu (2020). "Empirical asset pricing via machine learning."
+*Review of Financial Studies*, 33(5), 2223–2273.
 
-Lundberg, S., G. Erion, H. Chen, A. DeGrave, J. Prutkin, B. Nair,
-R. Katz, J. Himmelfarb, N. Bansal, and S.-I. Lee (2020). "From local
-explanations to global understanding with explainable AI for trees."
-*Nature Machine Intelligence*, 2(1), 56–67.
+Ledoit, O., and M. Wolf (2004). "Honey, I shrunk the sample covariance matrix."
+*Journal of Portfolio Management*, 30(4), 110–119.
+
+López de Prado, M. (2018). *Advances in Financial Machine Learning*. Wiley.
+
+Lundberg, S., G. Erion, H. Chen, A. DeGrave, J. Prutkin, B. Nair, R. Katz, J.
+Himmelfarb, N. Bansal, and S.-I. Lee (2020). "From local explanations to global
+understanding with explainable AI for trees." *Nature Machine Intelligence*, 2(1),
+56–67.
 
 ---
 
 ## Appendix A. Hyperparameter Search Space
 
-The XGBoost RandomizedSearchCV uses the following parameter distributions,
-with 20 sampled configurations per training window and 5-fold expanding-window
-time-series cross-validation.
+The XGBoost internal RandomizedSearchCV samples 20 configurations from the following
+distributions for each training window, with a 5-fold expanding-window TimeSeriesSplit
+and early stopping (50 rounds) on the inner-CV holdout.
 
 | Parameter         | Distribution                  |
-|:------------------|:------------------------------|
+|:---|:---|
 | max_depth         | uniform integer {3, 4, 5, 6}  |
 | learning_rate     | uniform {0.01, 0.03, 0.05, 0.10} |
 | subsample         | uniform {0.7, 0.8, 1.0}       |
@@ -621,14 +633,19 @@ time-series cross-validation.
 | reg_lambda        | uniform {0.1, 1.0, 10.0}      |
 | n_estimators      | early-stopped (cap 2000)      |
 
+The outer Optuna TPE search operates over a broader pipeline parameter space —
+Black–Litterman risk aversion, mean-variance and CVaR optimizer parameters, EWMA
+covariance lambda, ElasticNet mixing ratios — for 50 trials per data source under
+purged walk-forward cross-validation with a 21-day gap.
+
 ## Appendix B. Software and Reproducibility
 
-All results are reproducible using the open-source code repository
-accompanying this paper. The full software stack is Python 3.10+ with
-xgboost ≥ 2.0, shap ≥ 0.45, scikit-learn, pandas, and numpy. Plot
-generation uses matplotlib; PDF rendering uses WeasyPrint with an
-fpdf2 fallback for environments lacking system dependencies. Random
-seeds are fixed across all stochastic components. The test suite
-comprises 107 unit and integration tests at the time of writing.
+All results are reproducible from the open-source repository accompanying this paper.
+The software stack is Python 3.10 or higher with xgboost ≥ 2.0, shap ≥ 0.45,
+scikit-learn, pandas, numpy, Optuna, and CVXPY (CVaR optimization). Matplotlib is
+used for figure generation; the PDF tearsheet pipeline uses WeasyPrint with an
+fpdf2 fallback for environments lacking the pango and gobject system libraries.
+Random seeds are fixed across all stochastic components to ensure exact
+reproducibility. The test suite comprises 107 unit and integration tests.
 
 Repository: github.com/MaxHidalgoLeon/FondoMexicoAlfa

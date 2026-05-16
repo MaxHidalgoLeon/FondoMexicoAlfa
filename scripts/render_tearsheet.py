@@ -187,7 +187,6 @@ body {
 }
 .page {
   page-break-after: always;
-  min-height: 180mm;
   padding: 4mm 0;
 }
 .page:last-child { page-break-after: auto; }
@@ -297,6 +296,34 @@ tr:nth-child(odd)  td { background: #FFFFFF; }
 }
 .method-list li strong { color: #1B2B4B; }
 
+/* Strategy overview (cover) */
+.cover-overview {
+  margin-top: 5mm;
+  display: flex;
+  gap: 8mm;
+}
+.cover-overview-col { flex: 1; }
+.cover-overview h3 {
+  color: #1B2B4B;
+  font-size: 8.5pt;
+  font-weight: 700;
+  margin-bottom: 2mm;
+  padding-bottom: 1mm;
+  border-bottom: 1px solid #D1D5DB;
+}
+.cover-overview dl { font-size: 7.5pt; }
+.cover-overview dt {
+  display: inline;
+  font-weight: 700;
+  color: #1B2B4B;
+}
+.cover-overview dd {
+  display: inline;
+  color: #6B7280;
+  margin-left: 2px;
+}
+.cover-overview dd::after { content: ""; display: block; margin-bottom: 1.5mm; }
+
 /* Disclaimer */
 .disclaimer {
   margin-top: 4mm;
@@ -347,6 +374,31 @@ def _page_cover(stats: dict) -> str:
     Monthly rebalancing · 10 bp transaction cost · Banxico regime conditioning
   </p>
   <p class="cover-date">Report date: {date.today().isoformat()}</p>
+
+  <div class="cover-overview">
+    <div class="cover-overview-col">
+      <h3>Strategy</h3>
+      <dl>
+        <dt>Universe:</dt><dd>~26 Mexican equities + FIBRAs listed on BMV</dd>
+        <dt>Signal:</dt><dd>XGBoost cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)</dd>
+        <dt>Baseline:</dt><dd>ElasticNetCV — interchangeable via config flag</dd>
+        <dt>Optimizer:</dt><dd>Mean-variance (SLSQP) with market-impact penalty</dd>
+        <dt>Rebalance:</dt><dd>Monthly, end-of-month, walk-forward OOS</dd>
+        <dt>Validation:</dt><dd>108 rebalances, 2017–2026</dd>
+      </dl>
+    </div>
+    <div class="cover-overview-col">
+      <h3>Risk Controls &amp; Attribution</h3>
+      <dl>
+        <dt>Transaction costs:</dt><dd>10 bp per side applied each rebalance</dd>
+        <dt>Regime conditioning:</dt><dd>Banxico rate (TIGHTENING / EASING / NEUTRAL) × IPC vol stress</dd>
+        <dt>Feature attribution:</dt><dd>Per-rebalance SHAP values via TreeExplainer</dd>
+        <dt>Safety valve:</dt><dd>Revert to ElasticNet if top-5 SHAP stability &lt; 0.30 for 3 periods</dd>
+        <dt>Data:</dt><dd>Bloomberg (production) · mock data (research)</dd>
+        <dt>Framework:</dt><dd>CNBV position limits, LFI structure</dd>
+      </dl>
+    </div>
+  </div>
 </div>
 """
 
@@ -798,8 +850,59 @@ def _pdf_page_cover(pdf, step1_rows: list[dict]) -> None:
              "  *  Monthly rebalancing  *  10 bp transaction cost",
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "", 7)
-    pdf.cell(0, 5, f"Report date: {date.today().isoformat()}",
+    pdf.cell(0, 4, f"Report date: {date.today().isoformat()}",
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    # Strategy Overview — two-column DL-style block
+    pdf.ln(4)
+    pdf.set_draw_color(*_PDF_RULE)
+    pdf.set_line_width(0.3)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + pdf.epw, pdf.get_y())
+    pdf.ln(3)
+
+    overview_y = pdf.get_y()
+    half_ov = pdf.epw / 2 - 4
+    row_h = 5.0
+
+    left_items = [
+        ("Universe",    "~26 Mexican equities + FIBRAs listed on BMV"),
+        ("Signal",      "XGBoost cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)"),
+        ("Baseline",    "ElasticNetCV - interchangeable via config flag"),
+        ("Optimizer",   "Mean-variance (SLSQP) with market-impact penalty"),
+        ("Rebalance",   "Monthly, end-of-month, walk-forward OOS"),
+        ("Validation",  "108 rebalances, 2017-2026"),
+    ]
+    right_items = [
+        ("Costs",       "10 bp per side applied each rebalance"),
+        ("Regimes",     "Banxico rate (TIGHTENING/EASING/NEUTRAL) x IPC vol stress"),
+        ("Attribution", "Per-rebalance SHAP values via TreeExplainer"),
+        ("Safety valve","Revert to ElasticNet if top-5 SHAP stability < 0.30 for 3 periods"),
+        ("Data",        "Bloomberg (production) / mock data (research)"),
+        ("Framework",   "CNBV position limits, LFI structure"),
+    ]
+
+    def _render_overview_col(items, x_start, col_w, title):
+        pdf.set_xy(x_start, overview_y)
+        pdf.set_font("Helvetica", "B", 8)
+        _pdf_set_text(pdf)
+        pdf.cell(col_w, 5, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_xy(x_start, overview_y + 6)
+        pdf.set_draw_color(*_PDF_RULE)
+        pdf.line(x_start, overview_y + 5.5, x_start + col_w, overview_y + 5.5)
+        for label, desc in items:
+            pdf.set_xy(x_start, pdf.get_y())
+            pdf.set_font("Helvetica", "B", 7)
+            _pdf_set_text(pdf)
+            lbl_w = 28
+            pdf.cell(lbl_w, row_h, label + ":", new_x=XPos.RIGHT, new_y=YPos.TOP)
+            pdf.set_font("Helvetica", "", 7)
+            _pdf_set_muted(pdf)
+            max_chars = int((col_w - lbl_w) / 1.8)
+            pdf.cell(col_w - lbl_w, row_h, _ascii(desc[:max_chars]),
+                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    _render_overview_col(left_items,  pdf.l_margin,               half_ov, "Strategy")
+    _render_overview_col(right_items, pdf.l_margin + half_ov + 8, half_ov, "Risk Controls & Attribution")
 
 
 def _pdf_page_model_comparison(pdf, step1_rows: list[dict]) -> None:
