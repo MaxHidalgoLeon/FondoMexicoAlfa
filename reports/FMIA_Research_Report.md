@@ -5,7 +5,7 @@
 *Multi-provider data infrastructure, Black–Litterman portfolio construction,
 machine-learning attribution, and macro-regime conditioning*
 
-**Max Hidalgo León**
+**Maximiliano Hidalgo León**
 Tecnológico de Monterrey · Campus Querétaro
 May 2026
 
