@@ -1,6 +1,9 @@
 # FondoMéxicoAlfa
 
-## A Systematic Long-Short Strategy for Mexican Equities and FIBRAs
+## A Systematic Equity Strategy for Mexican Equities and FIBRAs
+
+*Primary results for the CNBV-regulated long-only portfolio;
+long-short and 130/30 variants reported on an analytical basis in Section 5.5*
 
 *Multi-provider data infrastructure, Black–Litterman portfolio construction,
 machine-learning attribution, and macro-regime conditioning*
@@ -13,9 +16,10 @@ May 2026
 
 ## Abstract
 
-We document the construction and out-of-sample evaluation of a systematic long-short
+We document the construction and out-of-sample evaluation of a systematic equity
 strategy for the joint universe of Mexican publicly traded equities and FIBRAs (the
-Mexican variant of REITs). The strategy is built on a multi-provider data infrastructure
+Mexican variant of REITs), with primary results reported for the CNBV-regulated
+long-only portfolio. The strategy is built on a multi-provider data infrastructure
 (Bloomberg, Refinitiv, Yahoo Finance), a Black–Litterman portfolio construction layer
 that combines machine-learning views with low-confidence macro tilts, mean-variance
 and CVaR optimizers operating under CNBV regulatory constraints, a Layer 2 FX hedge
@@ -400,6 +404,8 @@ to focus on the Banxico rate-regime dimension.
 | TIGHTENING  | 64 | +0.125 | 0.71 | 0.41 | −0.000136 |
 | EASING      | 33 | +0.130 | 0.94 | 0.57 | +0.000110 |
 | NEUTRAL     | 11 | +0.136 | —    | 0.39 | −0.000934 |
+
+*Momentum SHAP is the signed (not absolute) mean SHAP contribution of momentum_63 in each regime. Regime metrics computed on walk-forward OOS validation sample; see Table 1 for Bloomberg regulated NAV headline figures.*
 
 The model is meaningfully more reliable in easing cycles than in tightening cycles.
 SHAP stability is 0.57 in EASING versus 0.41 in TIGHTENING — neither value reaches

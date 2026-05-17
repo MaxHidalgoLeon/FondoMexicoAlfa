@@ -27,6 +27,30 @@ ROOT    = Path(__file__).resolve().parent.parent
 REPORTS = ROOT / "reports"
 FIGURES = ROOT / "reports" / "figures"
 
+# ---------------------------------------------------------------------------
+# Bloomberg OOS source-of-truth metrics
+# These are the authoritative headline KPIs from the Bloomberg point-in-time
+# OOS backtest (ElasticNet regulated NAV, 2017–2026).
+# Set any value to None to show an explicit placeholder at render time.
+# ---------------------------------------------------------------------------
+BLOOMBERG_OOS: dict[str, str | None] = {
+    "sharpe":   "0.44",
+    "return":   "8.34%",
+    "vol":      "13.59%",
+    "max_dd":   "−35.5%",
+    "cvar":     "−1.95%",
+    "turnover": "0.57%",
+}
+_BBG_NOTE      = "Headline metrics correspond to Bloomberg point-in-time OOS, regulated NAV, 2017–2026."
+_BBG_AVAILABLE = all(v is not None for v in BLOOMBERG_OOS.values())
+_PLACEHOLDER   = "N/A (Bloomberg)"
+
+
+def _bbg(key: str) -> str:
+    """Return Bloomberg OOS metric or an explicit placeholder if unavailable."""
+    val = BLOOMBERG_OOS.get(key)
+    return val if val is not None else _PLACEHOLDER
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -173,7 +197,7 @@ CSS = """
 @page {
   size: A4 landscape;
   margin: 14mm;
-  @bottom-left   { content: "FondoMexicoAlfa — Confidential Research"; font-size: 7pt; color: #6B7280; font-family: Arial, sans-serif; }
+  @bottom-left   { content: "FondoMexicoAlfa — Confidential Research  ·  Headline metrics: Bloomberg point-in-time OOS, regulated NAV, 2017–2026"; font-size: 6.5pt; color: #6B7280; font-family: Arial, sans-serif; }
   @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 7pt; color: #6B7280; font-family: Arial, sans-serif; }
   @bottom-right  { content: "May 2026"; font-size: 7pt; color: #6B7280; font-family: Arial, sans-serif; }
 }
@@ -339,13 +363,27 @@ tr:nth-child(odd)  td { background: #FFFFFF; }
 
 def _page_cover(stats: dict) -> str:
     """Return the HTML string for Page 1 (cover with headline stat strip)."""
-    sharpe = stats.get("sharpe", "—")
-    icir   = stats.get("icir",   "—")
-    mdd    = stats.get("mdd",    "—")
+    bbg_sharpe   = _bbg("sharpe")
+    bbg_return   = _bbg("return")
+    bbg_vol      = _bbg("vol")
+    bbg_mdd      = _bbg("max_dd")
+    bbg_cvar     = _bbg("cvar")
+    bbg_turnover = _bbg("turnover")
 
-    sharpe_html = f'<span class="pos">{sharpe}</span>' if sharpe != "—" else sharpe
-    icir_html   = f'<span class="pos">{icir}</span>'   if icir   != "—" else icir
-    mdd_html    = f'<span class="neg">{mdd}</span>'    if mdd    != "—" else mdd
+    def _ph(val):
+        return f'<span class="muted" style="font-size:14pt;">{val}</span>' if val == _PLACEHOLDER else val
+
+    def _pos(val):
+        return f'<span class="pos">{_ph(val)}</span>' if val != _PLACEHOLDER else _ph(val)
+
+    def _neg(val):
+        return f'<span class="neg">{_ph(val)}</span>' if val != _PLACEHOLDER else _ph(val)
+
+    bbg_label = (
+        '<span style="font-size:6.5pt;color:#6B7280;">Bloomberg OOS · ElasticNet regulated · 2017–2026</span>'
+        if _BBG_AVAILABLE else
+        '<span style="font-size:6.5pt;color:#DC2626;">Bloomberg data unavailable — values are placeholders</span>'
+    )
 
     return f"""
 <div class="page">
@@ -356,18 +394,31 @@ def _page_cover(stats: dict) -> str:
 
   <div class="stat-strip">
     <div class="stat-box">
-      <div class="big pos">{sharpe_html}</div>
-      <div class="label">XGBoost Sharpe Ratio</div>
+      <div class="big">{_pos(bbg_sharpe)}</div>
+      <div class="label">Sharpe Ratio</div>
     </div>
     <div class="stat-box">
-      <div class="big pos">{icir_html}</div>
-      <div class="label">XGBoost ICIR (Walk-forward)</div>
+      <div class="big">{_pos(bbg_return)}</div>
+      <div class="label">Annualized Return</div>
     </div>
     <div class="stat-box">
-      <div class="big neg">{mdd_html}</div>
-      <div class="label">Max Drawdown (XGBoost)</div>
+      <div class="big muted">{_ph(bbg_vol)}</div>
+      <div class="label">Annualized Vol</div>
+    </div>
+    <div class="stat-box">
+      <div class="big">{_neg(bbg_mdd)}</div>
+      <div class="label">Max Drawdown</div>
+    </div>
+    <div class="stat-box">
+      <div class="big">{_neg(bbg_cvar)}</div>
+      <div class="label">CVaR 95% (daily)</div>
+    </div>
+    <div class="stat-box">
+      <div class="big muted">{_ph(bbg_turnover)}</div>
+      <div class="label">Avg Turnover / Rebalance</div>
     </div>
   </div>
+  <p style="font-size:6.5pt;margin-top:1mm;margin-bottom:2mm;">{bbg_label}</p>
 
   <p class="tagline">
     Walk-forward validated · Bloomberg data · Mexican equities &amp; FIBRAs (BMV) ·
@@ -423,7 +474,7 @@ def _page_model_comparison(step1_rows: list[dict]) -> str:
 
     return f"""
 <div class="page">
-  <div class="section-header"><h2>01 · Model Performance — XGBoost vs ElasticNetCV</h2></div>
+  <div class="section-header"><h2>01 · Model Performance — XGBoost vs ElasticNetCV (mock data — pipeline validation only)</h2></div>
 
   <table>
     <thead>
@@ -532,7 +583,7 @@ def _page_regime(regime_df: pd.DataFrame) -> str:
 
     return f"""
 <div class="page">
-  <div class="section-header"><h2>03 · Performance by Macro Regime</h2></div>
+  <div class="section-header"><h2>03 · Performance by Macro Regime (mock data — pipeline validation only)</h2></div>
 
   <h3>Regime Performance Table (Banxico rate &times; IPC vol stress)</h3>
   <table>
@@ -564,13 +615,21 @@ def _page_regime(regime_df: pd.DataFrame) -> str:
 def _page_risk_methodology(step1_rows: list[dict]) -> str:
     """Return the HTML string for Page 5 (risk metrics, factor exposures, methodology summary)."""
     lookup = {r["metric"]: r.get("xgboost", "—") for r in step1_rows}
-    sharpe  = lookup.get("Sharpe", "—")
-    mdd     = lookup.get("Max drawdown", "—")
-    cvar    = lookup.get("CVaR 95% (daily)", "—")
-    vol     = lookup.get("Annualized vol", "—")
-    to      = lookup.get("Turnover (per rebalance)", "—")
-    ann_ret = lookup.get("Annualized return", "—")
-    sortino = lookup.get("Sortino", "—")
+    xgb_sharpe  = lookup.get("Sharpe", "—")
+    xgb_mdd     = lookup.get("Max drawdown", "—")
+    xgb_cvar    = lookup.get("CVaR 95% (daily)", "—")
+    xgb_vol     = lookup.get("Annualized vol", "—")
+    xgb_to      = lookup.get("Turnover (per rebalance)", "—")
+    xgb_ret     = lookup.get("Annualized return", "—")
+    xgb_sortino = lookup.get("Sortino", "—")
+
+    bbg_note_html = (
+        f'<p style="font-size:6.5pt;color:#6B7280;margin-top:1mm;">'
+        f'&#9733; {_BBG_NOTE}</p>'
+        if _BBG_AVAILABLE else
+        '<p style="font-size:6.5pt;color:#DC2626;margin-top:1mm;">'
+        '&#9733; Bloomberg data unavailable — ElasticNet values are placeholders.</p>'
+    )
 
     return f"""
 <div class="page">
@@ -578,17 +637,30 @@ def _page_risk_methodology(step1_rows: list[dict]) -> str:
 
   <div class="two-col">
     <div>
-      <h3>XGBoost Risk Metrics (Walk-forward OOS)</h3>
+      <h3>ElasticNet Regulated &mdash; Bloomberg OOS <span style="font-weight:400;color:#6B7280;">(source of truth)</span></h3>
       <table>
         <thead><tr><th>Metric</th><th>Value</th></tr></thead>
         <tbody>
-          <tr><td>Annualized return</td><td>{ann_ret}</td></tr>
-          <tr><td>Annualized vol</td><td>{vol}</td></tr>
-          <tr><td>Sharpe ratio</td><td>{sharpe}</td></tr>
-          <tr><td>Sortino ratio</td><td>{sortino}</td></tr>
-          <tr><td>Max drawdown</td><td><span class="neg">{mdd}</span></td></tr>
-          <tr><td>CVaR 95% (daily)</td><td>{cvar}</td></tr>
-          <tr><td>Avg turnover / rebalance</td><td>{to}</td></tr>
+          <tr><td>Annualized return</td><td><span class="pos">{_bbg("return")}</span></td></tr>
+          <tr><td>Annualized vol</td><td>{_bbg("vol")}</td></tr>
+          <tr><td>Sharpe ratio</td><td><span class="pos">{_bbg("sharpe")}</span></td></tr>
+          <tr><td>Max drawdown</td><td><span class="neg">{_bbg("max_dd")}</span></td></tr>
+          <tr><td>CVaR 95% (daily)</td><td><span class="neg">{_bbg("cvar")}</span></td></tr>
+          <tr><td>Avg turnover / rebalance</td><td>{_bbg("turnover")}</td></tr>
+        </tbody>
+      </table>
+      {bbg_note_html}
+      <h3 style="margin-top:3mm;">XGBoost Risk Metrics (Walk-forward OOS — mock data)</h3>
+      <table>
+        <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>Annualized return</td><td>{xgb_ret}</td></tr>
+          <tr><td>Annualized vol</td><td>{xgb_vol}</td></tr>
+          <tr><td>Sharpe ratio</td><td>{xgb_sharpe}</td></tr>
+          <tr><td>Sortino ratio</td><td>{xgb_sortino}</td></tr>
+          <tr><td>Max drawdown</td><td><span class="neg">{xgb_mdd}</span></td></tr>
+          <tr><td>CVaR 95% (daily)</td><td>{xgb_cvar}</td></tr>
+          <tr><td>Avg turnover / rebalance</td><td>{xgb_to}</td></tr>
         </tbody>
       </table>
 
@@ -814,35 +886,46 @@ def _pdf_page_cover(pdf, step1_rows: list[dict]) -> None:
     pdf.set_y(pdf.get_y() + (header_h - (pdf.get_y() - pdf.t_margin - 0)) + 6)
     pdf.set_y(pdf.t_margin + header_h + 5)
 
-    # Stat strip — three boxes
-    labels = [
-        ("XGBoost Sharpe", stats.get("sharpe", "-"), _PDF_GREEN),
-        ("XGBoost ICIR",   stats.get("icir",   "-"), _PDF_GREEN),
-        ("Max Drawdown",   stats.get("mdd",    "-"), _PDF_RED),
+    # Stat strip — six Bloomberg OOS boxes (ElasticNet regulated)
+    bbg_labels = [
+        ("Sharpe Ratio",            _bbg("sharpe"),   _PDF_GREEN),
+        ("Annualized Return",       _bbg("return"),   _PDF_GREEN),
+        ("Annualized Vol",          _bbg("vol"),      _PDF_MUTED),
+        ("Max Drawdown",            _bbg("max_dd"),   _PDF_RED),
+        ("CVaR 95% (daily)",        _bbg("cvar"),     _PDF_RED),
+        ("Avg Turnover/Rebalance",  _bbg("turnover"), _PDF_MUTED),
     ]
-    col_w = pdf.epw / 3
-    box_h = 22
+    col_w = pdf.epw / 6
+    box_h = 20
     y_stat = pdf.get_y()
 
-    for i, (label, val, color) in enumerate(labels):
+    for i, (label, val, color) in enumerate(bbg_labels):
         bx = pdf.l_margin + i * col_w
-        # Box fill
         pdf.set_fill_color(*_PDF_WHITE)
         pdf.set_draw_color(*_PDF_RULE)
         pdf.set_line_width(0.3)
-        pdf.rect(bx, y_stat, col_w - 2, box_h, style="FD")
-        # Value
-        pdf.set_xy(bx + 2, y_stat + 3)
-        pdf.set_font("Helvetica", "B", 18)
+        pdf.rect(bx, y_stat, col_w - 1, box_h, style="FD")
+        pdf.set_xy(bx + 1, y_stat + 3)
+        pdf.set_font("Helvetica", "B", 14)
         pdf.set_text_color(*color)
-        pdf.cell(col_w - 6, 10, str(val), align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
-        # Label
-        pdf.set_xy(bx + 2, y_stat + 14)
-        pdf.set_font("Helvetica", "", 7)
+        pdf.cell(col_w - 4, 9, _ascii(str(val)), align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.set_xy(bx + 1, y_stat + 13)
+        pdf.set_font("Helvetica", "", 6)
         _pdf_set_muted(pdf)
-        pdf.cell(col_w - 6, 4, label, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.cell(col_w - 4, 4, label, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
 
-    pdf.set_xy(pdf.l_margin, y_stat + box_h + 5)
+    # Bloomberg source note below strip
+    pdf.set_xy(pdf.l_margin, y_stat + box_h + 2)
+    pdf.set_font("Helvetica", "I", 6.5)
+    if _BBG_AVAILABLE:
+        pdf.set_text_color(*_PDF_MUTED)
+        pdf.cell(0, 4, _ascii(_BBG_NOTE))
+    else:
+        pdf.set_text_color(*_PDF_RED)
+        pdf.cell(0, 4, "Bloomberg data unavailable - headline values are placeholders.")
+    pdf.ln(5)
+
+    pdf.set_xy(pdf.l_margin, y_stat + box_h + 5 + 4)
     pdf.set_font("Helvetica", "I", 7.5)
     _pdf_set_muted(pdf)
     pdf.cell(0, 5,
@@ -909,7 +992,7 @@ def _pdf_page_model_comparison(pdf, step1_rows: list[dict]) -> None:
     """Render Page 2 — XGBoost vs ElasticNet comparison table and framed figures."""
     from fpdf.enums import XPos, YPos
     pdf.add_page()
-    _pdf_section_header(pdf, "01  MODEL PERFORMANCE - XGBoost vs ElasticNetCV")
+    _pdf_section_header(pdf, "01  MODEL PERFORMANCE - XGBoost vs ElasticNetCV (mock data - pipeline validation only)")
 
     # Table header
     col_widths = [72, 38, 38, 40]
@@ -1027,7 +1110,7 @@ def _pdf_page_regime(pdf, regime_df: pd.DataFrame) -> None:
     """Render Page 4 — macro regime performance table and framed equity curves."""
     from fpdf.enums import XPos, YPos
     pdf.add_page()
-    _pdf_section_header(pdf, "03  PERFORMANCE BY MACRO REGIME")
+    _pdf_section_header(pdf, "03  PERFORMANCE BY MACRO REGIME (mock data - pipeline validation only)")
 
     if not regime_df.empty:
         cols4 = [("Rate regime", 48), ("Stress", 28), ("N", 14),
@@ -1080,6 +1163,16 @@ def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
     _pdf_section_header(pdf, "04  RISK PROFILE & METHODOLOGY")
 
     lookup = {r["metric"]: r.get("xgboost", "-") for r in step1_rows}
+    # Bloomberg OOS (ElasticNet regulated) — source of truth
+    bbg_risk_items = [
+        ("Annualized return",      _bbg("return")),
+        ("Annualized vol",         _bbg("vol")),
+        ("Sharpe ratio",           _bbg("sharpe")),
+        ("Max drawdown",           _bbg("max_dd")),
+        ("CVaR 95% (daily)",       _bbg("cvar")),
+        ("Avg turnover/rebalance", _bbg("turnover")),
+    ]
+    # XGBoost mock data (secondary reference)
     risk_items = [
         ("Annualized return",      lookup.get("Annualized return",        "-")),
         ("Annualized vol",         lookup.get("Annualized vol",           "-")),
@@ -1106,16 +1199,53 @@ def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
     half5 = pdf.epw / 2 - 3
     y5 = pdf.get_y()
 
-    # Left: risk table
+    # Left: Bloomberg OOS (source of truth) + XGBoost mock (secondary)
+    m_w, v_w = half5 * 0.62, half5 * 0.38
+
     pdf.set_font("Helvetica", "B", 8)
     _pdf_set_text(pdf)
-    pdf.cell(half5, 5, "XGBoost Risk Metrics (Walk-forward OOS)",
+    pdf.cell(half5, 5, "ElasticNet Regulated - Bloomberg OOS (source of truth)",
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_fill_color(*_PDF_NAVY)
     _pdf_set_white(pdf)
     pdf.set_font("Helvetica", "B", 7)
-    m_w, v_w = half5 * 0.58, half5 * 0.42
+    pdf.cell(m_w, 5, "Metric", fill=True)
+    pdf.cell(v_w, 5, "Value",  fill=True, align="R")
+    pdf.ln()
+
+    pdf.set_font("Helvetica", "", 7)
+    for i, (label, val) in enumerate(bbg_risk_items):
+        bg = _PDF_OFFWHITE if i % 2 == 0 else _PDF_WHITE
+        pdf.set_fill_color(*bg)
+        _pdf_set_text(pdf)
+        pdf.cell(m_w, 4.5, label, fill=True)
+        if val == _PLACEHOLDER:
+            pdf.set_text_color(*_PDF_RED)
+        else:
+            _pdf_set_muted(pdf)
+        pdf.cell(v_w, 4.5, _ascii(str(val)), fill=True, align="R")
+        pdf.ln()
+
+    # Bloomberg note
+    pdf.set_font("Helvetica", "I", 6)
+    if _BBG_AVAILABLE:
+        pdf.set_text_color(*_PDF_MUTED)
+        pdf.cell(half5, 4, _ascii(_BBG_NOTE)[:95], new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    else:
+        pdf.set_text_color(*_PDF_RED)
+        pdf.cell(half5, 4, "Bloomberg data unavailable - values above are placeholders.",
+                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 8)
+    _pdf_set_text(pdf)
+    pdf.cell(half5, 5, "XGBoost Risk Metrics (Walk-forward OOS - mock data)",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_fill_color(*_PDF_NAVY)
+    _pdf_set_white(pdf)
+    pdf.set_font("Helvetica", "B", 7)
     pdf.cell(m_w, 5, "Metric", fill=True)
     pdf.cell(v_w, 5, "Value",  fill=True, align="R")
     pdf.ln()
@@ -1125,7 +1255,7 @@ def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
         bg = _PDF_OFFWHITE if i % 2 == 0 else _PDF_WHITE
         pdf.set_fill_color(*bg)
         _pdf_set_text(pdf)
-        pdf.cell(m_w, 4.5, label,         fill=True)
+        pdf.cell(m_w, 4.5, label, fill=True)
         _pdf_set_muted(pdf)
         pdf.cell(v_w, 4.5, _ascii(str(val)), fill=True, align="R")
         pdf.ln()
@@ -1180,15 +1310,20 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
             pass
 
         def footer(self):
-            """Render three-column footer with RULE separator line."""
-            self.set_y(-12)
-            # RULE line above footer
+            """Render footer with RULE separator line and Bloomberg note."""
+            self.set_y(-16)
             self.set_draw_color(*_PDF_RULE)
             self.set_line_width(0.3)
             self.line(self.l_margin, self.get_y() - 1,
                       self.w - self.r_margin, self.get_y() - 1)
-            self.set_font("Helvetica", "", 7)
+            # Bloomberg note on first footer line
+            self.set_font("Helvetica", "I", 6)
             _pdf_set_muted(self)
+            self.set_x(self.l_margin)
+            self.cell(0, 4, _ascii(_BBG_NOTE), align="C",
+                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            # Standard footer line
+            self.set_font("Helvetica", "", 7)
             col_w = self.epw / 3
             self.set_x(self.l_margin)
             self.cell(col_w, 4, "FondoMexicoAlfa - Confidential Research", align="L")

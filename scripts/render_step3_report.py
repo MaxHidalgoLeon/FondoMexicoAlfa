@@ -132,7 +132,8 @@ def _period_returns(
     return pd.Series(period_rets)
 
 
-def _compute_metrics(period_rets: pd.Series, ic_series: pd.Series, turnover_series: pd.Series = None) -> dict:
+def _compute_metrics(period_rets: pd.Series, ic_series: pd.Series, turnover_series: pd.Series = None,
+                     n_dates: int | None = None) -> dict:
     """Compute annualised performance metrics from monthly-frequency period returns."""
     if len(period_rets) < 2:
         return {k: float("nan") for k in [
@@ -172,7 +173,7 @@ def _compute_metrics(period_rets: pd.Series, ic_series: pd.Series, turnover_seri
         mean_to = float(rebal_turnover.dropna().mean())
 
     return {
-        "n_rebalances": int(len(period_rets)),
+        "n_rebalances": int(n_dates) if n_dates is not None else int(len(period_rets)),
         "ic_mean":      ic_mean,
         "ic_std":       ic_std,
         "icir":         icir,
@@ -210,7 +211,7 @@ def build_performance_table(
 
             period_rets = _period_returns(daily_returns, cell_dates)
             cell_ic     = ic_series.reindex(cell_dates)
-            metrics     = _compute_metrics(period_rets, cell_ic, turnover_series)
+            metrics     = _compute_metrics(period_rets, cell_ic, turnover_series, n_dates=len(cell_dates))
             metrics["rate_regime"]   = rr
             metrics["stress_regime"] = sr
             rows.append(metrics)
@@ -223,7 +224,7 @@ def build_performance_table(
             continue
         period_rets = _period_returns(daily_returns, cell_dates)
         cell_ic     = ic_series.reindex(cell_dates)
-        metrics     = _compute_metrics(period_rets, cell_ic, turnover_series)
+        metrics     = _compute_metrics(period_rets, cell_ic, turnover_series, n_dates=len(cell_dates))
         metrics["rate_regime"]   = rr
         metrics["stress_regime"] = "ALL"
         rows.append(metrics)
@@ -367,8 +368,9 @@ def _plot_ic_boxplot(
                    color=color, alpha=0.5, s=18, zorder=3)
 
     ax.axhline(0.0, color="black", linewidth=0.8, linestyle="--", alpha=0.5)
+    regime_n = {rr: int((rt["rate_regime"] == rr).sum()) for rr in order}
     ax.set_xticks([1, 2, 3])
-    ax.set_xticklabels([f"{rr}\n(n={len(d)})" for rr, d in zip(order, data)])
+    ax.set_xticklabels([f"{rr}\n(n={regime_n[rr]})" for rr in order])
     ax.set_ylabel("Spearman IC (per rebalance)")
     ax.set_title("Forecast IC by Banxico rate regime")
     ax.grid(True, axis="y", linestyle=":", alpha=0.4)
