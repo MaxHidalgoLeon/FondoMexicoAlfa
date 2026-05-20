@@ -28,7 +28,7 @@ OUTPUT_MD = REPORTS / "FMIA_Research_Report.md"
 OUTPUT_PDF = REPORTS / "FMIA_Research_Report.pdf"
 
 _TABLE1_SOURCES = ("Bloomberg", "Yahoo", "Refinitiv")
-_TABLE1_MODELS = (("ElasticNetCV", "elasticnet"), ("XGBoost", "lightgbm"))
+_TABLE1_MODELS = (("ElasticNetCV", "elasticnet"), ("LightGBM", "lightgbm"))
 
 REPORT_TITLE = "FondoMéxicoAlfa"
 REPORT_SUBTITLE = "A Systematic Equity Strategy for Mexican Equities and FIBRAs"
@@ -42,11 +42,11 @@ CANONICAL_TABLE1 = """**Table 1. Out-of-sample performance, regulated NAV, Janua
 | Source | Model | Return | Vol | Sharpe | Sortino | Max DD | CVaR 95% | Turnover |
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | Bloomberg | ElasticNetCV | 8.34% | 13.59% | 0.44 | 0.45 | −35.50% | −1.95% | 0.57% |
-| Bloomberg | XGBoost | 8.29% | 13.57% | 0.44 | 0.44 | −35.38% | −1.95% | 6.33% |
+| Bloomberg | LightGBM | 8.29% | 13.57% | 0.44 | 0.44 | −35.38% | −1.95% | 6.33% |
 | Yahoo | ElasticNetCV | 9.98% | 15.86% | 0.47 | 0.48 | −36.58% | −2.26% | 0.04% |
-| Yahoo | XGBoost | 9.89% | 15.81% | 0.47 | 0.48 | −36.58% | −2.25% | 0.44% |
+| Yahoo | LightGBM | 9.89% | 15.81% | 0.47 | 0.48 | −36.58% | −2.25% | 0.44% |
 | Refinitiv | ElasticNetCV | 5.80% | 16.01% | 0.23 | 0.23 | −43.19% | −2.28% | 0.04% |
-| Refinitiv | XGBoost | 5.73% | 15.60% | 0.23 | 0.23 | −42.75% | −2.23% | 0.67% |
+| Refinitiv | LightGBM | 5.73% | 15.60% | 0.23 | 0.23 | −42.75% | −2.23% | 0.67% |
 
 *All figures are walk-forward OOS. Hedge overlay excluded. Bloomberg uses point-in-time fundamentals; Yahoo uses price signals only (no historical fundamentals available).*"""
 
@@ -165,7 +165,7 @@ def _strip_front_matter(md: str) -> str:
     return md
 
 
-def normalize_report_content(text: str, canonical_content: bool = True) -> str:
+def normalize_report_content(text: str, canonical_content: bool = False) -> str:
     """Clean Markdown residue and optionally match the polished reference report."""
     text = _strip_front_matter(text)
     text = text.replace("Maximiliano Hidalgo Léon", REPORT_AUTHOR)
@@ -180,9 +180,6 @@ def normalize_report_content(text: str, canonical_content: bool = True) -> str:
     text = _normalize_broken_spacing(text)
 
     if canonical_content:
-        text = text.replace("LightGBM", "XGBoost").replace("lightgbm", "xgboost")
-        text = text.replace("a XGBoost", "an XGBoost")
-        text = text.replace("xgboost ≥ 4.0", "xgboost ≥ 2.0")
         text = text.replace("158 unit and integration tests", "107 unit and integration tests")
         text = text.replace("The published systematic literature on the country is sparse.", "")
         text = re.sub(
@@ -464,7 +461,7 @@ def build_table(caption: str | None, rows: list[list[str]], styles: dict, availa
     return KeepTogether(block)
 
 
-def parse_markdown_to_story(markdown_text: str, styles: dict, available_width: float, canonical_content: bool = True) -> list:
+def parse_markdown_to_story(markdown_text: str, styles: dict, available_width: float, canonical_content: bool = False) -> list:
     from reportlab.platypus import Paragraph, Spacer
 
     text = normalize_report_content(markdown_text, canonical_content=canonical_content)
@@ -556,7 +553,7 @@ def parse_markdown_to_story(markdown_text: str, styles: dict, available_width: f
     return story
 
 
-def _render_pdf_from_md(md_path: Path, pdf_path: Path, canonical_content: bool = True) -> None:
+def _render_pdf_from_md(md_path: Path, pdf_path: Path, canonical_content: bool = False) -> None:
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.units import cm
@@ -622,7 +619,12 @@ def main() -> int:
     p.add_argument(
         "--no-canonical-content",
         action="store_true",
-        help="Render PDF with markdown values exactly as written, without reference-report normalization.",
+        help="Deprecated: markdown values are now rendered as written by default.",
+    )
+    p.add_argument(
+        "--canonical-content",
+        action="store_true",
+        help="Apply reference-report normalization for the old polished PDF snapshot.",
     )
     args = p.parse_args()
 
@@ -630,7 +632,7 @@ def main() -> int:
         if not args.skip_md:
             _render_markdown(args.source, args.model)
         if args.render_pdf:
-            _render_pdf_from_md(OUTPUT_MD, OUTPUT_PDF, canonical_content=not args.no_canonical_content)
+            _render_pdf_from_md(OUTPUT_MD, OUTPUT_PDF, canonical_content=args.canonical_content)
     except Exception as exc:
         print(f"[research-report] {exc}", file=sys.stderr)
         return 1

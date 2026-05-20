@@ -5,7 +5,7 @@ same rebalance schedule, same Mean-Variance optimizer, same transaction-cost
 model. Only the cross-sectional return predictor changes.
 
 The ElasticNetCV path is the existing baseline (KFold(5) inside ElasticNet's
-own internal CV). The LightGBM path uses `XGBRegressor` tuned with
+own internal CV). The LightGBM path uses `LGBMRegressor` tuned with
 `RandomizedSearchCV` over the spec's grid (`max_depth`, `learning_rate`,
 `subsample`, `colsample_bytree`, `min_child_weight`, `reg_alpha`,
 `reg_lambda`) inside a `TimeSeriesSplit(5)` over the *training window only*,
