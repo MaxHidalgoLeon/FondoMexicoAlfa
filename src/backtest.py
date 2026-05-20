@@ -202,7 +202,7 @@ def run_backtest(
     risk_free_rate: float = 0.02,
     asset_class_constraints: Optional[Dict] = None,
     optimizer: str = "mv",
-    adtv_scores: Optional[pd.Series] = None,
+    adtv_scores: Optional[pd.Series | pd.DataFrame] = None,
     macro: Optional[pd.DataFrame] = None,
     issuer_consolidated_limits: Optional[Dict[str, list]] = None,
     max_position_overrides: Optional[Dict[str, float]] = None,
@@ -233,7 +233,12 @@ def run_backtest(
                           results, extra keys (*_cvar) hold CVaR results.
 
     adtv_scores : per-ticker ADTV liquidity scores (0–1) forwarded to the
-                  optimizer as market-impact weights.
+                  optimizer as market-impact weights. Accepts either:
+                    - pd.Series: static end-of-panel scores (legacy / mock data).
+                    - pd.DataFrame (date × ticker): PIT panel — the loop selects
+                      the row whose index is the most recent ≤ rebalance date.
+                  The DataFrame form prevents the "score computed from future
+                  data used to weight past rebalances" leakage.
     macro       : macro DataFrame used by detect_macro_regime() at each
                   rebalance date to override static asset-class constraints.
     """
@@ -364,6 +369,14 @@ def run_backtest(
                     }
                 )
 
+        # PIT slice of ADTV: if a DataFrame (date × ticker) was supplied,
+        # pick the most-recent row with index ≤ current rebalance date.
+        if isinstance(adtv_scores, pd.DataFrame):
+            _adtv_slice = adtv_scores.loc[adtv_scores.index <= date]
+            adtv_for_date = _adtv_slice.iloc[-1] if not _adtv_slice.empty else None
+        else:
+            adtv_for_date = adtv_scores
+
         if run_mv:
             try:
                 target_mv = optimize_portfolio(
@@ -375,7 +388,7 @@ def run_backtest(
                     turnover_penalty=float(cfg["mv_turnover_penalty"]),
                     market_impact_eta=float(cfg["mv_market_impact_eta"]),
                     asset_class_constraints=effective_constraints,
-                    adtv_scores=adtv_scores,
+                    adtv_scores=adtv_for_date,
                     issuer_consolidated_limits=issuer_consolidated_limits,
                     max_position_overrides=max_position_overrides,
                     sector_constraints=sector_constraints,
@@ -390,7 +403,7 @@ def run_backtest(
         if run_cvar:
             # Use a longer scenario window and stricter tail confidence so CVaR
             # optimizer is meaningfully different from the MV solution.
-            scen = returns.loc[:date].tail(252)
+            scen = returns.loc[:date].tail(int(cfg["cvar_scenario_window"]))
             try:
                 target_cvar = optimize_portfolio_cvar(
                     expected_returns, scen,
@@ -402,7 +415,7 @@ def run_backtest(
                     alpha=float(cfg["cvar_alpha"]),
                     market_impact_eta=float(cfg["mv_market_impact_eta"]),
                     asset_class_constraints=effective_constraints,
-                    adtv_scores=adtv_scores,
+                    adtv_scores=adtv_for_date,
                     issuer_consolidated_limits=issuer_consolidated_limits,
                     max_position_overrides=max_position_overrides,
                     sector_constraints=sector_constraints,
@@ -426,7 +439,7 @@ def run_backtest(
                     turnover_penalty=float(cfg["robust_turnover_penalty"]),
                     market_impact_eta=float(cfg["mv_market_impact_eta"]),
                     asset_class_constraints=effective_constraints,
-                    adtv_scores=adtv_scores,
+                    adtv_scores=adtv_for_date,
                     issuer_consolidated_limits=issuer_consolidated_limits,
                     max_position_overrides=max_position_overrides,
                     sector_constraints=sector_constraints,
@@ -452,9 +465,11 @@ def run_backtest(
             "annualized_return": ann_ret,
             "annualized_vol": port_ret.std() * np.sqrt(252),
             # Per-rebalance monthly turnover with the standard 1/2 factor:
-            # turnover_t = 0.5 * sum_i |w_i,t - w_i,t-1|, averaged over rebalance months.
-            # tv has 0s on non-rebalance days; filtering to >0 gives one entry per rebalance.
-            "turnover": float(0.5 * tv[tv > 0].mean()) if (tv > 0).any() else 0.0,
+            # turnover_t = 0.5 * sum_i |w_i,t - w_i,t-1|, averaged over all rebalances
+            # including the initial allocation from zero (which is also charged in
+            # port_ret via transaction_cost). Excluding it would understate the
+            # steady-state cost and make Sharpe/turnover ratios look better than reality.
+            "turnover": float(0.5 * tv[tv > 0].mean()) if (tv > 0).sum() > 0 else 0.0,
         }
         metrics_ci: dict[str, dict[str, Any]] = {}
         if cfg["bootstrap_enabled"]:

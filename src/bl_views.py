@@ -111,6 +111,8 @@ def build_macro_views(
     sector_views: SectorViews = {}
 
     def _add_sector_signal(signal_name: str, z: float) -> None:
+        if not np.isfinite(z):
+            return
         rules = _MACRO_SECTOR_RULES.get(signal_name, {})
         magnitude = max_mag * float(np.tanh(z))
         for sector, sign in rules.items():

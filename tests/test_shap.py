@@ -14,7 +14,7 @@ from pathlib import Path
 def test_shap_output_shape():
     """collect_rebalance_shap returns (n_test_obs * n_features) records."""
     pytest.importorskip("shap")
-    from src.xgboost_model import XGBoostModel
+    from src.lightgbm_model import LightGBMModel
     from src.shap_attribution import collect_rebalance_shap
 
     rng = np.random.default_rng(0)
@@ -26,7 +26,7 @@ def test_shap_output_shape():
     X_test  = pd.DataFrame(rng.standard_normal((n_test,  n_feat)), columns=feat_names)
     tickers = [f"T{i}" for i in range(n_test)]
 
-    model = XGBoostModel(config={"n_iter": 2, "cv_splits": 2, "n_estimators_cap": 50,
+    model = LightGBMModel(config={"n_iter": 2, "cv_splits": 2, "n_estimators_cap": 50,
                                  "early_stopping_rounds": 5})
     model.fit(X_train, y_train)
 
@@ -133,13 +133,13 @@ def test_compute_shap_flag(tmp_path):
         feature_df,
         returns=pd.DataFrame(),
         settings={
-            "forecast_model": "xgboost",
+            "forecast_model": "lightgbm",
             "compute_shap": False,
             "shap_output_path": str(shap_path),
-            "forecast_xgb_n_iter": 1,
-            "forecast_xgb_cv_splits": 2,
-            "forecast_xgb_n_estimators_cap": 20,
-            "forecast_xgb_early_stopping_rounds": 3,
+            "forecast_lgbm_n_iter": 1,
+            "forecast_lgbm_cv_splits": 2,
+            "forecast_lgbm_n_estimators_cap": 20,
+            "forecast_lgbm_early_stopping_rounds": 3,
         },
     )
     assert not shap_path.exists(), "Parquet must NOT be written when compute_shap=False"

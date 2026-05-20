@@ -214,6 +214,7 @@ def fx_directional_overlay(
     max_hedge_ratio: float = 0.95,
     min_hedge_ratio: float = 0.10,
     mxn_garch_vol: float | None = None,
+    settings: dict | None = None,
 ) -> pd.DataFrame:
     """Active FX positioning beyond passive hedging.
 
@@ -268,9 +269,13 @@ def fx_directional_overlay(
 
     # GARCH vol adjustment: high MXN vol → increase hedge ratio
     if mxn_garch_vol is not None and np.isfinite(mxn_garch_vol) and mxn_garch_vol > 0:
-        # 15% annualized = neutral, >25% = high-vol regime
-        vol_zscore = (mxn_garch_vol - 0.15) / 0.10
-        vol_boost = 0.05 * float(np.clip(vol_zscore, -1.0, 1.0))  # max ±5%
+        # Anchor + spread are configurable via settings. Defaults preserve the
+        # prior behaviour: neutral at 15% annualized vol, high regime at 25%.
+        _vol_neutral = float(settings.get("fx_vol_neutral", 0.15)) if settings else 0.15
+        _vol_spread  = float(settings.get("fx_vol_spread", 0.10))  if settings else 0.10
+        _vol_boost_cap = float(settings.get("fx_vol_boost_cap", 0.05)) if settings else 0.05
+        vol_zscore = (mxn_garch_vol - _vol_neutral) / max(_vol_spread, 1e-9)
+        vol_boost = _vol_boost_cap * float(np.clip(vol_zscore, -1.0, 1.0))
         macro_df["hedge_ratio"] = (macro_df["hedge_ratio"] + vol_boost).clip(
             lower=min_hedge_ratio, upper=max_hedge_ratio
         )
@@ -366,6 +371,7 @@ def run_hedge_backtest(
     gross_target_override: float | None = None,
     max_leverage_cap: float | None = None,
     top_n: int = 8,
+    settings: dict | None = None,
 ) -> dict:
     """Full Layer 2 backtest combining all hedge components.
 
@@ -382,11 +388,15 @@ def run_hedge_backtest(
     if signal_for_hedge.empty:
         signal_for_hedge = signal_df.copy()
 
+    # Regulated targets come from config (defaults preserve previous behaviour).
+    _reg_gross = float(settings.get("hedge_regulated_gross_target", 1.15)) if settings else 1.15
+    _reg_net = float(settings.get("hedge_regulated_net_target", 1.05)) if settings else 1.05
+
     # Determine targets based on hedge_mode
     if hedge_mode == "regulated":
-        _net_target = 1.05
-        _gross_target = 1.15
-        _max_lev = min(max_leverage, 1.15)
+        _net_target = _reg_net
+        _gross_target = _reg_gross
+        _max_lev = min(max_leverage, _reg_gross)
         logger.info("Hedge overlay running in REGULATED mode (gross≤1.15, net≤1.05).")
     else:
         _net_target = 1.60
@@ -423,7 +433,7 @@ def run_hedge_backtest(
         return {
             "returns": pd.Series(0.0, index=prices.index),
             "leverage_series": pd.Series(1.0, index=prices.index),
-            "fx_overlay": fx_directional_overlay(macro_df, signal_df, universe.set_index("ticker")["usd_exposure"]),
+            "fx_overlay": fx_directional_overlay(macro_df, signal_df, universe.set_index("ticker")["usd_exposure"], settings=settings),
             "tail_hedge": {"unhedged_loss_at_99": 0.0, "hedge_payoff": 0.0, "daily_cost_drag": 0.0, "net_benefit": 0.0, "recommended": False},
             "metrics": {},
             "long_book": long_short[long_short["side"] == "long"],
@@ -475,6 +485,7 @@ def run_hedge_backtest(
         signal_df,
         universe.set_index("ticker")["usd_exposure"],
         mxn_garch_vol=mxn_garch_vol,
+        settings=settings,
     )
     fx_df = fx_overlay.sort_values("date").set_index("date").reindex(prices.index, method="ffill")
     hedge_ratio_series = fx_df["hedge_ratio"].fillna(0.5)
@@ -561,7 +572,10 @@ def run_hedge_backtest(
             "max_leverage": float(_max_lev),
             "cvar_limit": float(cvar_limit),
             "transaction_cost": float(transaction_cost),
-            "risk_free_rate": float(risk_free_rate),
+            "risk_free_rate": (
+                float(risk_free_rate.mean()) if isinstance(risk_free_rate, pd.Series)
+                else float(risk_free_rate)
+            ),
             "mxn_garch_vol": float(mxn_garch_vol) if mxn_garch_vol is not None and np.isfinite(mxn_garch_vol) else None,
             "hedge_mode": hedge_mode,
         },
@@ -584,10 +598,20 @@ def run_reform_comparison(
     mxn_garch_vol: float | None = None,
     borrow_cost_bps: float = 150.0,
     leverage_cost_bps: float = 5.0,
+    settings: dict | None = None,
 ) -> dict[str, dict]:
     """Run all 4 LFI reform scenarios and return results keyed by scenario name."""
     results: dict[str, dict] = {}
-    for key, params in REFORM_SCENARIOS.items():
+    scenarios = dict(REFORM_SCENARIOS)
+    # Apply config overrides to the regulated scenario so the LFI baseline
+    # stays consistent with hedge_regulated_{gross,net}_target.
+    if settings:
+        reg = dict(scenarios["regulated"])
+        reg["gross_target"] = float(settings.get("hedge_regulated_gross_target", reg["gross_target"]))
+        reg["net_target"] = float(settings.get("hedge_regulated_net_target", reg["net_target"]))
+        reg["max_leverage_cap"] = reg["gross_target"]
+        scenarios["regulated"] = reg
+    for key, params in scenarios.items():
         try:
             scenario_result = run_hedge_backtest(
                 prices,
@@ -607,6 +631,7 @@ def run_reform_comparison(
                 net_target_override=params["net_target"],
                 gross_target_override=params["gross_target"],
                 max_leverage_cap=params["max_leverage_cap"],
+                settings=settings,
                 top_n=params.get("top_n", 8),
             )
             scenario_result["scenario_label"] = params["label"]

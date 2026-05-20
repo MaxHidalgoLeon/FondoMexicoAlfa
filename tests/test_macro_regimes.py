@@ -114,6 +114,77 @@ def test_stress_threshold_reproducible():
 # 3.10.4  Performance table schema
 # ---------------------------------------------------------------------------
 
+def test_stress_regime_agrees_with_canonical_regime():
+    """C-1 unification: build_regime_table.stress_regime must match the
+    canonical compute_macro_regime_history regime label.
+
+    Specifically, for every rebalance date d:
+        stress_regime == "STRESS"  iff  canonical_regime at d == "stress"
+
+    This guards against the historical bug where the step3 report and the
+    backtest disagreed on which periods counted as "stress".
+    """
+    from src.macro_regimes import build_regime_table, STRESS, CALM
+    from src.risk import compute_macro_regime_history
+
+    # Build macro with all three columns expected by compute_macro_regime_history,
+    # and craft a deliberate stress-inducing trajectory mid-window.
+    rng = np.random.default_rng(7)
+    n_months = 36
+    dates = pd.date_range("2020-01-31", periods=n_months, freq="ME")
+    banxico = np.cumsum(rng.normal(0.05, 0.25, n_months)) + 5.0
+    # FX: spike upward in the middle (peso depreciation → stress)
+    usd_mxn = np.cumsum(rng.normal(0.0, 0.02, n_months)) + 19.0
+    usd_mxn[15:22] += 2.5  # 7 months of severe peso weakness
+    # IP YoY: contraction in the middle
+    ip_yoy = rng.normal(0.02, 0.03, n_months)
+    ip_yoy[15:22] -= 0.10
+    macro = pd.DataFrame({
+        "date": dates,
+        "banxico_rate": banxico,
+        "usd_mxn": usd_mxn,
+        "industrial_production_yoy": ip_yoy,
+    })
+
+    prices = _make_prices(500, 5)
+    tickers = [f"T{i}" for i in range(5)]
+
+    rebal = pd.date_range("2020-06-30", periods=24, freq="ME")
+    rebal = [d for d in rebal if d <= prices.index[-1]]
+
+    rt = build_regime_table(rebal, macro, prices, tickers)
+
+    # Independently call canonical regime computation
+    macro_idx = macro.set_index("date").sort_index()
+    canonical = compute_macro_regime_history(macro_idx)
+
+    mismatches = []
+    for d in rt.index:
+        sliced = canonical.loc[canonical.index <= d]
+        canonical_label = str(sliced.iloc[-1]["regime"]) if not sliced.empty else "expansion"
+        expected_stress = STRESS if canonical_label == "stress" else CALM
+        actual_stress = rt.loc[d, "stress_regime"]
+        if actual_stress != expected_stress:
+            mismatches.append(
+                f"  {d.date()}: canonical={canonical_label!r}, "
+                f"table stress_regime={actual_stress!r}, expected={expected_stress!r}"
+            )
+
+    assert not mismatches, (
+        "stress_regime disagrees with canonical regime on "
+        f"{len(mismatches)} date(s) — C-1 wrapper is broken:\n" + "\n".join(mismatches)
+    )
+
+    # Also verify the canonical_regime passthrough column is populated coherently
+    for d in rt.index:
+        sliced = canonical.loc[canonical.index <= d]
+        canonical_label = str(sliced.iloc[-1]["regime"]) if not sliced.empty else "expansion"
+        assert rt.loc[d, "canonical_regime"] == canonical_label, (
+            f"canonical_regime passthrough mismatch at {d.date()}: "
+            f"{rt.loc[d, 'canonical_regime']!r} vs {canonical_label!r}"
+        )
+
+
 def test_performance_table_schema(tmp_path):
     """regime_performance_table.csv must have all required columns."""
     csv_path = Path("reports") / "regime_performance_table.csv"

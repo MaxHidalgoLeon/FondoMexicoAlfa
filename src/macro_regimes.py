@@ -4,10 +4,20 @@ Two orthogonal regime axes:
   1. Rate regime  — TIGHTENING | EASING | NEUTRAL
      Based on Banxico overnight rate trailing 3-month change.
   2. Stress regime — STRESS | CALM
-     Based on IPC 60-day realised volatility vs a percentile threshold.
+     Derived from the CANONICAL `risk.compute_macro_regime_history` so the
+     step3 report's STRESS label refers to the same state the backtest
+     reacts to when applying defensive asset-class constraints.
+
+     This unification (C-1) ensures that "the backtest reduced equity in
+     STRESS periods" in the narrative is the same STRESS classification
+     plotted/measured in the regime performance tables.
+
+     The local 60-day IPC vol (`ipc_vol_60d`) is preserved in the output
+     table as a research diagnostic — it is NOT used to label the regime.
 
 No-lookahead guarantee: regime at rebalance date `t` is assigned using
 only macro/price data strictly before `t` (as of end of month `t-1`).
+Canonical regime is PIT by construction (expanding z-scores + adjust=False EWMA).
 """
 from __future__ import annotations
 
@@ -161,7 +171,12 @@ def assign_stress_regime(
     date,
     vol_threshold: float,
 ) -> str:
-    """Classify the market stress regime at a rebalance date.
+    """Classify market stress from IPC realised volatility (legacy / diagnostic).
+
+    Kept for backwards compatibility and for callers who want a vol-only stress
+    label independent of the canonical macro regime. ``build_regime_table``
+    no longer uses this function — it derives ``stress_regime`` from the
+    canonical ``risk.compute_macro_regime_history`` instead (C-1 unification).
 
     Uses IPC proxy 60-day realised volatility computed from data strictly
     before ``date``. Falls back to ``CALM`` when insufficient price history
@@ -225,56 +240,78 @@ def build_regime_table(
     prices_df: pd.DataFrame,
     equity_tickers: list[str],
     vol_threshold: float | None = None,
+    settings: dict | None = None,
 ) -> pd.DataFrame:
     """Build a per-rebalance regime classification table.
 
     For each rebalance date assigns a rate regime (``TIGHTENING`` /
-    ``EASING`` / ``NEUTRAL``) and a stress regime (``STRESS`` / ``CALM``),
-    along with diagnostic columns for the underlying raw signals.
+    ``EASING`` / ``NEUTRAL``) and a stress regime (``STRESS`` / ``CALM``).
+
+    The stress regime is derived from the CANONICAL
+    ``risk.compute_macro_regime_history`` so this table agrees with the
+    asset-class constraint switches the backtest applies (C-1 unification).
+    The locally-computed IPC 60-day vol is retained as a research diagnostic.
 
     Args:
         rebalance_dates: Ordered sequence of rebalance dates spanning the
             analysis window.
-        macro_df: Monthly macro DataFrame with ``date`` and ``banxico_rate``
-            columns.
+        macro_df: Macro DataFrame with ``banxico_rate``, ``usd_mxn``,
+            ``industrial_production_yoy`` columns and either a ``date``
+            column or a date index.
         prices_df: Wide daily price DataFrame; ``index`` is date, columns are
             ticker symbols.
-        equity_tickers: Equity ticker subset used to construct the IPC proxy.
-        vol_threshold: Annualised vol threshold for the STRESS regime.
-            If ``None``, computed automatically at the 75th percentile of
-            the OOS window via ``compute_stress_threshold``.
+        equity_tickers: Equity ticker subset used for the IPC vol diagnostic.
+        vol_threshold: Ignored when stress_regime is sourced from the canonical
+            regime (default). Retained for API compatibility / legacy callers
+            that may want to inspect the threshold-based labeller.
+        settings: Settings dict forwarded to ``compute_macro_regime_history``
+            (controls EWMA span and stress/expansion thresholds).
 
     Returns:
         DataFrame indexed by date with columns:
         ``rate_regime``, ``stress_regime``, ``rate_change_3m``,
-        ``banxico_rate_level``, ``ipc_vol_60d``.
+        ``banxico_rate_level``, ``ipc_vol_60d``,
+        ``canonical_regime`` (passthrough from compute_macro_regime_history).
     """
+    from .risk import compute_macro_regime_history
+
     dates = sorted(pd.Timestamp(d) for d in rebalance_dates)
     ipc_ret = _ipc_equity_returns(prices_df, equity_tickers)
 
-    if vol_threshold is None:
-        vol_threshold = compute_stress_threshold(dates, ipc_ret)
-        logger.info("Computed stress vol_threshold=%.4f (p75 of OOS window).", vol_threshold)
+    # Canonical regime — same engine the backtest uses to drive constraints.
+    macro_indexed = macro_df.copy()
+    if "date" in macro_indexed.columns:
+        macro_indexed = macro_indexed.set_index("date")
+    macro_indexed = macro_indexed.sort_index()
+    canonical_history = compute_macro_regime_history(macro_indexed, settings=settings)
 
     rows = []
     for d in dates:
         rate_chg = _banxico_trailing_change(macro_df, d)
         ipc_v    = _ipc_vol_60d(ipc_ret, d)
 
-        # Latest banxico level before d
         before_macro = _latest_macro_before(macro_df, d)
         if not before_macro.empty and "banxico_rate" in before_macro.columns:
             rate_level = float(before_macro.sort_values("date")["banxico_rate"].iloc[-1])
         else:
             rate_level = float("nan")
 
+        # Pull canonical regime for the most recent macro row ≤ d (PIT).
+        canonical_label = "expansion"
+        if not canonical_history.empty:
+            sliced = canonical_history.loc[canonical_history.index <= d]
+            if not sliced.empty:
+                canonical_label = str(sliced.iloc[-1]["regime"])
+        stress_label = STRESS if canonical_label == "stress" else CALM
+
         rows.append({
-            "date":             d,
-            "rate_regime":      assign_rate_regime(macro_df, d),
-            "stress_regime":    assign_stress_regime(ipc_ret, d, vol_threshold),
-            "rate_change_3m":   rate_chg if rate_chg is not None else float("nan"),
+            "date":               d,
+            "rate_regime":        assign_rate_regime(macro_df, d),
+            "stress_regime":      stress_label,
+            "rate_change_3m":     rate_chg if rate_chg is not None else float("nan"),
             "banxico_rate_level": rate_level,
-            "ipc_vol_60d":      ipc_v if ipc_v is not None else float("nan"),
+            "ipc_vol_60d":        ipc_v if ipc_v is not None else float("nan"),
+            "canonical_regime":   canonical_label,
         })
 
     return pd.DataFrame(rows).set_index("date")

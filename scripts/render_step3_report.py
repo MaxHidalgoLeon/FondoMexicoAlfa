@@ -37,7 +37,7 @@ PERF_TABLE_CSV  = ROOT / "reports" / "regime_performance_table.csv"
 REGIME_TABLE_CSV = ROOT / "reports" / "regime_table.csv"
 
 SHAP_STABILITY_FLOOR        = 0.30  # below this, revert to ElasticNet signal
-SIGNAL_SHRINKAGE_TIGHTENING = 0.70  # scale XGBoost signal in TIGHTENING regime
+SIGNAL_SHRINKAGE_TIGHTENING = 0.70  # scale LightGBM signal in TIGHTENING regime
 
 
 # ---------------------------------------------------------------------------
@@ -497,10 +497,10 @@ def _write_recommendation(perf_df: pd.DataFrame, stab_df: pd.DataFrame) -> str:
         f"Feature stability is lowest in the {'TIGHTENING' if not stab_df.empty and stab_df.set_index('rate_regime').loc[TIGHTENING,'shap_stability_top5'] == worst_stab else 'most volatile'} regime "
         f"(mean Spearman={_fmt(worst_stab)}), confirming that tightening cycles destabilise the model's feature hierarchy. "
         f"The actionable recommendation is to implement a **soft regime filter**: "
-        f"when rate_regime==TIGHTENING, scale the gross XGBoost signal by {SIGNAL_SHRINKAGE_TIGHTENING} "
+        f"when rate_regime==TIGHTENING, scale the gross LightGBM signal by {SIGNAL_SHRINKAGE_TIGHTENING} "
         f"(a {round((1 - SIGNAL_SHRINKAGE_TIGHTENING) * 100):.0f}% shrinkage) "
         f"rather than a hard on/off gate, and monitor the top-5 SHAP stability metric — "
-        f"if it drops below {SHAP_STABILITY_FLOOR} in any three consecutive rebalances, suspend the XGBoost overlay and revert to ElasticNet. "
+        f"if it drops below {SHAP_STABILITY_FLOOR} in any three consecutive rebalances, suspend the LightGBM overlay and revert to ElasticNet. "
         f"Stress regime triggers can be revisited with a larger universe (≥50 tickers) or live Bloomberg data."
     )
     return rec
@@ -511,7 +511,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", default="mock")
     ap.add_argument("--model",  default="elasticnet",
-                    choices=["elasticnet", "xgboost"],
+                    choices=["elasticnet", "lightgbm"],
                     help="Model for performance metrics (elasticnet is faster)")
     ap.add_argument("--shap-parquet", default="data/shap_values.parquet")
     args = ap.parse_args()
@@ -533,12 +533,12 @@ def main() -> None:
         "forecast_model": args.model,
         "compute_shap": False,
     }
-    if args.model == "xgboost":
+    if args.model == "lightgbm":
         pipeline_settings.update({
-            "forecast_xgb_n_iter": 4,
-            "forecast_xgb_cv_splits": 3,
-            "forecast_xgb_n_estimators_cap": 200,
-            "forecast_xgb_early_stopping_rounds": 15,
+            "forecast_lgbm_n_iter": 4,
+            "forecast_lgbm_cv_splits": 3,
+            "forecast_lgbm_n_estimators_cap": 200,
+            "forecast_lgbm_early_stopping_rounds": 15,
         })
 
     with warnings.catch_warnings():

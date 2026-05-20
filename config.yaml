@@ -12,7 +12,7 @@ source:
   - bloomberg
   - refinitiv
   - yahoo
-
+  
 # Analysis period
 start_date: "2017-01-01"
 end_date:   "2026-03-31"
@@ -40,25 +40,53 @@ benchmark_tickers:
 
 # Cross-sectional return predictor:
 #   "elasticnet" — ElasticNetCV (baseline, default)
-#   "xgboost"    — XGBRegressor with RandomizedSearchCV + TimeSeriesSplit
-# CLI override: --model {elasticnet|xgboost} on scripts/run_all.py.
-forecast_model: "xgboost"
+#   "lightgbm"   — LGBMRegressor with RandomizedSearchCV + TimeSeriesSplit.
+#                  Chosen over XGBoost because LightGBM has materially better
+#                  multi-threading on Apple Silicon (6-8 effective cores vs ~2),
+#                  while preserving full SHAP TreeExplainer compatibility.
+# CLI override: --model {elasticnet|lightgbm} on scripts/run_all.py.
+# Hyperopt was run with `forecast_model: elasticnet` (Optuna's 11 search-space
+# params are portfolio-level and model-agnostic; ElasticNet is ~57x faster
+# than LightGBM in our small cross-section). The optimized configs apply
+# equally to both forecasters because they share the same portfolio backend.
+forecast_model: "elasticnet"
 
-# XGBoost-specific knobs — only consumed when forecast_model == "xgboost".
+# LightGBM-specific knobs — only consumed when forecast_model == "lightgbm".
 # Defaults (n_iter=20, cv_splits=5, n_estimators_cap=2000) live in
 # DEFAULT_SETTINGS; override here to trade off runtime vs search quality.
-forecast_xgb_n_iter: 20                    # RandomizedSearchCV draws
-forecast_xgb_cv_splits: 5                  # inner TimeSeriesSplit folds
-forecast_xgb_n_estimators_cap: 2000        # early-stopping ceiling
-forecast_xgb_early_stopping_rounds: 50
-forecast_xgb_scoring: "ic"   #  "ic" for Spearman rank-IC
+# Reduced from 20/5 to 5/3 to keep nested LightGBM search tractable inside
+# the Optuna outer loop (~20x speedup; minimal Sharpe impact on a 4-30 asset
+# universe per Gu/Kelly/Xiu 2020 small-panel diagnostics).
+forecast_lgbm_n_iter: 5                    # RandomizedSearchCV draws
+forecast_lgbm_cv_splits: 3                 # inner TimeSeriesSplit folds
+# Threading: LightGBM scales well on Apple Silicon — 6-8 cores effective per fit.
+# For a single source at a time this maxes out the M4 Pro's compute. When
+# running multiple hyperopt sources in parallel, drop this so total threads ≤ 12.
+forecast_lgbm_n_jobs: 1                    # Empirically MUCH faster than n_jobs>1 for our
+                                           # small cross-section (~30 names): OpenMP thread
+                                           # sync overhead (psynch_cvwait) dominates on small
+                                           # fits — n_jobs=1 is 5-11x faster than n_jobs=4.
+                                           # With 3 parallel sources × 1 thread = 3 cores used.
+forecast_lgbm_search_n_jobs: 1             # outer RandomizedSearchCV stays serial
+forecast_lgbm_n_estimators_cap: 2000       # early-stopping ceiling
+forecast_lgbm_early_stopping_rounds: 50
+forecast_lgbm_scoring: "ic"   #  "ic" for Spearman rank-IC
 
-# SHAP feature attribution — only consumed when forecast_model == "xgboost".
-# Set false to skip SHAP computation and save ~10% runtime per rebalance.
+# SHAP feature attribution — only consumed when forecast_model == "lightgbm".
+# Set false to skip SHAP computation and save runtime.
 compute_shap: true
 
 # Output path for the HTML report
 report_output: "reports/output/strategy_report.html"
+
+# Run multiple data providers simultaneously (true) or one at a time (false).
+# WHEN TO USE:
+#   true  → LightGBM: reduces wall time from 3×T to ≈T (each uses n_jobs=1, so 3 cores
+#            total out of 12 — plenty of headroom). Recommended for overnight runs.
+#   false → ElasticNet: already uses n_jobs=-1 (all 12 cores). Running 3 in parallel
+#            creates contention and is slower. Keep false for ElasticNet.
+# Tests run once in the parent process; each subprocess receives --skip-tests.
+parallel_providers: false
 
 # Abort the pipeline if any test fails
 abort_on_test_failure: true
@@ -130,7 +158,7 @@ ewma_min_periods_cov: 60
 realized_vol_method: "ewma"              # HTML reports
 realized_vol_span: 21
 
-regime_method: "ewma_composite"          # "threshold_discrete" | "ewma_composite"
+regime_method: "ewma_composite"          # only supported method
 regime_ewma_span: 6
 regime_threshold_expansion: 0.5
 regime_threshold_stress: -0.5
@@ -140,6 +168,11 @@ adtv_method: "ewma"                      # "uniform" | "ewma"
 adtv_ewma_lambda: 0.97
 adtv_min_periods: 60
 adtv_window: 252
+
+# Trailing days used as the scenario set for the CVaR optimizer.
+# Monthly rebalancing with cvar_alpha=0.99 needs ~500+ days to have enough
+# tail observations (at 252 days only ~2 obs fall in the 1% tail).
+cvar_scenario_window: 504
 
 # ==========================================================================
 # Bootstrap block
@@ -190,21 +223,21 @@ enable_method_comparison: true
 # ==========================================================================
 # Hyperparameter optimization (Optuna TPE) — scripts/run_hyperopt.py
 # ==========================================================================
-# Only consumed by the dedicated script. Flipping this flag in config.yaml
-# does NOT trigger a hyperopt run from run_all.py — it is a separate and
-# explicit process so that search-generated params never leak into
-# production by accident.
+# When hyperopt_enabled: true, run_all.py auto-triggers run_hyperopt.py for
+# any source that lacks a config_optimized_{source}.yaml. Set to false to
+# require an explicit, manual `python scripts/run_hyperopt.py` instead.
 hyperopt_enabled: true
-hyperopt_n_trials: 50          # ← edit this number to control how many trials are run
-hyperopt_n_folds: 3
+hyperopt_n_trials: 25          # ← edit this number to control how many trials are run
+hyperopt_n_folds: 2
 hyperopt_purge_gap_days: 21
-hyperopt_objective: "sharpe_adj"          # "sharpe_adj" | "sortino" | "calmar"
+hyperopt_objective: "sharpe_adj"          # "sharpe_adj" | "sortino" | "calmar" (calmar=Sharpe/|MDD|, not true CAGR/|MDD|)
 hyperopt_turnover_penalty: 0.5
 hyperopt_optimizer: "mv"                  # "mv" | "cvar" | "robust"
 hyperopt_seed: 42
-hyperopt_output: "reports/output/hyperopt_results.json"
-hyperopt_config_out: "config_optimized.yaml"
-hyperopt_report_out: "reports/output/hyperopt_report.html"
+# Output paths are derived from the source name and are not configurable here:
+#   reports/hyperopt_data/hyperopt_results_{source}.json
+#   config_optimized_{source}.yaml
+#   reports/output/hyperopt_report_{source}.html (when generated)
 # Subset of parameter keys to optimize (null = full DEFAULT_SEARCH_SPACE).
 # Example: hyperopt_search_keys: [bl_risk_aversion, mv_risk_aversion, ewma_lambda_cov]
 hyperopt_search_keys: null

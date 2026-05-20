@@ -152,10 +152,10 @@ def _plot_waterfall(shap_df: pd.DataFrame, midpoint_date, path: Path) -> None:
 def _plot_feature_importance_over_time(
     shap_df: pd.DataFrame, top_n: int = 8, path: Path = None
 ) -> None:
-    """Rank of top-N features by mean |SHAP| over time (XGBoost only).
+    """Rank of top-N features by mean |SHAP| over time (LightGBM only).
 
     ElasticNet per-rebalance coefficients are not stored in this pipeline,
-    so only the XGBoost panel is shown.
+    so only the LightGBM panel is shown.
     """
     pivot = compute_mean_abs_shap_pivot(shap_df)
     # Global top-N features by time-average
@@ -175,7 +175,7 @@ def _plot_feature_importance_over_time(
     ax.yaxis.set_major_locator(mticker.MultipleLocator(1))
     ax.set_xlabel("Rebalance date")
     ax.set_ylabel("Feature importance rank (1 = most important)")
-    ax.set_title(f"Feature importance rank over time — XGBoost (top {top_n})\n"
+    ax.set_title(f"Feature importance rank over time — LightGBM (top {top_n})\n"
                  "Note: ElasticNetCV per-rebalance coefficients are not stored in this pipeline.")
     ax.legend(loc="upper right", fontsize=8, ncol=2)
     ax.grid(True, linestyle=":", alpha=0.4)
@@ -238,7 +238,7 @@ def _write_interpretation(top: pd.DataFrame, summ: pd.DataFrame, drivers: pd.Dat
     driver_feats = drivers["feature"].tolist() if not drivers.empty else []
     driver_str = ", ".join(f"**{f}**" for f in driver_feats[:3])
 
-    interpretation = f"""The XGBoost model assigns the highest importance to {top3_str}, \
+    interpretation = f"""The LightGBM model assigns the highest importance to {top3_str}, \
 reflecting its ability to capture non-linear interactions between fundamental valuation metrics \
 (FIBRA cap rates, leverage, FFO yield) and cross-sectional momentum — signals that a linear \
 ElasticNet would assign equal weight to regardless of regime. \
@@ -323,7 +323,7 @@ def main() -> None:
     turn_md  = _turnover_md(drivers)
     interp   = _write_interpretation(top, summ, drivers)
 
-    body = f"""# Step 2 — SHAP Feature Attribution (XGBoost)
+    body = f"""# Step 2 — SHAP Feature Attribution (LightGBM)
 
 Walk-forward SHAP values computed with `shap.TreeExplainer` after each monthly rebalance,
 using only the model trained on data ≤ t (no look-ahead). Source: mock panel
@@ -334,7 +334,7 @@ using only the model trained on data ≤ t (no look-ahead). Source: mock panel
 
 ```bash
 # 1. Run the pipeline with SHAP enabled (generates data/shap_values.parquet)
-python scripts/run_all.py --skip-tests --source mock --model xgboost
+python scripts/run_all.py --skip-tests --source mock --model lightgbm
 
 # 2. Render this report
 python scripts/render_step2_report.py
@@ -385,7 +385,7 @@ are the most targeted remedies.
 
 ElasticNetCV per-rebalance coefficients are **not stored** in this pipeline
 (`_fit_predict_elasticnet` discards the fitted model object). Adding coefficient storage was
-explicitly out of scope per the Step 2 specification. The panel below is therefore XGBoost-only.
+explicitly out of scope per the Step 2 specification. The panel below is therefore LightGBM-only.
 
 ![Feature importance over time]({_rel(fi_path)})
 

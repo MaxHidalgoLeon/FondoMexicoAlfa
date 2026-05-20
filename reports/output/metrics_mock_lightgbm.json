@@ -1,0 +1,38 @@
+{
+  "source": "mock",
+  "model": "lightgbm",
+  "as_of": "2024-12-31",
+  "metrics": {
+    "sharpe": -0.09460642314978833,
+    "sortino": -0.1033606078992271,
+    "max_drawdown": -0.05611078111827307,
+    "calmar": 1.1809748863344705,
+    "cvar_95": -0.006584728348393248,
+    "annualized_return": 0.06626542335329089,
+    "annualized_vol": 0.05289156459762867,
+    "turnover": 0.0012628599251452391
+  },
+  "metrics_ci": {},
+  "regime_last": {
+    "banxico_delta_3m": -0.19764857269086633,
+    "fx_mom_3m": -0.011529870969127498,
+    "ip_yoy": 0.0684156165372502,
+    "regime_score": 4.7862852567940966,
+    "regime_score_smoothed": 1.5487852765483558,
+    "regime_confidence": 1.5487852765483558,
+    "raw_regime": "expansion",
+    "regime": "expansion"
+  },
+  "liquidity_sleeve": {
+    "regime": "expansion",
+    "cetes28_weight": 0.02,
+    "cetes91_weight": 0.02,
+    "mbono3y_weight": 0.0,
+    "total_sleeve": 0.04,
+    "sleeve_bounds": {
+      "min": 0.03,
+      "max": 0.05
+    }
+  },
+  "hedge_layer_metrics": {}
+}

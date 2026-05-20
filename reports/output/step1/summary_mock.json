@@ -18,7 +18,7 @@
     "forecast_seconds": 12.96883773803711,
     "backtest_seconds": 5.815007209777832
   },
-  "xgboost": {
+  "lightgbm": {
     "ic_mean": 0.33887610053265455,
     "ic_std": 0.23345080882496122,
     "icir": 1.4515953156827142,
@@ -33,7 +33,7 @@
     "n_periods_ic": 107,
     "n_periods_returns": 2412,
     "transaction_cost": 0.001,
-    "model": "xgboost",
+    "model": "lightgbm",
     "forecast_seconds": 572.9869740009308,
     "backtest_seconds": 6.059590101242065
   }

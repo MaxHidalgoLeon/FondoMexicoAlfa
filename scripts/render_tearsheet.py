@@ -13,7 +13,9 @@ Outputs:
 """
 from __future__ import annotations
 
+import argparse
 import base64
+import json
 import re
 import sys
 import warnings
@@ -28,10 +30,12 @@ REPORTS = ROOT / "reports"
 FIGURES = ROOT / "reports" / "figures"
 
 # ---------------------------------------------------------------------------
-# Bloomberg OOS source-of-truth metrics
-# These are the authoritative headline KPIs from the Bloomberg point-in-time
-# OOS backtest (ElasticNet regulated NAV, 2017–2026).
-# Set any value to None to show an explicit placeholder at render time.
+# Headline OOS metrics. Always populated from
+# reports/output/metrics_{source}_{model}.json when that file exists (this is
+# emitted by pipeline._emit_metrics_json after every backtest run). The
+# hardcoded values below are the last archived Bloomberg run and act as a
+# fallback only when no JSON is available.
+# Set any value to None to render an explicit placeholder.
 # ---------------------------------------------------------------------------
 BLOOMBERG_OOS: dict[str, str | None] = {
     "sharpe":   "0.44",
@@ -41,13 +45,65 @@ BLOOMBERG_OOS: dict[str, str | None] = {
     "cvar":     "−1.95%",
     "turnover": "0.57%",
 }
-_BBG_NOTE      = "Headline metrics correspond to Bloomberg point-in-time OOS, regulated NAV, 2017–2026."
-_BBG_AVAILABLE = all(v is not None for v in BLOOMBERG_OOS.values())
-_PLACEHOLDER   = "N/A (Bloomberg)"
+_BBG_NOTE_DEFAULT = "Headline metrics correspond to Bloomberg point-in-time OOS, regulated NAV, 2017–2026."
+_BBG_NOTE         = _BBG_NOTE_DEFAULT
+_PLACEHOLDER      = "N/A"
+
+
+def _metrics_json_path(source: str, model: str) -> Path:
+    return ROOT / "reports" / "output" / f"metrics_{source}_{model}.json"
+
+
+def _fmt_pct(value: float, sign: bool = False) -> str:
+    if value is None or (isinstance(value, float) and not np.isfinite(value)):
+        return "—"
+    return f"{value * 100:{'+' if sign else ''}.2f}%"
+
+
+def _load_oos_metrics(source: str, model: str) -> None:
+    """Refresh BLOOMBERG_OOS from the run-time metrics JSON when available.
+
+    Falls back silently to the hardcoded values when the JSON is missing —
+    the snapshot in the dict above acts as the last archived Bloomberg run.
+    """
+    global _BBG_NOTE
+    path = _metrics_json_path(source, model)
+    if not path.exists():
+        print(f"[tearsheet] No metrics JSON at {path.name} — using archived Bloomberg snapshot.")
+        return
+    try:
+        payload = json.loads(path.read_text())
+    except Exception as exc:
+        print(f"[tearsheet] Failed to read {path.name}: {exc} — using archived snapshot.")
+        return
+    metrics = payload.get("metrics") or {}
+    if not metrics:
+        print(f"[tearsheet] {path.name} has no 'metrics' block — using archived snapshot.")
+        return
+    mapping = {
+        "sharpe":   metrics.get("sharpe"),
+        "return":   metrics.get("annualized_return"),
+        "vol":      metrics.get("annualized_vol"),
+        "max_dd":   metrics.get("max_drawdown"),
+        "cvar":     metrics.get("cvar_95"),
+        "turnover": metrics.get("turnover"),
+    }
+    BLOOMBERG_OOS["sharpe"]   = f"{mapping['sharpe']:.2f}"        if mapping["sharpe"]   is not None else None
+    BLOOMBERG_OOS["return"]   = _fmt_pct(mapping["return"])       if mapping["return"]   is not None else None
+    BLOOMBERG_OOS["vol"]      = _fmt_pct(mapping["vol"])          if mapping["vol"]      is not None else None
+    BLOOMBERG_OOS["max_dd"]   = _fmt_pct(mapping["max_dd"], sign=True) if mapping["max_dd"] is not None else None
+    BLOOMBERG_OOS["cvar"]     = _fmt_pct(mapping["cvar"],   sign=True) if mapping["cvar"]   is not None else None
+    BLOOMBERG_OOS["turnover"] = _fmt_pct(mapping["turnover"])     if mapping["turnover"] is not None else None
+    as_of = payload.get("as_of", "")
+    _BBG_NOTE = f"Headline metrics from live run: source={payload.get('source','?')}, model={payload.get('model','?')}, as_of={as_of}."
+
+
+def _bbg_available() -> bool:
+    return all(v is not None for v in BLOOMBERG_OOS.values())
 
 
 def _bbg(key: str) -> str:
-    """Return Bloomberg OOS metric or an explicit placeholder if unavailable."""
+    """Return the current OOS headline metric or an explicit placeholder."""
     val = BLOOMBERG_OOS.get(key)
     return val if val is not None else _PLACEHOLDER
 
@@ -85,7 +141,7 @@ def _fmt(val, fmt=".3f", color=True) -> str:
     return s
 
 
-def _fmt_pct(val) -> str:
+def _fmt_frac_pct(val) -> str:
     """Format a fraction (0–1) as a percentage string with one decimal place."""
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return "—"
@@ -119,7 +175,7 @@ def _parse_step1_table(md_path: Path) -> list[dict]:
                 rows.append({
                     "metric":    parts[0],
                     "elastic":   parts[1],
-                    "xgboost":   parts[2],
+                    "lightgbm":   parts[2],
                     "delta":     parts[3],
                 })
     return rows
@@ -176,16 +232,16 @@ def _load_regime_perf() -> pd.DataFrame:
 
 
 def _extract_cover_stats(step1_rows: list[dict]) -> dict:
-    """Pull headline XGBoost metrics for the cover stat-strip."""
+    """Pull headline LightGBM metrics for the cover stat-strip."""
     lookup = {r["metric"]: r for r in step1_rows}
-    def xgb(key):
-        """Look up the XGBoost value for a given metric name."""
+    def lgbm(key):
+        """Look up the LightGBM value for a given metric name."""
         row = lookup.get(key, {})
-        return row.get("xgboost", "—")
+        return row.get("lightgbm", "—")
     return {
-        "sharpe":  xgb("Sharpe"),
-        "icir":    xgb("ICIR"),
-        "mdd":     xgb("Max drawdown"),
+        "sharpe":  lgbm("Sharpe"),
+        "icir":    lgbm("ICIR"),
+        "mdd":     lgbm("Max drawdown"),
     }
 
 
@@ -381,7 +437,7 @@ def _page_cover(stats: dict) -> str:
 
     bbg_label = (
         '<span style="font-size:6.5pt;color:#6B7280;">Bloomberg OOS · ElasticNet regulated · 2017–2026</span>'
-        if _BBG_AVAILABLE else
+        if _bbg_available() else
         '<span style="font-size:6.5pt;color:#DC2626;">Bloomberg data unavailable — values are placeholders</span>'
     )
 
@@ -431,7 +487,7 @@ def _page_cover(stats: dict) -> str:
       <h3>Strategy</h3>
       <dl>
         <dt>Universe:</dt><dd>~26 Mexican equities + FIBRAs listed on BMV</dd>
-        <dt>Signal:</dt><dd>XGBoost cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)</dd>
+        <dt>Signal:</dt><dd>LightGBM cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)</dd>
         <dt>Baseline:</dt><dd>ElasticNetCV — interchangeable via config flag</dd>
         <dt>Optimizer:</dt><dd>Mean-variance (SLSQP) with market-impact penalty</dd>
         <dt>Rebalance:</dt><dd>Monthly, end-of-month, walk-forward OOS</dd>
@@ -455,7 +511,7 @@ def _page_cover(stats: dict) -> str:
 
 
 def _page_model_comparison(step1_rows: list[dict]) -> str:
-    """Return the HTML string for Page 2 (XGBoost vs ElasticNet model comparison table)."""
+    """Return the HTML string for Page 2 (LightGBM vs ElasticNet model comparison table)."""
     if not step1_rows:
         rows_html = '<tr><td colspan="4" class="missing">Step 1 comparison data not found.</td></tr>'
     else:
@@ -465,7 +521,7 @@ def _page_model_comparison(step1_rows: list[dict]) -> str:
         <tr>
           <td>{r['metric']}</td>
           <td>{r['elastic']}</td>
-          <td>{r['xgboost']}</td>
+          <td>{r['lightgbm']}</td>
           <td>{r['delta']}</td>
         </tr>"""
 
@@ -474,11 +530,11 @@ def _page_model_comparison(step1_rows: list[dict]) -> str:
 
     return f"""
 <div class="page">
-  <div class="section-header"><h2>01 · Model Performance — XGBoost vs ElasticNetCV (mock data — pipeline validation only)</h2></div>
+  <div class="section-header"><h2>01 · Model Performance — LightGBM vs ElasticNetCV (mock data — pipeline validation only)</h2></div>
 
   <table>
     <thead>
-      <tr><th>Metric</th><th>ElasticNetCV</th><th>XGBoost</th><th>&Delta; (xgb &minus; elastic)</th></tr>
+      <tr><th>Metric</th><th>ElasticNetCV</th><th>LightGBM</th><th>&Delta; (lgbm &minus; elastic)</th></tr>
     </thead>
     <tbody>{rows_html}</tbody>
   </table>
@@ -486,7 +542,7 @@ def _page_model_comparison(step1_rows: list[dict]) -> str:
   <div class="fig-row" style="margin-top:3mm;">
     <div class="fig-frame">
       {eq_img}
-      <div class="fig-caption">Cumulative equity curves — XGBoost vs ElasticNetCV (108 rebalances)</div>
+      <div class="fig-caption">Cumulative equity curves — LightGBM vs ElasticNetCV (108 rebalances)</div>
     </div>
     <div class="fig-frame">
       {ic_img}
@@ -523,7 +579,7 @@ def _page_shap(top10: list[dict], stability: list[dict]) -> str:
 
     return f"""
 <div class="page">
-  <div class="section-header"><h2>02 · Feature Attribution (SHAP) — XGBoost Walk-forward</h2></div>
+  <div class="section-header"><h2>02 · Feature Attribution (SHAP) — LightGBM Walk-forward</h2></div>
 
   <div class="two-col">
     <div>
@@ -614,19 +670,19 @@ def _page_regime(regime_df: pd.DataFrame) -> str:
 
 def _page_risk_methodology(step1_rows: list[dict]) -> str:
     """Return the HTML string for Page 5 (risk metrics, factor exposures, methodology summary)."""
-    lookup = {r["metric"]: r.get("xgboost", "—") for r in step1_rows}
-    xgb_sharpe  = lookup.get("Sharpe", "—")
-    xgb_mdd     = lookup.get("Max drawdown", "—")
-    xgb_cvar    = lookup.get("CVaR 95% (daily)", "—")
-    xgb_vol     = lookup.get("Annualized vol", "—")
-    xgb_to      = lookup.get("Turnover (per rebalance)", "—")
-    xgb_ret     = lookup.get("Annualized return", "—")
-    xgb_sortino = lookup.get("Sortino", "—")
+    lookup = {r["metric"]: r.get("lightgbm", "—") for r in step1_rows}
+    lgbm_sharpe  = lookup.get("Sharpe", "—")
+    lgbm_mdd     = lookup.get("Max drawdown", "—")
+    lgbm_cvar    = lookup.get("CVaR 95% (daily)", "—")
+    lgbm_vol     = lookup.get("Annualized vol", "—")
+    lgbm_to      = lookup.get("Turnover (per rebalance)", "—")
+    lgbm_ret     = lookup.get("Annualized return", "—")
+    lgbm_sortino = lookup.get("Sortino", "—")
 
     bbg_note_html = (
         f'<p style="font-size:6.5pt;color:#6B7280;margin-top:1mm;">'
         f'&#9733; {_BBG_NOTE}</p>'
-        if _BBG_AVAILABLE else
+        if _bbg_available() else
         '<p style="font-size:6.5pt;color:#DC2626;margin-top:1mm;">'
         '&#9733; Bloomberg data unavailable — ElasticNet values are placeholders.</p>'
     )
@@ -650,23 +706,23 @@ def _page_risk_methodology(step1_rows: list[dict]) -> str:
         </tbody>
       </table>
       {bbg_note_html}
-      <h3 style="margin-top:3mm;">XGBoost Risk Metrics (Walk-forward OOS — mock data)</h3>
+      <h3 style="margin-top:3mm;">LightGBM Risk Metrics (Walk-forward OOS — mock data)</h3>
       <table>
         <thead><tr><th>Metric</th><th>Value</th></tr></thead>
         <tbody>
-          <tr><td>Annualized return</td><td>{xgb_ret}</td></tr>
-          <tr><td>Annualized vol</td><td>{xgb_vol}</td></tr>
-          <tr><td>Sharpe ratio</td><td>{xgb_sharpe}</td></tr>
-          <tr><td>Sortino ratio</td><td>{xgb_sortino}</td></tr>
-          <tr><td>Max drawdown</td><td><span class="neg">{xgb_mdd}</span></td></tr>
-          <tr><td>CVaR 95% (daily)</td><td>{xgb_cvar}</td></tr>
-          <tr><td>Avg turnover / rebalance</td><td>{xgb_to}</td></tr>
+          <tr><td>Annualized return</td><td>{lgbm_ret}</td></tr>
+          <tr><td>Annualized vol</td><td>{lgbm_vol}</td></tr>
+          <tr><td>Sharpe ratio</td><td>{lgbm_sharpe}</td></tr>
+          <tr><td>Sortino ratio</td><td>{lgbm_sortino}</td></tr>
+          <tr><td>Max drawdown</td><td><span class="neg">{lgbm_mdd}</span></td></tr>
+          <tr><td>CVaR 95% (daily)</td><td>{lgbm_cvar}</td></tr>
+          <tr><td>Avg turnover / rebalance</td><td>{lgbm_to}</td></tr>
         </tbody>
       </table>
 
       <h3 style="margin-top:3mm;">Regime Filter Recommendation</h3>
       <ul class="method-list">
-        <li><strong>EASING:</strong> Full XGBoost signal (stability 0.57)</li>
+        <li><strong>EASING:</strong> Full LightGBM signal (stability 0.57)</li>
         <li><strong>TIGHTENING:</strong> Scale signal &times;0.7 (stability 0.41)</li>
         <li><strong>STRESS trigger:</strong> IPC vol &gt; p75 &rarr; reduce exposure</li>
         <li><strong>Safety valve:</strong> if top-5 stability &lt; 0.30 for 3 periods, revert to ElasticNet</li>
@@ -676,7 +732,7 @@ def _page_risk_methodology(step1_rows: list[dict]) -> str:
       <h3>Methodology</h3>
       <ul class="method-list">
         <li><strong>Universe:</strong> Mexican equities + FIBRAs (BMV), ~26 instruments</li>
-        <li><strong>Signal:</strong> XGBoost cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)</li>
+        <li><strong>Signal:</strong> LightGBM cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)</li>
         <li><strong>Alternative signal:</strong> ElasticNetCV (baseline, interchangeable)</li>
         <li><strong>Optimizer:</strong> Mean-variance (SLSQP) with market-impact penalty</li>
         <li><strong>Rebalance frequency:</strong> Monthly (end-of-month)</li>
@@ -917,7 +973,7 @@ def _pdf_page_cover(pdf, step1_rows: list[dict]) -> None:
     # Bloomberg source note below strip
     pdf.set_xy(pdf.l_margin, y_stat + box_h + 2)
     pdf.set_font("Helvetica", "I", 6.5)
-    if _BBG_AVAILABLE:
+    if _bbg_available():
         pdf.set_text_color(*_PDF_MUTED)
         pdf.cell(0, 4, _ascii(_BBG_NOTE))
     else:
@@ -949,7 +1005,7 @@ def _pdf_page_cover(pdf, step1_rows: list[dict]) -> None:
 
     left_items = [
         ("Universe",    "~26 Mexican equities + FIBRAs listed on BMV"),
-        ("Signal",      "XGBoost cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)"),
+        ("Signal",      "LightGBM cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)"),
         ("Baseline",    "ElasticNetCV - interchangeable via config flag"),
         ("Optimizer",   "Mean-variance (SLSQP) with market-impact penalty"),
         ("Rebalance",   "Monthly, end-of-month, walk-forward OOS"),
@@ -989,14 +1045,14 @@ def _pdf_page_cover(pdf, step1_rows: list[dict]) -> None:
 
 
 def _pdf_page_model_comparison(pdf, step1_rows: list[dict]) -> None:
-    """Render Page 2 — XGBoost vs ElasticNet comparison table and framed figures."""
+    """Render Page 2 — LightGBM vs ElasticNet comparison table and framed figures."""
     from fpdf.enums import XPos, YPos
     pdf.add_page()
-    _pdf_section_header(pdf, "01  MODEL PERFORMANCE - XGBoost vs ElasticNetCV (mock data - pipeline validation only)")
+    _pdf_section_header(pdf, "01  MODEL PERFORMANCE - LightGBM vs ElasticNetCV (mock data - pipeline validation only)")
 
     # Table header
     col_widths = [72, 38, 38, 40]
-    headers = ["Metric", "ElasticNetCV", "XGBoost", "D (xgb - elastic)"]
+    headers = ["Metric", "ElasticNetCV", "LightGBM", "D (lgbm - elastic)"]
     pdf.set_fill_color(*_PDF_NAVY)
     _pdf_set_white(pdf)
     pdf.set_font("Helvetica", "B", 7)
@@ -1013,7 +1069,7 @@ def _pdf_page_model_comparison(pdf, step1_rows: list[dict]) -> None:
         pdf.cell(col_widths[0], 4.5, _ascii(row["metric"]), fill=True)
         _pdf_set_muted(pdf)
         for val, cw in [(row["elastic"], col_widths[1]),
-                        (row["xgboost"], col_widths[2]),
+                        (row["lightgbm"], col_widths[2]),
                         (row["delta"],   col_widths[3])]:
             pdf.cell(cw, 4.5, _ascii(str(val)), fill=True, align="R")
         pdf.ln()
@@ -1039,7 +1095,7 @@ def _pdf_page_shap(pdf, top10: list[dict], stability: list[dict]) -> None:
     """Render Page 3 — SHAP feature attribution tables and framed figures."""
     from fpdf.enums import XPos, YPos
     pdf.add_page()
-    _pdf_section_header(pdf, "02  FEATURE ATTRIBUTION (SHAP) - XGBoost Walk-forward")
+    _pdf_section_header(pdf, "02  FEATURE ATTRIBUTION (SHAP) - LightGBM Walk-forward")
 
     half = pdf.epw / 2 - 3
     y0 = pdf.get_y()
@@ -1162,7 +1218,7 @@ def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
     pdf.add_page()
     _pdf_section_header(pdf, "04  RISK PROFILE & METHODOLOGY")
 
-    lookup = {r["metric"]: r.get("xgboost", "-") for r in step1_rows}
+    lookup = {r["metric"]: r.get("lightgbm", "-") for r in step1_rows}
     # Bloomberg OOS (ElasticNet regulated) — source of truth
     bbg_risk_items = [
         ("Annualized return",      _bbg("return")),
@@ -1172,7 +1228,7 @@ def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
         ("CVaR 95% (daily)",       _bbg("cvar")),
         ("Avg turnover/rebalance", _bbg("turnover")),
     ]
-    # XGBoost mock data (secondary reference)
+    # LightGBM mock data (secondary reference)
     risk_items = [
         ("Annualized return",      lookup.get("Annualized return",        "-")),
         ("Annualized vol",         lookup.get("Annualized vol",           "-")),
@@ -1184,7 +1240,7 @@ def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
     ]
     method_items = [
         ("Universe",        "Mexican equities + FIBRAs (BMV), ~26 instruments"),
-        ("Signal",          "XGBoost cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)"),
+        ("Signal",          "LightGBM cross-sectional return forecast (RandomizedSearchCV + TimeSeriesSplit)"),
         ("Baseline signal", "ElasticNetCV (interchangeable via config flag)"),
         ("Optimizer",       "Mean-variance (SLSQP) with market-impact penalty"),
         ("Rebalance",       "Monthly (end-of-month), walk-forward OOS"),
@@ -1199,7 +1255,7 @@ def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
     half5 = pdf.epw / 2 - 3
     y5 = pdf.get_y()
 
-    # Left: Bloomberg OOS (source of truth) + XGBoost mock (secondary)
+    # Left: Bloomberg OOS (source of truth) + LightGBM mock (secondary)
     m_w, v_w = half5 * 0.62, half5 * 0.38
 
     pdf.set_font("Helvetica", "B", 8)
@@ -1229,7 +1285,7 @@ def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
 
     # Bloomberg note
     pdf.set_font("Helvetica", "I", 6)
-    if _BBG_AVAILABLE:
+    if _bbg_available():
         pdf.set_text_color(*_PDF_MUTED)
         pdf.cell(half5, 4, _ascii(_BBG_NOTE)[:95], new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     else:
@@ -1240,7 +1296,7 @@ def _pdf_page_risk_methodology(pdf, step1_rows: list[dict]) -> None:
 
     pdf.set_font("Helvetica", "B", 8)
     _pdf_set_text(pdf)
-    pdf.cell(half5, 5, "XGBoost Risk Metrics (Walk-forward OOS - mock data)",
+    pdf.cell(half5, 5, "LightGBM Risk Metrics (Walk-forward OOS - mock data)",
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_fill_color(*_PDF_NAVY)
@@ -1348,11 +1404,22 @@ def _render_pdf_fpdf2(html_path: Path, pdf_path: Path, step1_rows, top10, stabil
 # Main
 # ---------------------------------------------------------------------------
 
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Render FMIA Tearsheet (HTML + PDF)")
+    p.add_argument("--source", default="bloomberg",
+                   help="Data source whose metrics_<source>_<model>.json drives the headline KPIs.")
+    p.add_argument("--model", default="elasticnet",
+                   help="Forecast model name used in the metrics JSON filename.")
+    return p.parse_args()
+
+
 def main() -> None:
     """Load all source data, build HTML, write it, then render PDF (WeasyPrint -> fpdf2 fallback)."""
+    args = _parse_args()
+    _load_oos_metrics(args.source, args.model)
     print("[tearsheet] Loading source data ...")
 
-    step1_rows = _parse_step1_table(REPORTS / "step1_xgboost_vs_elasticnet.md")
+    step1_rows = _parse_step1_table(REPORTS / "step1_lightgbm_vs_elasticnet.md")
     top10, stability = _parse_step2_tables(REPORTS / "step2_shap_analysis.md")
     regime_df = _load_regime_perf()
 

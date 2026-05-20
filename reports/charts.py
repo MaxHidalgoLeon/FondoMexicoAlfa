@@ -2557,7 +2557,9 @@ def _section_hyperopt_parallel(history: pd.DataFrame, objective: str) -> str:
                   colorbar=dict(title=objective)),
         dimensions=dims,
     ))
-    fig.update_layout(**LAYOUT, title=f"Parallel coordinates — trials colored by {objective}")
+    n_dims = len(dims)
+    chart_height = max(500, 220 + 40 * n_dims)
+    fig.update_layout(**LAYOUT, height=chart_height, title=f"Parallel coordinates — trials colored by {objective}")
     return f'<div class="card">{_fig_to_div(fig, div_id="hyperopt-parcoords")}</div>'
 
 
@@ -2603,7 +2605,9 @@ def _section_hyperopt_top_trials(history: pd.DataFrame, top_n: int = 10) -> str:
     header = "".join(f"<th>{c}</th>" for c in cols)
     return (
         f'<div class="card"><h3>Top {min(top_n, len(df))} trials</h3>'
-        f'<table><thead><tr>{header}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
+        f'<div style="overflow-x:auto;width:100%">'
+        f'<table style="min-width:max-content"><thead><tr>{header}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+        f'</div></div>'
     )
 
 

@@ -125,6 +125,7 @@ def build_walk_forward_folds(
     n_folds: int = 3,
     purge_gap_days: int = 21,
     min_train_days: int = 252,
+    purge_prior_test_from_train: bool = True,
 ) -> list[FoldData]:
     """
     Build n_folds walk-forward folds with a purge gap between train and test.
@@ -132,6 +133,16 @@ def build_walk_forward_folds(
     Each fold's train window is expanding, and the corresponding test window
     starts `purge_gap_days` business days after the train end. This prevents
     leakage of forward-labeled features into the validation slice.
+
+    Inter-fold contamination (purge_prior_test_from_train):
+        In a standard expanding-window CV, fold k+1's training set includes the
+        test period of fold k (roughly test_block - purge_gap_days days of overlap).
+        This means the model trained in fold k+1 has seen — as labeled training
+        examples — the same observations that were used to evaluate hyperparameters
+        in fold k. If True (default), the training feature_df for fold k+1 has
+        fold k's test dates removed, matching the López de Prado purged k-fold
+        recommendation. Prices are not affected (they are still available for
+        covariance estimation); only the labeled (X, y) pairs are purged.
     """
     if prices is None or prices.empty:
         return []
@@ -165,6 +176,16 @@ def build_walk_forward_folds(
             if not feature_df.empty and "date" in feature_df.columns
             else feature_df.copy()
         )
+        # Purge prior test periods from the training feature_df so that labeled
+        # (X, y) pairs that were evaluated as "test" in fold k-1 are not reused
+        # as training examples in fold k.
+        if purge_prior_test_from_train and k > 0 and not feat_slice.empty and "date" in feat_slice.columns:
+            for prior_fold in folds:
+                prior_test_mask = (
+                    (feat_slice["date"] >= prior_fold.test_start)
+                    & (feat_slice["date"] <= prior_fold.test_end)
+                )
+                feat_slice = feat_slice[~prior_test_mask].copy()
         macro_slice = macro.copy() if macro is not None else pd.DataFrame()
         if not macro_slice.empty and "date" in macro_slice.columns:
             macro_slice = macro_slice[macro_slice["date"] <= test_end]
@@ -219,6 +240,10 @@ def _mini_pipeline_metrics(
     """
     cfg = dict(settings)
     cfg["bootstrap_enabled"] = False
+    # SHAP attribution is irrelevant for the Sharpe-based search objective;
+    # disabling it saves ~10-20% wall-time per trial (LightGBM path only).
+    cfg["compute_shap"] = False
+    logger.info("Hyperopt trial: SHAP disabled for speed (re-enabled in production run).")
 
     prices = fold.train_prices.combine_first(fold.test_prices).sort_index()
     feature_df = fold.feature_df
@@ -287,7 +312,10 @@ def _objective_score(
 
     sharpe_adj = mean(Sharpe_OOS) - turnover_penalty * mean(turnover)
     sortino    = mean(Sortino_OOS)
-    calmar     = mean(CAGR / |MaxDD|) = -mean(Sharpe)*mean(return)/dd (approx)
+    calmar     = mean(Sharpe_OOS) / mean(|MaxDD|)   ← labelled "calmar" for
+                 backwards-compat with config; technically sharpe_over_mdd.
+                 True Calmar = CAGR / |MaxDD|; using Sharpe as a proxy avoids
+                 re-computing CAGR inside each fold. Fine for relative ranking.
     """
     if not metrics_per_fold:
         return -1e9
@@ -422,9 +450,23 @@ def run_hyperopt(
         return _objective_score(metrics_per_fold, objective_metric, float(turnover_penalty))
 
     sampler = optuna.samplers.TPESampler(seed=int(seed))
+    # Verbose progress: print one INFO line per completed trial (best value so far).
+    optuna.logging.set_verbosity(optuna.logging.INFO)
     study = optuna.create_study(direction="maximize", sampler=sampler)
     start = time.time()
-    study.optimize(_objective, n_trials=int(n_trials), show_progress_bar=False)
+
+    def _trial_progress(study, trial):
+        elapsed_s = time.time() - start
+        logger.info(
+            "[trial %d/%d] value=%.4f  best=%.4f  elapsed=%.0fs",
+            trial.number + 1, int(n_trials),
+            trial.value if trial.value is not None else float("nan"),
+            study.best_value if study.best_trial is not None else float("nan"),
+            elapsed_s,
+        )
+
+    study.optimize(_objective, n_trials=int(n_trials), show_progress_bar=False,
+                   callbacks=[_trial_progress])
     elapsed = time.time() - start
 
     best_params_raw: dict[str, Any] = dict(study.best_params) if study.best_trial is not None else {}

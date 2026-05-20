@@ -1,14 +1,14 @@
 # FondoMéxicoAlfa (FMIA)
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![Tests](https://img.shields.io/badge/tests-107%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-156%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 ![Status](https://img.shields.io/badge/status-research%20prototype-orange)
 ![Data](https://img.shields.io/badge/data-Bloomberg%20%7C%20Refinitiv%20%7C%20Yahoo-informational)
 
 Systematic long-short equity and FIBRA strategy for the Mexican market (BMV, 2017–2026).
 Multi-provider data pipeline, Black–Litterman portfolio construction, Bayesian hyperparameter
-optimization, XGBoost ML signal with SHAP attribution, Banxico macro-regime conditioning,
+optimization, LightGBM ML signal with SHAP attribution, Banxico macro-regime conditioning,
 Layer 2 FX hedge overlay, TMEC stress testing, LFI regulatory scenario analysis,
 and deflated-Sharpe overfitting diagnostics. All results are walk-forward out-of-sample.
 
@@ -19,7 +19,7 @@ and deflated-Sharpe overfitting diagnostics. All results are walk-forward out-of
 Primary source: Bloomberg with point-in-time fundamentals. CNBV-compliant constraints
 (max 10% per position, issuer concentration limit). MV optimizer, 10 bp/side transaction costs.
 
-| Metric | ElasticNetCV | XGBoost | Note |
+| Metric | ElasticNetCV | LightGBM | Note |
 |:---|:---:|:---:|:---|
 | Annualized return | 8.34% | 8.29% | Regulated NAV |
 | Annualized vol | 13.59% | 13.57% | |
@@ -27,10 +27,10 @@ Primary source: Bloomberg with point-in-time fundamentals. CNBV-compliant constr
 | Sortino ratio | 0.45 | 0.44 | |
 | Max drawdown | −35.50% | −35.38% | |
 | CVaR 95% (daily) | −1.95% | −1.95% | |
-| Avg turnover | 0.57% | 6.33% | XGBoost 11× higher |
+| Avg turnover | 0.57% | 6.33% | LightGBM 11× higher |
 
-**XGBoost and ElasticNetCV produce statistically indistinguishable performance on real data.**
-The value of the XGBoost component is attribution: SHAP values per rebalance identify which
+**LightGBM and ElasticNetCV produce statistically indistinguishable performance on real data.**
+The value of the LightGBM component is attribution: SHAP values per rebalance identify which
 features drive each position, and Banxico regime conditioning reveals when the model is
 reliable and when it is not. With a cross-section of ~30 assets, the Mexican market does not
 provide sufficient statistical power for a non-linear model to systematically outperform a
@@ -85,9 +85,9 @@ uses only momentum and liquidity signals and is not directly comparable to Bloom
   │   ML Signal Layer  │   │   Black–Litterman     │   │   ETF Anchor     │
   │                    │   │                       │   │                  │
   │  ElasticNetCV      │   │  Per-ticker views     │   │  ETF universe    │
-  │  (baseline)        │──▶│  from ElasticNet/XGB  │   │  sector weights  │
+  │  (baseline)        │──▶│  from ElasticNet/LGBM │   │  sector weights  │
   │                    │   │  + macro sector views │   │  as soft         │
-  │  XGBoost +         │   │  (confidence = 0.20)  │   │  constraints     │
+  │  LightGBM +         │   │  (confidence = 0.20)  │   │  constraints     │
   │  RandomizedSearchCV│   │  BL posterior → μ     │   │  (±15pp band)    │
   │  TimeSeriesSplit   │   └───────────┬───────────┘   └────────┬─────────┘
   │  SHAP attribution  │              └──────────────┬──────────┘
@@ -128,8 +128,8 @@ pip install -r requirements.txt
 # 2. Full pipeline — Bloomberg, ElasticNet baseline
 python scripts/run_all.py
 
-# 3. XGBoost signal + SHAP attribution
-python scripts/run_all.py --model xgboost
+# 3. LightGBM signal + SHAP attribution
+python scripts/run_all.py --model lightgbm
 
 # 4. No Bloomberg terminal — Yahoo Finance
 python scripts/run_all.py --source yahoo
@@ -140,11 +140,17 @@ python scripts/run_hyperopt.py
 # 6. ETF anchor — run before run_all if etf_sector_anchor.enabled: true
 python scripts/run_etf.py --source bloomberg
 
-# 7. PDF tearsheet
-python scripts/render_tearsheet.py
+# 7. PDF tearsheet (reads reports/output/metrics_<source>_<model>.json)
+python scripts/render_tearsheet.py --source bloomberg --model elasticnet
+
+# 8. Research report (regenerates Abstract KPIs + Table 1 from the same JSON)
+python scripts/render_research_report.py --source bloomberg --model elasticnet
 ```
 
-Output: `reports/output/strategy_report_{source}.html`
+Output:
+- `reports/output/strategy_report_{source}_{model}.html`
+- `reports/output/metrics_{source}_{model}.json` — single source of truth for every
+  downstream renderer; emitted by `run_all.py` at the end of each backtest.
 
 **Credentials:**
 - Bloomberg: local Bloomberg Terminal session (BLPAPI)
@@ -160,7 +166,7 @@ Yahoo Finance (price signals), FRED and Banxico SIE for macro and rate data. Aut
 fallback chain. `strict_data_mode: true` prevents silent mock injection in production runs.
 A 90-day reporting lag is applied to all fundamentals to prevent look-ahead bias.
 
-**Black–Litterman with ML views.** ElasticNetCV or XGBoost generates per-ticker return
+**Black–Litterman with ML views.** ElasticNetCV or LightGBM generates per-ticker return
 views that feed the BL posterior. Macro sector views from industrial production, exports,
 Banxico rate, USDMXN momentum, and inflation are blended at low confidence (0.20) to
 nudge rather than override the quantitative signal.
@@ -170,7 +176,7 @@ MV/CVaR optimizer parameters, EWMA covariance lambda, and ElasticNet mixing rati
 Purged walk-forward CV with a 21-day gap between training and validation. Best OOS
 Sharpe (walk-forward): Bloomberg 0.43, Yahoo 0.57, Refinitiv 0.26 (50 trials each).
 
-**XGBoost ML signal with SHAP attribution.** XGBoost cross-sectional return forecaster
+**LightGBM ML signal with SHAP attribution.** LightGBM cross-sectional return forecaster
 with internal RandomizedSearchCV over TimeSeriesSplit — no lookahead at any stage.
 TreeExplainer SHAP values are computed per rebalance and accumulated into a
 (date, ticker, feature, shap_value) panel. Feature-rank stability across consecutive
@@ -216,16 +222,17 @@ All settings in `config.yaml`. Command-line arguments override the file.
 | Key | Type | Default | Description |
 |:---|:---|:---:|:---|
 | `source` | str / list | `bloomberg` | Data provider(s) |
-| `forecast_model` | str | `elasticnet` | `elasticnet` \| `xgboost` |
+| `forecast_model` | str | `elasticnet` | `elasticnet` \| `lightgbm` |
 | `optimizer` | str | `both` | `mv` \| `cvar` \| `robust` \| `both` |
 | `hedge` | bool | `true` | Layer 2 FX hedge overlay |
 | `reform` | bool | `true` | LFI reform scenario comparison |
-| `compute_shap` | bool | `true` | SHAP values (XGBoost only) |
-| `forecast_xgb_scoring` | str | `neg_mean_squared_error` | `neg_mean_squared_error` \| `ic` |
-| `forecast_xgb_n_iter` | int | `20` | RandomizedSearchCV iterations |
-| `forecast_xgb_cv_splits` | int | `5` | TimeSeriesSplit inner CV folds |
+| `compute_shap` | bool | `true` | SHAP values (LightGBM only) |
+| `forecast_lgbm_scoring` | str | `neg_mean_squared_error` | `neg_mean_squared_error` \| `ic` |
+| `forecast_lgbm_n_iter` | int | `20` | RandomizedSearchCV iterations |
+| `forecast_lgbm_cv_splits` | int | `5` | TimeSeriesSplit inner CV folds (LightGBM only) |
 | `hyperopt_n_trials` | int | `50` | Optuna trials per source |
 | `hyperopt_objective` | str | `sharpe_adj` | `sharpe_adj` \| `sortino` \| `calmar` |
+| `hyperopt_search_keys` | list\|null | `null` | Restrict hyperopt to these config keys only; null = full default search space |
 | `bl_views.use_macro` | bool | `true` | Macro sector views in BL |
 | `bl_views.macro_view_confidence` | float | `0.20` | Macro view confidence weight |
 | `etf_sector_anchor.enabled` | bool | `true` | ETF → equity sector bridge |
@@ -247,16 +254,16 @@ FondoMexicoAlfa/
 │   ├── settings.py                    # DEFAULT_SETTINGS + config loader
 │   ├── signals.py                     # Walk-forward loop + forecast dispatcher
 │   ├── features.py                    # Feature engineering (equity + FIBRA + macro)
-│   ├── xgboost_model.py               # XGBoostModel with internal CV (Step 1)
+│   ├── lightgbm_model.py              # LightGBMModel with internal CV (Step 1)
 │   ├── shap_attribution.py            # SHAP collection + stability metrics (Step 2)
-│   └── macro_regimes.py               # Banxico rate + IPC stress classifiers (Step 3)
+│   └── macro_regimes.py               # Step 3 regime table (rate axis local; stress axis sourced from risk.compute_macro_regime_history)
 │
 ├── scripts/
 │   ├── run_all.py                     # Main entry point (--source, --model flags)
 │   ├── run_hyperopt.py                # Optuna hyperparameter search
-│   ├── run_etf.py                     # ETF universe pipeline
-│   ├── run_etf_hyperopt.py            # ETF hyperopt
+│   ├── run_etf.py                     # ETF universe pipeline (uses ETF_UNIVERSE_OVERRIDES)
 │   ├── render_tearsheet.py            # PDF tearsheet (WeasyPrint / fpdf2 fallback)
+│   ├── render_research_report.py      # Research report renderer (consumes metrics_*.json)
 │   ├── render_step2_report.py         # SHAP report
 │   └── render_step3_report.py         # Regime analysis report
 │
@@ -277,8 +284,12 @@ FondoMexicoAlfa/
 ## Running Tests
 
 ```bash
-pytest -q                                    # 107 tests
-pytest -v tests/test_xgboost_model.py        # XGBoost + holdout-cut
+pytest -q                                    # 156 tests
+pytest -v tests/test_signals_leakage.py      # Walk-forward PIT guarantee
+pytest -v tests/test_backtest.py             # Turnover math + return shape
+pytest -v tests/test_hyperopt.py             # Purged walk-forward folds
+pytest -v tests/test_portfolio.py            # Optimizer constraints
+pytest -v tests/test_lightgbm_model.py       # LightGBM + holdout-cut
 pytest -v tests/test_shap.py                 # SHAP schema + compute_shap flag
 pytest -v tests/test_macro_regimes.py        # Regime assignment + no-lookahead
 pytest -v tests/test_tearsheet.py            # PDF smoke tests
@@ -288,14 +299,21 @@ pytest -v tests/test_tearsheet.py            # PDF smoke tests
 
 ## Environment Notes
 
-**macOS — XGBoost libomp.** XGBoost on macOS may fail with a `libomp.dylib` load
-error. One-time fix per virtual environment (no sudo required):
+**macOS — LightGBM libomp.** LightGBM on macOS needs a runtime copy of `libomp.dylib`
+which is not bundled with the PyPI wheel. If you do not have Homebrew installed,
+the repo includes a workaround that points LightGBM at any arm64 `libomp.dylib`
+already on your system (a copy from R, scikit-learn or conda works):
 
 ```bash
-~/homebrew/bin/brew install libomp
-install_name_tool -add_rpath \
-  $(~/homebrew/bin/brew --prefix libomp)/lib \
-  $(python -c "import xgboost; print(xgboost.__file__.replace('__init__.py',''))")lib/libxgboost.dylib
+# Option A: Homebrew (cleanest, requires sudo to install brew)
+brew install libomp
+
+# Option B: reuse an existing arm64 libomp.dylib (no sudo)
+mkdir -p .venv/lib
+cp /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libomp.dylib .venv/lib/
+install_name_tool -change @rpath/libomp.dylib \
+  "$(pwd)/.venv/lib/libomp.dylib" \
+  .venv/lib/python3.13/site-packages/lightgbm/lib/lib_lightgbm.dylib
 ```
 
 **PDF rendering.** `render_tearsheet.py` attempts WeasyPrint first (requires `pango`

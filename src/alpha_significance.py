@@ -53,7 +53,7 @@ def compute_benchmark_alpha_significance(
     returns_fund: pd.Series,
     benchmark_returns: pd.DataFrame,
     settings: dict | None = None,
-    risk_free_rate: float = 0.04,
+    risk_free_rate: float | pd.Series = 0.04,
 ) -> dict[str, dict]:
     """Compute statistical significance of alpha vs benchmarks using bootstrap.
 
@@ -74,7 +74,14 @@ def compute_benchmark_alpha_significance(
     if benchmark_returns is None or benchmark_returns.empty or not cfg["bootstrap_enabled"]:
         return {}
 
-    daily_rf = risk_free_rate / 252
+    # Jensen's alpha conventionally uses the period-average risk-free rate;
+    # collapse a time-varying Series to its mean for the closed-form formula.
+    _rf_scalar = (
+        float(risk_free_rate.mean())
+        if isinstance(risk_free_rate, pd.Series)
+        else float(risk_free_rate)
+    )
+    daily_rf = _rf_scalar / 252
     out: dict[str, dict] = {}
     for benchmark in benchmark_returns.columns:
         aligned = pd.concat(

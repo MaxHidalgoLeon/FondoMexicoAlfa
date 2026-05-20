@@ -9,10 +9,11 @@ from sklearn.linear_model import ElasticNetCV
 from sklearn.preprocessing import StandardScaler
 
 from .settings import resolve_settings
+from . import progress as _progress
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_FORECAST_MODELS = ("elasticnet", "xgboost")
+SUPPORTED_FORECAST_MODELS = ("elasticnet", "lightgbm")
 
 # Feature sets per asset class (externalized so they're easy to update)
 _EQUITY_FEATURES = [
@@ -97,7 +98,7 @@ def _fit_predict_elasticnet(
         l1_ratio=list(cfg["elasticnet_l1_ratios"]),
         max_iter=int(cfg["elasticnet_max_iter"]),
         tol=float(cfg["elasticnet_tol"]),
-        random_state=42,
+        random_state=int(cfg["elasticnet_random_state"]),
         n_jobs=-1,
     )
     try:
@@ -110,38 +111,38 @@ def _fit_predict_elasticnet(
     return model.predict(scaler.transform(X_pred))
 
 
-def _xgboost_cfg_from_settings(cfg: dict) -> dict:
+def _lightgbm_cfg_from_settings(cfg: dict) -> dict:
     return {
-        "n_iter": int(cfg["forecast_xgb_n_iter"]),
-        "cv_splits": int(cfg["forecast_xgb_cv_splits"]),
-        "n_estimators_cap": int(cfg["forecast_xgb_n_estimators_cap"]),
-        "early_stopping_rounds": int(cfg["forecast_xgb_early_stopping_rounds"]),
-        "scoring": str(cfg["forecast_xgb_scoring"]),
-        "random_state": int(cfg["forecast_xgb_random_state"]),
-        "n_jobs": int(cfg["forecast_xgb_n_jobs"]),
-        "search_n_jobs": int(cfg["forecast_xgb_search_n_jobs"]),
+        "n_iter": int(cfg["forecast_lgbm_n_iter"]),
+        "cv_splits": int(cfg["forecast_lgbm_cv_splits"]),
+        "n_estimators_cap": int(cfg["forecast_lgbm_n_estimators_cap"]),
+        "early_stopping_rounds": int(cfg["forecast_lgbm_early_stopping_rounds"]),
+        "scoring": str(cfg["forecast_lgbm_scoring"]),
+        "random_state": int(cfg["forecast_lgbm_random_state"]),
+        "n_jobs": int(cfg["forecast_lgbm_n_jobs"]),
+        "search_n_jobs": int(cfg["forecast_lgbm_search_n_jobs"]),
     }
 
 
-def _fit_predict_xgboost(
+def _fit_predict_lightgbm(
     X_train: pd.DataFrame,
     y_train: pd.Series,
     X_pred: pd.DataFrame,
     cfg: dict,
 ) -> np.ndarray | None:
-    """Fit XGBoostModel on (X_train, y_train) and predict on X_pred.
+    """Fit LightGBMModel on (X_train, y_train) and predict on X_pred.
 
     Returns predictions as a 1-D ndarray, or None if the fit fails.
-    XGBoostModel handles its own StandardScaler + RandomizedSearchCV +
+    LightGBMModel handles its own StandardScaler + RandomizedSearchCV +
     early-stopping refit internally.
     """
-    from .xgboost_model import XGBoostModel
+    from .lightgbm_model import LightGBMModel
 
-    model = XGBoostModel(config=_xgboost_cfg_from_settings(cfg))
+    model = LightGBMModel(config=_lightgbm_cfg_from_settings(cfg))
     try:
         model.fit(X_train, y_train)
     except Exception as exc:
-        logger.warning("XGBoostModel fit failed: %s", exc)
+        logger.warning("LightGBMModel fit failed: %s", exc)
         return None
     return model.predict(X_pred)
 
@@ -159,7 +160,7 @@ def forecast_returns(
       2. Hands (X_train, y_train, X_pred) to the model selected by
          `settings["forecast_model"]`:
             - "elasticnet" → ElasticNetCV with internal KFold(cv_folds).
-            - "xgboost"    → XGBoostModel with RandomizedSearchCV inside
+            - "lightgbm"   → LightGBMModel with RandomizedSearchCV inside
                              a TimeSeriesSplit(cv_splits) over the training
                              window only, plus early stopping.
       3. Stores predicted expected return for all tickers active on that date.
@@ -171,7 +172,7 @@ def forecast_returns(
     so they are comparable across assets and dates.
 
     Hyperparameters (cv folds, l1_ratios, max_iter, tol for ElasticNet;
-    n_iter, cv_splits, scoring, etc. for XGBoost) and the forecast horizon
+    n_iter, cv_splits, scoring, etc. for LightGBM) and the forecast horizon
     come from `settings`; see DEFAULT_SETTINGS in src/settings.py.
     """
     cfg = resolve_settings(settings)
@@ -185,16 +186,25 @@ def forecast_returns(
             f"choose one of {SUPPORTED_FORECAST_MODELS}."
         )
 
-    if model_name == "xgboost":
-        fit_predict = _fit_predict_xgboost
+    if model_name == "lightgbm":
+        fit_predict = _fit_predict_lightgbm
     else:
         fit_predict = _fit_predict_elasticnet
 
-    do_shap = (model_name == "xgboost") and bool(cfg.get("compute_shap", True))
+    do_shap = (model_name == "lightgbm") and bool(cfg.get("compute_shap", True))
     shap_records: list[dict] = []
 
     forecasts: list[pd.DataFrame] = []
     asset_classes = feature_df["asset_class"].unique()
+
+    # Pre-count total rebalance steps so we can report sub-progress.
+    _total_steps = 0
+    for _ac in asset_classes:
+        if _ac == "fixed_income":
+            continue
+        _ac_dates = pd.DatetimeIndex(sorted(feature_df.loc[feature_df["asset_class"] == _ac, "date"].unique()))
+        _total_steps += len(_end_of_month_dates(_ac_dates))
+    _done_steps = 0
 
     for asset_class in asset_classes:
         class_df = feature_df[feature_df["asset_class"] == asset_class].copy()
@@ -221,7 +231,13 @@ def forecast_returns(
         rebal_dates = _end_of_month_dates(all_dates)
 
         for date in rebal_dates:
-            train_mask = (class_df["date"] <= date) & class_df["_fwd_return"].notna()
+            _done_steps += 1
+            _progress.set_stage("forecast", _done_steps / max(_total_steps, 1))
+
+            # PIT cutoff: target at t' requires prices at t'+forward_days, which
+            # must be realized by decision time `date` — no lookahead.
+            cutoff = pd.Timestamp(date) - pd.tseries.offsets.BDay(forward_days)
+            train_mask = (class_df["date"] <= cutoff) & class_df["_fwd_return"].notna()
             train_data = class_df.loc[train_mask]
 
             if len(train_data) < min_train_rows:
@@ -239,27 +255,27 @@ def forecast_returns(
             X_pred = current_data[feature_cols].fillna(0.0)
 
             if do_shap:
-                # Inline XGBoost fit so we can intercept the model object for SHAP.
-                from .xgboost_model import XGBoostModel
+                # Inline LightGBM fit so we can intercept the model object for SHAP.
+                from .lightgbm_model import LightGBMModel
                 from .shap_attribution import collect_rebalance_shap
 
-                _xgb_model = XGBoostModel(config=_xgboost_cfg_from_settings(cfg))
+                _lgbm_model = LightGBMModel(config=_lightgbm_cfg_from_settings(cfg))
                 try:
-                    _xgb_model.fit(X_train, y_train)
+                    _lgbm_model.fit(X_train, y_train)
                 except Exception as exc:
-                    logger.warning("XGBoostModel fit failed at %s: %s", date, exc)
+                    logger.warning("LightGBMModel fit failed at %s: %s", date, exc)
                     continue
                 # collect_rebalance_shap returns [] on any SHAP error — no try/except needed.
                 shap_records.extend(
                     collect_rebalance_shap(
-                        _xgb_model,
+                        _lgbm_model,
                         X_pred,
                         date,
                         current_data["ticker"].tolist(),
                         feature_cols,
                     )
                 )
-                preds = _xgb_model.predict(X_pred)
+                preds = _lgbm_model.predict(X_pred)
             else:
                 preds = fit_predict(X_train, y_train, X_pred, cfg)
 

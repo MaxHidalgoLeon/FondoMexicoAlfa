@@ -1,0 +1,46 @@
+---
+title: "Fondo Mexico Inversión Alfa: Machine Learning Asset Selection in a Small-Cross-Section Emerging Market with Regulatory Constraints"
+author: "Maximiliano Hidalgo Léon"
+date: "May 2026"
+---
+
+# Fondo Mexico Inversión Alfa: Machine Learning Asset Selection in a Small-Cross-Section Emerging Market with Regulatory Constraints
+
+**Author:** Maximiliano Hidalgo Léon
+**Date:** May 2026
+
+---
+
+## Abstract
+
+We document the construction and out-of-sample evaluation of a systematic equity
+strategy for the joint universe of Mexican publicly traded equities and FIBRAs (the
+Mexican variant of REITs), with primary results reported for the CNBV-regulated
+long-only portfolio. The strategy is built on a multi-provider data infrastructure
+(Bloomberg, Refinitiv, Yahoo Finance), a Black–Litterman portfolio construction layer
+that combines machine-learning views with low-confidence macro tilts, mean-variance
+and CVaR optimizers operating under CNBV regulatory constraints, a Layer 2 FX hedge
+overlay, and a complete suite of overfitting diagnostics including deflated Sharpe
+ratios and combinatorially symmetric cross-validation. We extend the pipeline with an
+LightGBM cross-sectional return forecaster, TreeExplainer SHAP attribution, and Banxico
+macro-regime conditioning. Evaluated on 108 monthly walk-forward out-of-sample
+rebalances from 2017 through early 2026 with Bloomberg point-in-time fundamentals,
+the regulated portfolio achieves an annualized Sharpe ratio of {{ sharpe_bbg }}, an annualized
+return of {{ ret_bbg }} at {{ vol_bbg }} volatility, and a maximum drawdown of {{ mdd_bbg }}. ElasticNetCV
+and LightGBM produce statistically indistinguishable performance on real data; the
+value of the gradient-boosted model lies in its attribution framework rather than
+raw return lift. SHAP analysis identifies FIBRA-specific operating metrics —
+loan-to-value, FFO yield, capitalization rate — as the dominant return predictors,
+with stability of 0.44 (Spearman) across consecutive rebalances. Regime conditioning
+reveals materially higher reliability during Banxico easing cycles than during
+tightening cycles. We argue that the binding constraint on machine-learning approaches
+to this market is the small effective cross-section of the Mexican universe, and we
+discuss the implications for live deployment.
+
+**Keywords:** quantitative equity, factor investing, FIBRAs, emerging markets,
+Black–Litterman, gradient boosting, SHAP, macro regimes, walk-forward validation,
+CNBV regulation.
+
+---
+
+{{ body }}

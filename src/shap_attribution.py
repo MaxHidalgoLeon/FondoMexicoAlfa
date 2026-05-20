@@ -1,4 +1,4 @@
-"""SHAP attribution utilities for the XGBoost walk-forward forecaster.
+"""SHAP attribution utilities for the LightGBM walk-forward forecaster.
 
 Public API consumed by `forecast_returns` in `src/signals.py`:
     collect_rebalance_shap(model, X_pred_df, date, tickers, feature_cols)
@@ -39,14 +39,14 @@ def collect_rebalance_shap(
 ) -> list[dict]:
     """Compute SHAP values for one rebalance and return as a list of records.
 
-    Uses ``shap.TreeExplainer`` on the fitted ``XGBRegressor`` inside ``model``.
+    Uses ``shap.TreeExplainer`` on the fitted ``LGBMRegressor`` inside ``model``.
     The feature matrix is scaled via ``model.scale()`` before SHAP computation
     so that SHAP values correspond to the same feature space the trees were
     trained on.
 
     Args:
-        model: Fitted ``XGBoostModel`` instance. Must expose ``.estimator_``
-            (the underlying ``XGBRegressor``) and ``.scale()`` for transforming
+        model: Fitted ``LightGBMModel`` instance. Must expose ``.estimator_``
+            (the underlying ``LGBMRegressor``) and ``.scale()`` for transforming
             raw features to the scaled space.
         X_pred_df: Raw (unscaled) prediction-set features, shape
             ``(n_tickers, n_features)``.

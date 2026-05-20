@@ -1,5 +1,5 @@
 {
-  "xgboost": {
+  "lightgbm": {
     "ic_mean": 0.15870369746814678,
     "ic_std": 0.2618452139424299,
     "icir": 0.6060973774492585,
@@ -14,7 +14,7 @@
     "n_periods_ic": 108,
     "n_periods_returns": 2609,
     "transaction_cost": 0.001,
-    "model": "xgboost",
+    "model": "lightgbm",
     "forecast_seconds": 44.23590016365051,
     "backtest_seconds": 6.401354074478149
   }

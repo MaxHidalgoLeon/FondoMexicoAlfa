@@ -95,7 +95,7 @@ def _parse_args(config: dict) -> argparse.Namespace:
                    help="Comma-separated benchmarks. Default: IPC,GBMCRE,GBMNEAR,GBMMOD,GBMALFA")
     p.add_argument("--hedge", action="store_true", default=None,
                    help="Enable hedge overlay (Layer 2)")
-    p.add_argument("--model", dest="forecast_model", choices=["elasticnet", "xgboost"], default=None,
+    p.add_argument("--model", dest="forecast_model", choices=["elasticnet", "lightgbm"], default=None,
                    help=f"Forecast model (config.yaml: {config.get('forecast_model', 'elasticnet')})")
     return p.parse_args()
 

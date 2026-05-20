@@ -199,7 +199,7 @@ def build_equity_features(prices: pd.DataFrame, fundamentals: pd.DataFrame, macr
     feature_df = feature_df.assign(
         value_score=lambda x: -0.5 * x["pe_ratio"] - 0.5 * x["pb_ratio"],
         quality_score=lambda x: x["roe"] + x["profit_margin"] - 0.25 * x["net_debt_to_ebitda"],
-        macro_exposure=lambda x: x["industrial_production_yoy"] + 0.5 * x["exports_yoy"].fillna(0),
+        macro_exposure=lambda x: x["industrial_production_yoy"].fillna(0) + 0.5 * x["exports_yoy"].fillna(0),
     )
 
     return feature_df

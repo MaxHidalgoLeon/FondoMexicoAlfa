@@ -49,6 +49,46 @@ def _etf_sector_weights_path(data_source: str) -> str:
     return os.path.join(base, f"etf_sector_weights_{data_source}.json")
 
 
+def _metrics_path(data_source: str, forecast_model: str) -> str:
+    base = os.path.join("reports", "output")
+    os.makedirs(base, exist_ok=True)
+    return os.path.join(base, f"metrics_{data_source}_{forecast_model}.json")
+
+
+def _emit_metrics_json(results: dict, data_source: str, forecast_model: str, end_date: str) -> None:
+    """Write a flat, machine-readable summary of the run to reports/output.
+
+    This file is the single source of truth consumed by render_tearsheet.py and
+    the research-report renderer; no metric should be hardcoded downstream.
+    """
+    backtest = results.get("backtest") or {}
+    metrics = backtest.get("metrics") or {}
+    metrics_ci = backtest.get("metrics_ci") or {}
+    regime_history = backtest.get("regime_history")
+    last_regime: dict = {}
+    if isinstance(regime_history, pd.DataFrame) and not regime_history.empty:
+        try:
+            last_regime = regime_history.iloc[-1].to_dict()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Could not serialize regime history tail: %s", exc)
+
+    payload = {
+        "source": data_source,
+        "model": forecast_model,
+        "as_of": end_date,
+        "metrics": {k: (float(v) if isinstance(v, (int, float, np.floating)) else v)
+                    for k, v in metrics.items()},
+        "metrics_ci": metrics_ci,
+        "regime_last": last_regime,
+        "liquidity_sleeve": (results.get("data") or {}).get("liquidity_sleeve", {}),
+        "hedge_layer_metrics": (results.get("hedge_layer") or {}).get("metrics", {}),
+    }
+    path = _metrics_path(data_source, forecast_model)
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2, default=str)
+    logger.info("Wrote run metrics JSON: %s", path)
+
+
 def _persist_etf_sector_weights(
     backtest_results: dict,
     universe: pd.DataFrame,
@@ -300,10 +340,27 @@ def run_pipeline(
     Returns a dictionary with all results ('data', 'backtest', 'summary',
     'signal_diagnostics', 'benchmarks', optionally 'hedge_layer' and 'reform_layer').
     """
-    from .data_loader import load_data, compute_adtv_liquidity_scores
+    from .data_loader import load_data, compute_adtv_liquidity_scores, compute_adtv_liquidity_scores_panel
     from .risk import detect_macro_regime
+    from . import progress as _progress
+
     cfg = resolve_settings(settings)
-    data = load_data(source=data_source, start_date=start_date, end_date=end_date, **provider_kwargs)
+    if (data_source or "").lower().strip() == "mock":
+        logger.warning(
+            "data_source='mock': running with synthetic data. "
+            "Set strict_data_mode=true or use a real provider (bloomberg/refinitiv/yahoo) for production."
+        )
+    _progress.init()
+    _progress.set_stage("load_data", 0.0)
+    data = load_data(
+        source=data_source,
+        start_date=start_date,
+        end_date=end_date,
+        strict_data_mode=bool(cfg.get("strict_data_mode", False)),
+        allow_fundamentals_defaults=cfg.get("allow_fundamentals_defaults"),
+        **provider_kwargs,
+    )
+    _progress.set_stage("load_data", 1.0)
     universe = data["universe"]
     prices = data["prices"]
     fundamentals = data["fundamentals"]
@@ -317,6 +374,7 @@ def run_pipeline(
     # ------------------------------------------------------------------
     adtv_scores_selected: pd.Series | None = None
     adtv_scores_uniform: pd.Series | None = None
+    adtv_panel: pd.DataFrame | None = None
     if data_source != "mock":
         try:
             from .data_providers import get_provider
@@ -345,11 +403,26 @@ def run_pipeline(
                 universe.loc[universe["ticker"].isin(adtv_scores_selected.index), "ticker"]
                 .map(adtv_scores_selected)
             )
+            # PIT panel of ADTV scores at every business month-end within the
+            # price index range. The backtest slices the row ≤ rebalance date
+            # so the optimizer at date t uses only volume data ≤ t.
+            panel_dates = pd.date_range(
+                start=prices.index.min(), end=prices.index.max(), freq="BME"
+            )
+            adtv_panel = compute_adtv_liquidity_scores_panel(
+                prices, volume, panel_dates,
+                window=int(cfg["adtv_window"]),
+                method=str(cfg["adtv_method"]),
+                ewma_lambda=float(cfg["adtv_ewma_lambda"]),
+                min_periods=int(cfg["adtv_min_periods"]),
+            )
             logger.info(
-                "ADTV liquidity scores updated from %s for %d tickers using method=%s.",
+                "ADTV liquidity scores updated from %s for %d tickers using method=%s. "
+                "PIT panel built across %d rebalance dates.",
                 data_source,
                 len(adtv_scores_selected),
                 cfg["adtv_method"],
+                len(adtv_panel),
             )
         except Exception as exc:
             logger.warning("ADTV score update failed (%s) — using hardcoded scores.", exc)
@@ -384,13 +457,17 @@ def run_pipeline(
         # Sync data dict so the report sees the post-filter universe
         data["universe"] = universe
 
+    _progress.set_stage("features", 0.0)
     feature_df = build_signal_matrix(prices, fundamentals, fibra_fundamentals, bonds, macro, universe)
     scored = score_cross_section(feature_df)
+    _progress.set_stage("features", 1.0)
+    _progress.set_stage("forecast", 0.0)
     forecast_df = forecast_returns(
         scored,
         np.log(prices / prices.shift(1)).replace([np.inf, -np.inf], np.nan).fillna(0.0),
         settings=cfg,
     )
+    _progress.set_stage("forecast", 1.0)
 
     # ------------------------------------------------------------------
     # Separate equity/FIBRA tickers (optimizable) from fixed_income (sleeve)
@@ -437,19 +514,34 @@ def run_pipeline(
     # Align market_weights to the covariance matrix's ticker set before BL
     market_weights = market_weights.reindex(cov_matrix.columns).fillna(0.0)
 
+    _progress.set_stage("bl_views", 0.0)
     bl_returns = black_litterman(
         market_weights, cov_matrix, views, view_confidences,
         risk_aversion=float(cfg["bl_risk_aversion"]),
         tau=float(cfg["bl_tau"]),
     )
 
-    # Risk-free rate: latest available Banxico value in macro
-    banxico_series = macro["banxico_rate"].dropna()
-    risk_free_rate = float(banxico_series.iloc[-1]) if not banxico_series.empty else 0.02
-    # Normalize units: providers may deliver 11.25 (percent) instead of 0.1125 (decimal).
-    if risk_free_rate > 1.0:
-        risk_free_rate = risk_free_rate / 100.0
-    logger.info("Risk-free rate (Banxico): %.4f", risk_free_rate)
+    # Risk-free rate: time-varying daily Banxico series aligned to the price index.
+    # Using banxico.iloc[-1] (a single point) was applying e.g. 11.25% (post-2023
+    # hikes) to the entire 2017-2023 backtest, which mechanically suppressed the
+    # reported Sharpe — Banxico was 4-7% for most of that window. The correct
+    # approach is to subtract each day's contemporaneous Banxico rate.
+    banxico_raw = macro.set_index("date")["banxico_rate"].dropna()
+    if banxico_raw.empty:
+        risk_free_rate: float | pd.Series = 0.02
+        logger.info("Risk-free rate: 0.0200 (Banxico unavailable, default)")
+    else:
+        # Normalize units: providers may deliver 11.25 (percent) instead of 0.1125 (decimal).
+        _scale = 100.0 if banxico_raw.max() > 1.0 else 1.0
+        banxico_decimal = banxico_raw / _scale
+        # Reindex to the daily price index, forward-fill (Banxico is monthly).
+        risk_free_rate = banxico_decimal.reindex(prices.index, method="ffill")
+        risk_free_rate = risk_free_rate.bfill().fillna(0.02)
+        logger.info(
+            "Risk-free rate (Banxico): time-varying, mean=%.4f, latest=%.4f, range=[%.4f, %.4f]",
+            float(risk_free_rate.mean()), float(risk_free_rate.iloc[-1]),
+            float(risk_free_rate.min()), float(risk_free_rate.max()),
+        )
 
     # GARCH on USD/MXN returns to forecast vol and drift
     usdmxn_returns = np.log(macro["usd_mxn"] / macro["usd_mxn"].shift(1)).replace([np.inf, -np.inf], np.nan).dropna()
@@ -486,13 +578,23 @@ def run_pipeline(
         )
 
     # ------------------------------------------------------------------
-    # Liquidity sleeve — regime-based fixed income allocation (non-optimizable)
-    # CETES28 + CETES91 bounds by regime; MBONO3Y optional buffer.
+    # Liquidity sleeve — regime-based fixed income allocation (non-optimizable).
+    # CETES28 + CETES91 bounds by regime, sourced from config; MBONO3Y is an
+    # optional buffer toggled by mbono3y_buffer_enabled.
     # ------------------------------------------------------------------
     _sleeve_bounds = {
-        "expansion":  {"min": 0.03, "max": 0.05},
-        "tightening": {"min": 0.05, "max": 0.08},
-        "stress":     {"min": 0.08, "max": 0.15},
+        "expansion": {
+            "min": float(cfg["liquidity_sleeve_min_expansion"]),
+            "max": float(cfg["liquidity_sleeve_max_expansion"]),
+        },
+        "tightening": {
+            "min": float(cfg["liquidity_sleeve_min_tightening"]),
+            "max": float(cfg["liquidity_sleeve_max_tightening"]),
+        },
+        "stress": {
+            "min": float(cfg["liquidity_sleeve_min_stress"]),
+            "max": float(cfg["liquidity_sleeve_max_stress"]),
+        },
     }
     _macro_for_regime = macro.copy()
     regime = detect_macro_regime(_macro_for_regime, settings=cfg)
@@ -500,7 +602,7 @@ def run_pipeline(
     cetes_weight = (sleeve_range["min"] + sleeve_range["max"]) / 2.0
     cetes28_weight = cetes_weight / 2.0
     cetes91_weight = cetes_weight / 2.0
-    mbono3y_weight = 0.0  # disabled by default (mbono3y_buffer_enabled=false)
+    mbono3y_weight = float(cfg["mbono3y_buffer_max"]) if cfg.get("mbono3y_buffer_enabled") else 0.0
     total_sleeve = cetes_weight + mbono3y_weight
 
     logger.info(
@@ -521,8 +623,13 @@ def run_pipeline(
         "fibra":  {"min": 0.05 * equity_target, "max": 0.30 * equity_target},
     }
 
-    # ADTV proxy: use universe liquidity_score as the per-ticker score vector
-    adtv_scores = universe.set_index("ticker")["liquidity_score"].astype(float)
+    # ADTV proxy: prefer PIT panel (date × ticker) when available so the optimizer
+    # at rebalance t uses only volume data ≤ t. Falls back to static universe
+    # liquidity_score (end-of-panel) for mock or when ADTV computation failed.
+    if adtv_panel is not None and not adtv_panel.empty:
+        adtv_scores = adtv_panel
+    else:
+        adtv_scores = universe.set_index("ticker")["liquidity_score"].astype(float)
 
     # ------------------------------------------------------------------
     # Build issuer consolidated limits (CNBV 10% per issuer)
@@ -549,6 +656,8 @@ def run_pipeline(
         logger.info("ETF anchor active — sector targets: %s",
                     {k: v for k, v in sector_constraints.items() if k != "__sector_map__"})
 
+    _progress.set_stage("bl_views", 1.0)
+    _progress.set_stage("backtest", 0.0)
     backtest_results = run_backtest(
         prices_opt, forecast_df_opt, optimizable_universe,
         risk_free_rate=risk_free_rate,
@@ -681,9 +790,16 @@ def run_pipeline(
             "adtv_method": "uniform",
             "bootstrap_enabled": False,
         }
-        baseline_adtv = adtv_scores
+        # Baseline uses the uniform-method static (end-of-panel) score Series.
+        # If adtv_scores is now a PIT panel (DataFrame), we still pass the
+        # static Series here — this is the historical baseline behavior the
+        # method_comparison block is meant to reproduce.
         if adtv_scores_uniform is not None:
-            baseline_adtv = adtv_scores_uniform.reindex(adtv_scores.index).fillna(adtv_scores)
+            baseline_adtv = adtv_scores_uniform
+        elif isinstance(adtv_scores, pd.DataFrame):
+            baseline_adtv = adtv_scores.iloc[-1] if not adtv_scores.empty else None
+        else:
+            baseline_adtv = adtv_scores
         baseline_backtest = run_backtest(
             prices_opt,
             forecast_df_opt,
@@ -783,8 +899,11 @@ def run_pipeline(
         },
     }
 
+    _progress.set_stage("backtest", 1.0)
+
     # Layer 2 hedge mode
     if hedge_mode:
+        _progress.set_stage("hedge", 0.0)
         from .hedge_overlay import run_hedge_backtest
         hedge_results = run_hedge_backtest(
             prices,
@@ -799,6 +918,7 @@ def run_pipeline(
             hedge_mode=hedge_mode_config,
             borrow_cost_bps=150.0,
             leverage_cost_bps=5.0,
+            settings=cfg,
         )
 
         hedge_ret = hedge_results.get("returns")
@@ -866,9 +986,11 @@ def run_pipeline(
             )
 
         results["hedge_layer"] = hedge_results
+        _progress.set_stage("hedge", 1.0)
 
     # Reform comparison — independent of hedge_mode, runs all 4 LFI scenarios
     if hedge_reform:
+        _progress.set_stage("reform", 0.0)
         from .hedge_overlay import run_reform_comparison
         reform_results = run_reform_comparison(
             prices,
@@ -882,28 +1004,34 @@ def run_pipeline(
             mxn_garch_vol=mxn_garch_vol,
             borrow_cost_bps=150.0,
             leverage_cost_bps=5.0,
+            settings=cfg,
         )
         results["reform_layer"] = reform_results
+        _progress.set_stage("reform", 1.0)
 
+    _progress.set_stage("reports", 0.0)
+    _emit_metrics_json(results, data_source, str(cfg.get("forecast_model", "elasticnet")), end_date)
+    _progress.set_stage("reports", 1.0)
+    _progress.done()
     return results
 
 
 def print_summary(results: dict[str, object], hedge_mode: bool = False) -> None:
-    """Print a tabular summary of strategy metrics to the console.
+    """Log a tabular summary of strategy metrics.
 
     In hedge mode (Layer 2) shows a side-by-side Layer 1 vs Layer 2 comparison.
-    In normal mode shows Layer 1 metrics and stress test results.
+    In normal mode shows Layer 1 metrics and stress test results. Emits to the
+    module logger so CLI scripts and harness callers control the destination.
     """
     summary = results["summary"]
-    print("=== Strategy Pipeline Summary ===")
-    print(f"Universe size: {summary['universe_size']}")
-    print(f"Backtest period: {summary['start_date'].date()} to {summary['end_date'].date()}")
+    logger.info("=== Strategy Pipeline Summary ===")
+    logger.info("Universe size: %s", summary["universe_size"])
+    logger.info("Backtest period: %s to %s", summary["start_date"].date(), summary["end_date"].date())
 
     if hedge_mode and "hedge_layer" in results:
-        # Side-by-side comparison
-        print("\n=== Layer 1 vs Layer 2 (Hedge) Metrics ===")
-        print(f"{'Metric':<22} {'Layer 1':<15} {'Layer 2':<15}")
-        print("-" * 52)
+        logger.info("=== Layer 1 vs Layer 2 (Hedge) Metrics ===")
+        logger.info("%-22s %-15s %-15s", "Metric", "Layer 1", "Layer 2")
+        logger.info("-" * 52)
 
         layer1_metrics = summary["metrics"]
         layer2_metrics = results["hedge_layer"]["metrics"]
@@ -913,22 +1041,21 @@ def print_summary(results: dict[str, object], hedge_mode: bool = False) -> None:
             l2_val = layer2_metrics.get(key, 0.0)
             l1_str = f"{l1_val:>14.4f}" if isinstance(l1_val, (int, float)) and np.isfinite(l1_val) else f"{'N/A':>14}"
             l2_str = f"{l2_val:>14.4f}" if isinstance(l2_val, (int, float)) and np.isfinite(l2_val) else f"{'N/A':>14}"
-            print(f"{key:<22} {l1_str} {l2_str}")
+            logger.info("%-22s %s %s", key, l1_str, l2_str)
 
-        print("\nTail hedge analysis (Layer 2):")
+        logger.info("Tail hedge analysis (Layer 2):")
         tail_hedge = results["hedge_layer"]["tail_hedge"]
-        print(f"  Unhedged loss at 99%: {tail_hedge['unhedged_loss_at_99']:.4f}")
-        print(f"  Hedge payoff: {tail_hedge['hedge_payoff']:.4f}")
-        print(f"  Daily cost drag: {tail_hedge['daily_cost_drag']:.6f}")
-        print(f"  Net benefit: {tail_hedge['net_benefit']:.4f}")
-        print(f"  Recommended: {tail_hedge['recommended']}")
+        logger.info("  Unhedged loss at 99%%: %.4f", tail_hedge["unhedged_loss_at_99"])
+        logger.info("  Hedge payoff:        %.4f", tail_hedge["hedge_payoff"])
+        logger.info("  Daily cost drag:     %.6f", tail_hedge["daily_cost_drag"])
+        logger.info("  Net benefit:         %.4f", tail_hedge["net_benefit"])
+        logger.info("  Recommended:         %s", tail_hedge["recommended"])
     else:
-        print("\nLayer 1 metrics:")
+        logger.info("Layer 1 metrics:")
         for key, value in summary["metrics"].items():
             val_str = f"{value:.4f}" if isinstance(value, (int, float)) and np.isfinite(value) else "N/A"
-            print(f"{key}: {val_str}")
-        print("\nStress test results:")
-        print(summary["stress"].to_string(index=False))
+            logger.info("%s: %s", key, val_str)
+        logger.info("Stress test results:\n%s", summary["stress"].to_string(index=False))
 
 
 _ETF_DEFAULT_BENCHMARKS = ["IPC", "GBMCRE", "GBMNEAR", "GBMMOD", "GBMALFA"]
@@ -966,11 +1093,23 @@ def run_etf_pipeline(
     from .risk import detect_macro_regime
     from .alpha_significance import compute_benchmark_alpha_significance
     from .signal_diagnostics import compute_signal_ic_diagnostics
+    from .settings import ETF_UNIVERSE_OVERRIDES
 
-    cfg           = resolve_settings(settings)
+    from . import progress as _progress
+    _progress.init()
+
+    # Apply ETF universe overrides first; caller-provided `settings` (e.g. config.yaml
+    # or CLI) wins so explicit knobs still take precedence.
+    merged_settings = {**ETF_UNIVERSE_OVERRIDES, **(settings or {})}
+    cfg           = resolve_settings(merged_settings)
     risk_free_rate = float(cfg.get("risk_free_rate", 0.04))
+    # Normalize units: a percent value (e.g. 8.5) should be 0.085 for daily math.
+    if risk_free_rate > 1.0:
+        risk_free_rate = risk_free_rate / 100.0
 
+    _progress.set_stage("load_data", 0.0)
     data = load_etf_data(source=data_source, start_date=start_date, end_date=end_date, **provider_kwargs)
+    _progress.set_stage("load_data", 1.0)
 
     universe = data["universe"]
     prices   = data["prices"]
@@ -980,10 +1119,14 @@ def run_etf_pipeline(
     if prices.empty:
         raise RuntimeError(f"ETF pipeline: no price data returned for source='{data_source}'.")
 
+    _progress.set_stage("features", 0.0)
     feature_df  = build_etf_features(prices, macro, universe, bonds=bonds)
     scored      = score_cross_section(feature_df)
     log_returns = np.log(prices / prices.shift(1)).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    _progress.set_stage("features", 1.0)
+    _progress.set_stage("forecast", 0.0)
     forecast_df = forecast_returns(scored, log_returns, settings=cfg)
+    _progress.set_stage("forecast", 1.0)
 
     # ---- Allocation constraints ----
     # Equity ETFs: per-ticker min/max from universe.
@@ -1013,6 +1156,8 @@ def run_etf_pipeline(
     forecast_opt = forecast_df[forecast_df["ticker"].isin(all_opt_tickers)].copy()
     opt_universe = universe[universe["ticker"].isin(all_opt_tickers)].copy()
 
+    _progress.set_stage("bl_views", 1.0)
+    _progress.set_stage("backtest", 0.0)
     backtest_results = run_backtest(
         prices_opt,
         forecast_opt,
@@ -1121,9 +1266,11 @@ def run_etf_pipeline(
         },
         "mode": "etf",
     }
+    _progress.set_stage("backtest", 1.0)
 
     # ---- Hedge overlay (Layer 2) ----
     if hedge_mode:
+        _progress.set_stage("hedge", 0.0)
         from .hedge_overlay import run_hedge_backtest
 
         # GARCH vol for MXN — reuse the strategy returns as proxy
@@ -1145,6 +1292,7 @@ def run_etf_pipeline(
             hedge_mode=hedge_mode_config,
             borrow_cost_bps=150.0,
             leverage_cost_bps=5.0,
+            settings=cfg,
         )
 
         hedge_ret = hedge_results.get("returns")
@@ -1219,6 +1367,7 @@ def run_etf_pipeline(
         )
         results["reform_layer"] = reform_results
 
+    _emit_metrics_json(results, data_source, str(cfg.get("forecast_model", "elasticnet")), end_date)
     return results
 
 

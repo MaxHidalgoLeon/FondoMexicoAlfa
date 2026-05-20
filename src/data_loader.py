@@ -15,11 +15,13 @@ def compute_adtv_liquidity_scores(
     method: str = "uniform",
     ewma_lambda: float = 0.97,
     min_periods: int = 60,
+    as_of_date: pd.Timestamp | None = None,
 ) -> pd.Series:
     """Compute normalized liquidity scores based on real ADTV.
 
     ADTV (Average Daily Traded Value) = mean(close_price × volume) over the
-    last 'window' trading days. A high ADTV means the asset is very liquid.
+    last 'window' trading days ending at `as_of_date` (or end-of-panel if None).
+    A high ADTV means the asset is very liquid.
 
     Averaging methods:
       'uniform' → simple mean over the window.
@@ -29,16 +31,21 @@ def compute_adtv_liquidity_scores(
     Used as the denominator in the market-impact term of the optimizer:
     η·σ_i / ADTV_i — illiquid assets (low ADTV) have a higher estimated trade cost.
 
-    Compute liquidity scores from real ADTV (Average Daily Traded Value).
-
-    ADTV = mean(close_price * volume) over the last `window` trading days.
-    Scores are normalized to [0.0, 1.0] using min-max scaling across the
-    equity/FIBRA universe. Fixed-income tickers (not in prices) get 1.0.
+    PIT (point-in-time) usage:
+        Pass `as_of_date=<rebalance_date>` to filter both price and volume
+        panels to `<= as_of_date` before computing. This guarantees the score
+        at date t uses only information available at t.
 
     Returns a Series indexed by canonical ticker name.
     """
     common = prices.columns.intersection(volume.columns)
-    pv = (prices[common] * volume[common]).replace([np.inf, -np.inf], np.nan)
+    px = prices[common]
+    vol = volume[common]
+    if as_of_date is not None:
+        as_of = pd.Timestamp(as_of_date)
+        px = px.loc[px.index <= as_of]
+        vol = vol.loc[vol.index <= as_of]
+    pv = (px * vol).replace([np.inf, -np.inf], np.nan)
     method_lc = str(method).lower().strip()
     if method_lc == "ewma":
         adtv = pv.tail(window).ewm(alpha=1.0 - float(ewma_lambda), min_periods=min_periods, adjust=False).mean().iloc[-1]
@@ -50,6 +57,39 @@ def compute_adtv_liquidity_scores(
     else:
         scores = (adtv - score_min) / (score_max - score_min)
     return scores
+
+
+def compute_adtv_liquidity_scores_panel(
+    prices: pd.DataFrame,
+    volume: pd.DataFrame,
+    dates: pd.DatetimeIndex,
+    window: int = 252,
+    method: str = "uniform",
+    ewma_lambda: float = 0.97,
+    min_periods: int = 60,
+) -> pd.DataFrame:
+    """PIT panel of ADTV liquidity scores indexed by `dates`.
+
+    Returns a DataFrame (rows = `dates`, cols = tickers) where row t is
+    `compute_adtv_liquidity_scores(prices, volume, ..., as_of_date=t)`.
+
+    Used by the backtest engine to feed the optimizer a date-appropriate
+    liquidity score at each rebalance — preventing the historical
+    "use end-of-panel score for every rebalance" PIT violation.
+    """
+    rows: Dict[pd.Timestamp, pd.Series] = {}
+    for d in pd.DatetimeIndex(dates):
+        rows[d] = compute_adtv_liquidity_scores(
+            prices, volume,
+            window=window, method=method,
+            ewma_lambda=ewma_lambda, min_periods=min_periods,
+            as_of_date=d,
+        )
+    if not rows:
+        return pd.DataFrame()
+    panel = pd.DataFrame(rows).T.sort_index()
+    panel.index.name = "date"
+    return panel
 
 
 def get_investable_universe() -> pd.DataFrame:
@@ -409,6 +449,7 @@ def load_data(
     end_date: str = "2026-03-31",
     strict_data_mode: bool = False,
     fundamentals_lag_days: int = 90,
+    allow_fundamentals_defaults: bool | None = None,
     **provider_kwargs,
 ) -> Dict[str, pd.DataFrame]:
     """Load all data required by the pipeline from the specified source.
@@ -427,14 +468,32 @@ def load_data(
       'bonds'              → Fixed-income data (YTM, duration, price).
       'macro'              → Monthly macro indicators (IP, FX, Banxico…).
 
-    fundamentals_lag_days=90 ensures the backtest uses fundamentals reported
-    at least 90 days before the rebalancing date (avoids look-ahead bias from
-    quarterly reports published ~45-60 days after the quarter close).
+    fundamentals_lag_days=90 applies a uniform forward shift to all
+    fundamental dates (avoids look-ahead bias from quarterly reports).
+
+    Design note: this is a conservative approximation. Mexican 10-Q filings
+    are typically released 45–80 days after quarter-end; the 90-day shift
+    guarantees no look-ahead at the cost of slightly over-delaying information
+    that may have been publicly available sooner. Actual release dates from the
+    provider (e.g. Bloomberg LATEST_ANNOUNCEMENT_DATE) would be more precise
+    but are not always available across all data sources.
     """
     from .data_providers import get_provider
 
     if source == "mock":
-        return load_mock_data()
+        data = load_mock_data()
+        # Respect start_date/end_date for mock just like real providers do.
+        # Without this every test run processes the full 2017-2026 mock universe
+        # (~9 years × 24 tickers ≈ 2,400 unique dates), making smoke tests slow.
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
+        data["prices"] = data["prices"].loc[start_ts:end_ts]
+        for k in ("fundamentals", "fibra_fundamentals", "bonds", "macro"):
+            df = data[k]
+            if "date" in df.columns and len(df):
+                mask = (pd.to_datetime(df["date"]) >= start_ts) & (pd.to_datetime(df["date"]) <= end_ts)
+                data[k] = df.loc[mask].reset_index(drop=True)
+        return data
 
     dropped_tickers: list[str] = []
     mock_fallbacks_used: list[str] = []
@@ -484,47 +543,144 @@ def load_data(
     if source != "mock":
         try:
             mcaps = provider.get_market_caps(equity_tickers + fibra_tickers)
+            # Bloomberg can return duplicate rows for the same ticker (different
+            # share classes mapped to one symbol). Deduplicate before mapping;
+            # .map() requires a unique-valued index.
+            if not mcaps.index.is_unique:
+                mcaps = mcaps[~mcaps.index.duplicated(keep="first")]
             # Update universe market_cap_mxn for available tickers
             universe["market_cap_mxn"] = universe["market_cap_mxn"].astype(float)
             universe.loc[universe["ticker"].isin(mcaps.index), "market_cap_mxn"] = (
                 universe.loc[universe["ticker"].isin(mcaps.index), "ticker"].map(mcaps)
             )
             logger.info("Dynamic market caps updated from %s.", source)
-        except Exception as e:
-            logger.warning("Failed to load dynamic market caps from %s (%s). Using defaults.", source, e)
+        except (IOError, OSError, KeyError, ValueError, AttributeError,
+                RuntimeError, NotImplementedError, pd.errors.InvalidIndexError):
+            logger.warning("Failed to load dynamic market caps from %s. Using defaults.", source, exc_info=True)
+
+    # allow_fundamentals_defaults overrides the strict_data_mode-derived default
+    # when explicitly set; otherwise we fall back to (not strict_data_mode).
+    _allow_defaults = (
+        bool(allow_fundamentals_defaults)
+        if allow_fundamentals_defaults is not None
+        else (not strict_data_mode)
+    )
+
+    # Provider failures: catch transport (HTTPError/ConnectionError), data-shape
+    # (KeyError/ValueError) and the provider's NotImplementedError. We still log
+    # the full traceback via exc_info so root cause is recoverable.
+    _PROVIDER_ERRORS = (
+        IOError, OSError, KeyError, ValueError, TypeError,
+        AttributeError, RuntimeError, NotImplementedError,
+    )
 
     try:
         fundamentals = provider.get_fundamentals(
-            [t for t in equity_tickers if t not in fibra_tickers], start_date, end_date, allow_defaults=not strict_data_mode
+            [t for t in equity_tickers if t not in fibra_tickers], start_date, end_date, allow_defaults=_allow_defaults
         )
-    except Exception as e:
-        logger.error("Fundamentals load failed (%s). strict_data_mode=%s", e, strict_data_mode)
+    except _PROVIDER_ERRORS:
+        logger.error("Fundamentals load failed (strict_data_mode=%s)", strict_data_mode, exc_info=True)
         mock_fallbacks_used.append("fundamentals")
         fundamentals = pd.DataFrame(columns=["date", "ticker", "pe_ratio", "pb_ratio", "roe",
                                               "profit_margin", "net_debt_to_ebitda", "ebitda_growth", "capex_to_sales"])
 
     try:
-        fibra_fundamentals = provider.get_fibra_fundamentals(fibra_tickers, start_date, end_date, allow_defaults=not strict_data_mode)
-    except Exception as e:
-        logger.error("FIBRA fundamentals load failed (%s). strict_data_mode=%s", e, strict_data_mode)
+        fibra_fundamentals = provider.get_fibra_fundamentals(fibra_tickers, start_date, end_date, allow_defaults=_allow_defaults)
+    except _PROVIDER_ERRORS:
+        logger.error("FIBRA fundamentals load failed (strict_data_mode=%s)", strict_data_mode, exc_info=True)
         mock_fallbacks_used.append("fibra_fundamentals")
         fibra_fundamentals = pd.DataFrame(columns=["date", "ticker", "cap_rate", "ffo_yield",
                                                     "dividend_yield", "ltv", "vacancy_rate"])
 
     try:
         bonds = provider.get_bonds(bond_tickers, start_date, end_date)
-    except Exception as e:
-        logger.error("Bond data load failed (%s). strict_data_mode=%s", e, strict_data_mode)
+    except _PROVIDER_ERRORS:
+        logger.error("Bond data load failed (strict_data_mode=%s)", strict_data_mode, exc_info=True)
         mock_fallbacks_used.append("bonds")
         bonds = pd.DataFrame(columns=["date", "ticker", "asset_class", "price", "ytm", "duration", "credit_spread"])
 
     try:
         macro = provider.get_macro(start_date, end_date)
-    except Exception as e:
-        logger.error("Macro load failed (%s). strict_data_mode=%s", e, strict_data_mode)
+    except _PROVIDER_ERRORS:
+        logger.error("Macro load failed (strict_data_mode=%s)", strict_data_mode, exc_info=True)
         mock_fallbacks_used.append("macro")
         macro = pd.DataFrame(columns=["date", "IMAI", "industrial_production_yoy", "exports_yoy",
                                       "usd_mxn", "banxico_rate", "inflation_yoy", "us_ip_yoy", "us_fed_rate"])
+
+    # ── Fallback: if banxico_rate is missing or all-NaN in the macro extract,
+    # derive it from CETES28 yields (28-day Mexican T-bill — a direct proxy for
+    # the Banxico overnight rate). The Bloomberg parquet extract historically
+    # omits MXONBRAN Index; without this fallback the FX overlay, macro regime
+    # classifier, and risk-free-rate calculation all silently fail.
+    if (
+        not macro.empty
+        and ("banxico_rate" not in macro.columns or macro["banxico_rate"].isna().all())
+        and not bonds.empty
+        and "ticker" in bonds.columns
+    ):
+        cetes = bonds[bonds["ticker"] == "CETES28"].copy()
+        if not cetes.empty:
+            # CETES28 yield is typically in the "price" column (PX_LAST) or "ytm".
+            yield_col = next(
+                (c for c in ("ytm", "price") if c in cetes.columns and cetes[c].notna().any()),
+                None,
+            )
+            if yield_col is not None:
+                cetes_yield = (
+                    cetes.set_index(pd.to_datetime(cetes["date"]))[yield_col]
+                    .dropna()
+                    .sort_index()
+                )
+                if not cetes_yield.empty:
+                    macro = macro.copy()
+                    macro["date"] = pd.to_datetime(macro["date"])
+                    cetes_aligned = cetes_yield.reindex(macro["date"], method="nearest")
+                    macro["banxico_rate"] = cetes_aligned.values
+                    logger.warning(
+                        "banxico_rate missing from macro — derived from CETES28 %s "
+                        "(range: %.2f - %.2f, mean %.2f). Re-extract Bloomberg with "
+                        "MXONBRAN Index for canonical Banxico data.",
+                        yield_col, float(cetes_yield.min()), float(cetes_yield.max()),
+                        float(cetes_yield.mean()),
+                    )
+
+    # ── Fallback: fill remaining NaN macro columns from macro_public.parquet
+    # (produced by scripts/fetch_public_macro.py using Banxico SIE + FRED).
+    # Only fills columns that are still entirely NaN — Bloomberg data takes priority.
+    _PUBLIC_MACRO_COLS = [
+        "banxico_rate", "inflation_yoy", "us_ip_yoy", "us_fed_rate",
+        "IMAI", "industrial_production_yoy", "exports_yoy",
+    ]
+    from pathlib import Path as _Path
+    _public_macro_path = (
+        _Path(__file__).parent.parent / "data" / "bloomberg" / "macro_public.parquet"
+    )
+    if _public_macro_path.exists() and not macro.empty and "date" in macro.columns:
+        try:
+            pub = pd.read_parquet(_public_macro_path)
+            pub["date"] = pd.to_datetime(pub["date"])
+            macro["date"] = pd.to_datetime(macro["date"])
+            for col in _PUBLIC_MACRO_COLS:
+                if col not in pub.columns:
+                    continue
+                # Only apply if column is missing or all-NaN in current macro
+                if col not in macro.columns or macro[col].isna().all():
+                    pub_aligned = (
+                        pub.set_index("date")[col]
+                        .reindex(macro["date"], method="ffill")
+                        .bfill()
+                    )
+                    macro[col] = pub_aligned.values
+                    logger.info(
+                        "macro column '%s' filled from macro_public.parquet "
+                        "(mean=%.4f, range=[%.4f, %.4f])",
+                        col,
+                        float(pub_aligned.mean()),
+                        float(pub_aligned.min()),
+                        float(pub_aligned.max()),
+                    )
+        except Exception as _pub_exc:
+            logger.warning("Could not apply macro_public.parquet fallback: %s", _pub_exc)
 
     if fundamentals_lag_days > 0:
         if not fundamentals.empty and "date" in fundamentals.columns:
@@ -631,10 +787,21 @@ def _load_index_prices_from_csv(
     Each file has columns [date, price] where date is ISO (YYYY-MM-DD) and
     price is a rebased index (100 = first date). Returns a wide DataFrame
     indexed by business-day DatetimeIndex with one column per sector ticker.
+
+    Raises FileNotFoundError when any required CSV is absent so callers can
+    decide whether to fall back to synthetic data instead of silently
+    propagating empty series.
     """
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
+    missing = [rel for rel in _ETF_INDEX_FILES.values() if not (root / rel).exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"Missing ETF sector index CSV(s): {missing}. "
+            f"Expected at {root / 'index'}. Re-fetch from the data provider or "
+            f"add the CSV files before running the ETF pipeline."
+        )
     frames = {}
     for ticker, rel_path in _ETF_INDEX_FILES.items():
         path = root / rel_path

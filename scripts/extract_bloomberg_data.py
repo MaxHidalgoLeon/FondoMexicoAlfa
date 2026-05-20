@@ -277,16 +277,71 @@ def extract_fibra_fundamentals(mapping: dict[str, str], start: str, end: str) ->
 def extract_macro(start: str, end: str) -> pd.DataFrame:
     from xbbg import blp
     logger.info("Macro: %d indicators...", len(_MACRO_TICKERS))
-    raw = _bdh_monthly(blp, list(_MACRO_TICKERS), "PX_LAST", start, end)
-    if _is_empty(raw):
-        logger.warning("Macro: empty response")
-        return pd.DataFrame()
-    raw = _normalize_index(raw)
-    if isinstance(raw.columns, pd.MultiIndex):
-        raw.columns = raw.columns.get_level_values(0)
-    raw = raw.rename(columns=_MACRO_TICKERS)
-    raw = raw.reset_index()
-    return _divide_rates_if_pct(raw)
+
+    # Fetch all tickers in one batch first; fall back to per-ticker requests
+    # for any that come back empty (some Bloomberg terminals only serve certain
+    # economic indices when queried individually or as daily data).
+    frames: dict[str, pd.Series] = {}
+
+    def _fetch_one(bbg_ticker: str) -> pd.Series | None:
+        """Try monthly, then daily-resampled for a single ticker."""
+        for daily in (False, True):
+            try:
+                if daily:
+                    r = blp.bdh(bbg_ticker, "PX_LAST", start, end)
+                else:
+                    r = _bdh_monthly(blp, bbg_ticker, ["PX_LAST"], start, end)
+                r = _to_pandas(r)
+                if _is_empty(r):
+                    continue
+                r = _normalize_index(r)
+                if isinstance(r.columns, pd.MultiIndex):
+                    r.columns = r.columns.get_level_values(1)
+                # value column may be named after the field or the ticker
+                val_col = next(
+                    (c for c in r.columns if str(c).upper() in ("PX_LAST", bbg_ticker.upper())),
+                    r.columns[0] if len(r.columns) > 0 else None,
+                )
+                if val_col is None:
+                    continue
+                s = r[val_col].dropna()
+                if len(s) == 0:
+                    continue
+                if daily:
+                    s = s.resample("ME").last()
+                return s
+            except Exception:
+                continue
+        return None
+
+    for bbg, canonical in _MACRO_TICKERS.items():
+        s = _fetch_one(bbg)
+        if s is not None and len(s) > 0:
+            frames[canonical] = s
+            logger.info("  %s (%s): %d rows", bbg, canonical, len(s))
+        else:
+            logger.warning(
+                "Macro extract: Bloomberg returned NO data for %r (canonical=%r). "
+                "Output parquet will lack this column. Check ticker validity and "
+                "your terminal entitlements.",
+                bbg, canonical,
+            )
+
+    if not frames:
+        logger.warning("Macro: all tickers failed")
+        result = pd.DataFrame(columns=["date"] + list(_MACRO_TICKERS.values()))
+        return result
+
+    result = pd.DataFrame(frames)
+    result.index.name = "date"
+    result = result.reset_index()
+
+    # Ensure every canonical column exists even when Bloomberg dropped the ticker.
+    for canonical in _MACRO_TICKERS.values():
+        if canonical not in result.columns:
+            result[canonical] = float("nan")
+
+    return _divide_rates_if_pct(result)
 
 
 def extract_bonds(start: str, end: str) -> pd.DataFrame:

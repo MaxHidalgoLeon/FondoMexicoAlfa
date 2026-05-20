@@ -1,4 +1,4 @@
-# Step 2 — SHAP Feature Attribution (XGBoost)
+# Step 2 — SHAP Feature Attribution (LightGBM)
 
 Walk-forward SHAP values computed with `shap.TreeExplainer` after each monthly rebalance,
 using only the model trained on data ≤ t (no look-ahead). Source: mock panel
@@ -9,7 +9,7 @@ using only the model trained on data ≤ t (no look-ahead). Source: mock panel
 
 ```bash
 # 1. Run the pipeline with SHAP enabled (generates data/shap_values.parquet)
-python scripts/run_all.py --skip-tests --source mock --model xgboost
+python scripts/run_all.py --skip-tests --source mock --model lightgbm
 
 # 2. Render this report
 python scripts/render_step2_report.py
@@ -79,7 +79,7 @@ are the most targeted remedies.
 
 ElasticNetCV per-rebalance coefficients are **not stored** in this pipeline
 (`_fit_predict_elasticnet` discards the fitted model object). Adding coefficient storage was
-explicitly out of scope per the Step 2 specification. The panel below is therefore XGBoost-only.
+explicitly out of scope per the Step 2 specification. The panel below is therefore LightGBM-only.
 
 ![Feature importance over time](figures/step2_feature_importance_over_time.png)
 
@@ -105,7 +105,7 @@ cross-sectional baseline. Red = positive contribution; blue = negative.
 
 ## 7. Interpretation
 
-The XGBoost model assigns the highest importance to **ltv**, **ffo_yield**, **cap_rate**, reflecting its ability to capture non-linear interactions between fundamental valuation metrics (FIBRA cap rates, leverage, FFO yield) and cross-sectional momentum — signals that a linear ElasticNet would assign equal weight to regardless of regime. The dominance of FIBRA-specific features (ltv, ffo_yield, cap_rate) is consistent with FIBRA pricing being driven by a distinct set of real-estate cash-flow signals that are largely orthogonal to equity factors.
+The LightGBM model assigns the highest importance to **ltv**, **ffo_yield**, **cap_rate**, reflecting its ability to capture non-linear interactions between fundamental valuation metrics (FIBRA cap rates, leverage, FFO yield) and cross-sectional momentum — signals that a linear ElasticNet would assign equal weight to regardless of regime. The dominance of FIBRA-specific features (ltv, ffo_yield, cap_rate) is consistent with FIBRA pricing being driven by a distinct set of real-estate cash-flow signals that are largely orthogonal to equity factors.
 
 Feature stability — measured as the Spearman rank-correlation of the top-5 importance ranking between consecutive monthly rebalances — averages **0.44**, which is below the 0.80 adequacy threshold for live deployment. This suggests the tree's split structure reorganises materially from month to month, likely because the small cross-section (~26 equities + FIBRAs) provides insufficient signal to pin down a stable feature hierarchy. The high std (0.42 for top-5) confirms episodic instability rather than a structural trend. For a live strategy this argues for either a larger universe, a stability-weighted ensemble, or using SHAP attributions only for post-hoc diagnosis rather than as a trading signal.
 

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Callable
 
 import numpy as np
 import pandas as pd
 from arch.bootstrap import StationaryBootstrap, optimal_block_length
+
+logger = logging.getLogger(__name__)
 
 
 def _as_clean_series(values: pd.Series | np.ndarray | list[float]) -> pd.Series:
@@ -35,11 +38,15 @@ def bootstrap_block_size_selector(returns: pd.Series) -> int:
         return 20
     try:
         block_df = optimal_block_length(clean.values)
-        block = float(block_df["b_sb"].iloc[0])
+        # arch.bootstrap returns a DataFrame with columns ["stationary", "circular"].
+        # We use the stationary-bootstrap estimate; the older "b_sb" naming the
+        # library historically used has been removed.
+        block = float(block_df["stationary"].iloc[0])
         if not np.isfinite(block):
             return 20
         return int(np.clip(round(block), 5, 60))
-    except Exception:
+    except (KeyError, ValueError, RuntimeError, np.linalg.LinAlgError) as exc:
+        logger.warning("optimal_block_length failed (%s); falling back to 20.", exc)
         return 20
 
 

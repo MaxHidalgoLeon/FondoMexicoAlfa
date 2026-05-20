@@ -712,8 +712,13 @@ def optimize_portfolio_robust(
             continue
 
     if successes == 0:
-        logger.warning("Robust optimizer: all simulations failed — returning equal weight.")
-        w = np.repeat(target_net_exposure / n, n)
+        logger.warning(
+            "Robust optimizer: all simulations failed — returning feasible fallback weights "
+            "(respects asset_class_constraints and position bounds)."
+        )
+        w = _build_feasible_x0(
+            tickers, asset_class_constraints or {}, max_position, min_position, target_net_exposure
+        )
         return pd.Series(w, index=tickers)
 
     avg_weights = accumulated / successes
@@ -744,6 +749,14 @@ def black_litterman(
     P: selection matrix (1 at the position of the view ticker).
     Q: expected return vector from views (from ElasticNet or macro model).
     τ (tau): prior uncertainty scalar; typically 0.01–0.10.
+
+    NOTE on risk_aversion (δ): this is the *implied market risk-aversion* used
+    solely to back out equilibrium returns π from the market portfolio. It is
+    NOT the investor's utility risk-aversion, which is configured separately via
+    `mv_risk_aversion` / `cvar_risk_aversion` in the optimizer call. Keeping them
+    distinct follows He & Litterman (1999): δ is calibrated to match the market
+    Sharpe ratio, while the optimizer's λ reflects the investor's preference.
+    Default δ=2.5 is a common empirical approximation for broad equity markets.
     """
     pi = risk_aversion * cov_matrix.dot(market_weights)  # CAPM equilibrium returns
     P = np.zeros((len(views), len(market_weights)))

@@ -25,12 +25,12 @@ that combines machine-learning views with low-confidence macro tilts, mean-varia
 and CVaR optimizers operating under CNBV regulatory constraints, a Layer 2 FX hedge
 overlay, and a complete suite of overfitting diagnostics including deflated Sharpe
 ratios and combinatorially symmetric cross-validation. We extend the pipeline with an
-XGBoost cross-sectional return forecaster, TreeExplainer SHAP attribution, and Banxico
+LightGBM cross-sectional return forecaster, TreeExplainer SHAP attribution, and Banxico
 macro-regime conditioning. Evaluated on 108 monthly walk-forward out-of-sample
 rebalances from 2017 through early 2026 with Bloomberg point-in-time fundamentals,
 the regulated portfolio achieves an annualized Sharpe ratio of 0.44, an annualized
 return of 8.34% at 13.59% volatility, and a maximum drawdown of -35.5%. ElasticNetCV
-and XGBoost produce statistically indistinguishable performance on real data; the
+and LightGBM produce statistically indistinguishable performance on real data; the
 value of the gradient-boosted model lies in its attribution framework rather than
 raw return lift. SHAP analysis identifies FIBRA-specific operating metrics —
 loan-to-value, FFO yield, capitalization rate — as the dominant return predictors,
@@ -77,7 +77,7 @@ and price-based signals. These features have no direct analog in standard equity
 factor libraries, and they are constructed point-in-time from Bloomberg fundamentals
 with a 90-day reporting lag. Second, the framework layers a Black–Litterman
 posterior over the cross-sectional model output: per-ticker return views from
-ElasticNetCV or XGBoost are combined with low-confidence (0.20) macro sector views
+ElasticNetCV or LightGBM are combined with low-confidence (0.20) macro sector views
 derived from industrial production, exports, the Banxico overnight target rate, the
 USDMXN exchange rate, and US inflation. The Black–Litterman step is essential in a
 small cross-section because it controls the variance of the forecast inputs that
@@ -92,7 +92,7 @@ when the model is trustworthy and when it is not.
 The paper proceeds as follows. Section 2 describes the data infrastructure and
 universe. Section 3 details the feature engineering. Section 4 lays out the modeling
 methodology. Section 5 presents results. Section 6 discusses what we view as the
-most important methodological finding of the work — that XGBoost does not
+most important methodological finding of the work — that LightGBM does not
 materially outperform a well-regularized linear baseline in this universe — and the
 practical implications for live deployment. Section 7 concludes.
 
@@ -201,7 +201,7 @@ such as a single random validation fold or hyperparameter optimization over the
 full sample are common in the machine-learning-for-finance literature and produce
 performance estimates that are not realizable in live trading (López de Prado, 2018).
 
-### 4.2 ElasticNetCV baseline and XGBoost alternative
+### 4.2 ElasticNetCV baseline and LightGBM alternative
 
 The baseline cross-sectional model is an elastic-net linear regression with
 hyperparameter selection by cross-validation. The L1/L2 mixing parameter and
@@ -211,7 +211,7 @@ among fundamental features (which is severe in any fundamental factor set) and t
 small sample size more gracefully than either ordinary least squares or pure ridge
 and lasso variants.
 
-The alternative is XGBoost (Chen and Guestrin, 2016) configured as a regressor with
+The alternative is LightGBM (Chen and Guestrin, 2016) configured as a regressor with
 mean-squared-error loss. The model wraps an internal RandomizedSearchCV over a
 hyperparameter space spanning tree depth, learning rate, subsample and feature-
 subsample ratios, L1 and L2 leaf regularization, and minimum child weight. The
@@ -264,7 +264,7 @@ otherwise. Regime labels at time *t* use only data available at *t*−1.
 
 ### 4.6 SHAP attribution and feature-rank stability
 
-At each rebalance, after the XGBoost model is fitted, we construct a TreeExplainer
+At each rebalance, after the LightGBM model is fitted, we construct a TreeExplainer
 SHAP instance from the fitted estimator and compute SHAP values for the test slice
 (Lundberg et al., 2020). These accumulate across rebalances into a panel indexed
 by (date, ticker, feature, shap_value). The mean absolute SHAP value per feature
@@ -293,7 +293,7 @@ Bailey and López de Prado (2014, 2016).
 
 ## 5. Results
 
-### 5.1 Performance: ElasticNetCV and XGBoost on real data
+### 5.1 Performance: ElasticNetCV and LightGBM on real data
 
 Table 1 reports the headline out-of-sample performance metrics for both models on
 each of the three data sources. The figures are for the regulated NAV portfolio
@@ -305,21 +305,21 @@ are 10 basis points per side, hedge overlay excluded.
 | Source | Model | Return | Vol | Sharpe | Sortino | Max DD | CVaR 95% | Turnover |
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | Bloomberg | ElasticNetCV | 8.34% | 13.59% | 0.44 | 0.45 | −35.50% | −1.95% | 0.57% |
-| Bloomberg | XGBoost      | 8.29% | 13.57% | 0.44 | 0.44 | −35.38% | −1.95% | 6.33% |
+| Bloomberg | LightGBM      | 8.29% | 13.57% | 0.44 | 0.44 | −35.38% | −1.95% | 6.33% |
 | Yahoo     | ElasticNetCV | 9.98% | 15.86% | 0.47 | 0.48 | −36.58% | −2.26% | 0.04% |
-| Yahoo     | XGBoost      | 9.89% | 15.81% | 0.47 | 0.48 | −36.58% | −2.25% | 0.44% |
+| Yahoo     | LightGBM      | 9.89% | 15.81% | 0.47 | 0.48 | −36.58% | −2.25% | 0.44% |
 | Refinitiv | ElasticNetCV | 5.80% | 16.01% | 0.23 | 0.23 | −43.19% | −2.28% | 0.04% |
-| Refinitiv | XGBoost      | 5.73% | 15.60% | 0.23 | 0.23 | −42.75% | −2.23% | 0.67% |
+| Refinitiv | LightGBM      | 5.73% | 15.60% | 0.23 | 0.23 | −42.75% | −2.23% | 0.67% |
 
-Two findings stand out. First, within each data source, ElasticNetCV and XGBoost
+Two findings stand out. First, within each data source, ElasticNetCV and LightGBM
 produce statistically indistinguishable performance. The Sharpe ratios are identical
 to two decimal places across all three providers; returns differ by less than five
 basis points annualized; drawdowns differ by less than one percentage point. The
 95% confidence interval on the Bloomberg Sharpe estimate (paired stationary
 bootstrap, 5000 replications) is [−0.25, 1.18], which dwarfs any difference between
-the two models. There is no meaningful sense in which XGBoost outperforms the
+the two models. There is no meaningful sense in which LightGBM outperforms the
 linear baseline on this data. The only material difference between the two models
-is turnover, where XGBoost is approximately ten times higher than ElasticNet — a
+is turnover, where LightGBM is approximately ten times higher than ElasticNet — a
 direct cost driver that, absent a corresponding return advantage, is a liability
 rather than an asset.
 
@@ -337,7 +337,7 @@ of price-only signals.
 
 ### 5.2 SHAP feature attribution
 
-Despite the absence of a performance lift from XGBoost, the SHAP attribution
+Despite the absence of a performance lift from LightGBM, the SHAP attribution
 framework produces interpretable and economically sensible results. Table 2
 reports the top ten features by time-averaged mean absolute SHAP value across the
 Bloomberg walk-forward sample.
@@ -385,7 +385,7 @@ We attribute the instability to the small effective cross-section. With approxim
 thirty assets in the universe, each rebalance's training data provides limited
 statistical power to pin down feature importance, and the stochastic component of the
 boosting algorithm amplifies the resulting noise. This is consistent with the
-finding in Section 5.1 — XGBoost matches but does not exceed ElasticNet on raw
+finding in Section 5.1 — LightGBM matches but does not exceed ElasticNet on raw
 performance — and points to the same underlying constraint. Gu, Kelly, and Xiu
 (2020) document that tree ensembles deliver meaningful performance lift over linear
 baselines only when the cross-section is large enough that within-period information
@@ -437,7 +437,9 @@ consistent with the production runs reported in Section 5.1.
 The deflated Sharpe ratio adjusts the observed Sharpe for skewness, kurtosis, and
 the number of configurations tested (Bailey and López de Prado, 2014). Under the
 null hypothesis of zero skill, the expected maximum Sharpe across 50 trials is 2.23
-on the Bloomberg sample. The observed best validated Sharpe of 0.43 is below this
+on the Bloomberg sample (computed via the DSR formula of Bailey & López de Prado,
+2014, applied to 50 trials with the skewness and kurtosis of the Bloomberg return
+series). The observed best validated Sharpe of 0.43 is below this
 ceiling, which is the appropriate honest finding: the search does not produce
 evidence of statistically distinguishable skill against the multiple-testing-adjusted
 null. The PBO statistic via combinatorially symmetric cross-validation is moderate
@@ -471,7 +473,7 @@ investment-strategy conclusions per se.
 
 ## 6. Discussion
 
-The most important methodological finding of this work is that the XGBoost
+The most important methodological finding of this work is that the LightGBM
 cross-sectional forecaster does not materially outperform the elastic-net baseline
 on real Mexican-market data. This is not a failure of the implementation — both
 models are constructed with internal walk-forward cross-validation, both are fitted
@@ -495,9 +497,9 @@ advantage is its portfolio-level manifestation. Gu, Kelly, and Xiu (2020) docume
 this same pattern in cross-country studies: the machine-learning advantage scales
 with cross-section size, and small universes do not benefit.
 
-This finding does not mean the XGBoost component is without value. The attribution
+This finding does not mean the LightGBM component is without value. The attribution
 framework — SHAP per rebalance, feature-rank stability, regime-conditioned
-performance — is genuinely informative independent of whether XGBoost itself
+performance — is genuinely informative independent of whether LightGBM itself
 generates excess return. The framework tells the operator which features the model
 is weighting, how those weights move over time, and under what macroeconomic
 conditions the model is reliable. These are operational diagnostics that the linear
@@ -505,7 +507,7 @@ baseline cannot produce, and they have value even when the linear baseline match
 the gradient-boosted model on raw performance.
 
 Three operational responses follow from these findings. The first is regime-
-conditional model selection: use the XGBoost forecasts during EASING regimes,
+conditional model selection: use the LightGBM forecasts during EASING regimes,
 where SHAP stability reaches 0.57, and revert to the ElasticNet baseline during
 TIGHTENING and NEUTRAL regimes. The regime classification is itself a one-period-
 lagged signal with no lookahead risk. This is a soft filter that uses the model's
@@ -514,7 +516,7 @@ decomposition identifies momentum_63 as a substantial contributor to turnover
 without proportionate contribution to predictive accuracy. Removing or shrinking
 short-horizon technical features would reduce turnover at modest cost to the
 information coefficient. The third is ensemble blending: combining ElasticNet and
-XGBoost predictions at weights inversely proportional to their out-of-sample
+LightGBM predictions at weights inversely proportional to their out-of-sample
 forecast variance would inherit the stability of the linear baseline and add
 whatever marginal lift the gradient-boosted model can deliver in favorable regimes.
 
@@ -526,7 +528,7 @@ The closest direct analog is the Brazilian Fundos Imobiliários market, where th
 same methodology could be applied with relatively modest adaptation. A more
 rigorous treatment of transaction costs would model market impact as a square-root
 function of trade size relative to daily volume, which would have a disproportionate
-effect on the high-turnover XGBoost configuration and would likely strengthen the
+effect on the high-turnover LightGBM configuration and would likely strengthen the
 case for the linear baseline in any live deployment. Finally, the 95% confidence
 interval on the Sharpe estimate is wide ([−0.25, 1.18] on Bloomberg) because the
 nine-year backtest contains only one full Banxico tightening cycle and one easing
@@ -543,7 +545,7 @@ universe, evaluated under strict walk-forward out-of-sample discipline across th
 data providers. The framework integrates multi-provider data infrastructure, a
 Black–Litterman portfolio construction layer that blends machine-learning views
 with low-confidence macro tilts, multiple optimizers operating under CNBV regulatory
-constraints, a Layer 2 FX hedge overlay reported on an analytical basis, an XGBoost
+constraints, a Layer 2 FX hedge overlay reported on an analytical basis, an LightGBM
 cross-sectional forecaster with TreeExplainer SHAP attribution, Banxico macro-regime
 conditioning, and a complete suite of overfitting diagnostics. The regulated
 portfolio achieves a Sharpe ratio of 0.44 on Bloomberg point-in-time fundamentals
@@ -552,7 +554,7 @@ over the 2017–2026 window.
 The principal empirical findings are three. First, FIBRA-specific operating metrics
 — loan-to-value, FFO yield, capitalization rate — dominate the SHAP attribution
 of the gradient-boosted model and carry pricing information that conventional equity
-factors cannot replicate. Second, XGBoost and ElasticNetCV produce statistically
+factors cannot replicate. Second, LightGBM and ElasticNetCV produce statistically
 indistinguishable performance on real data within the Mexican cross-section,
 attributable to the small effective universe; the value of the gradient-boosted
 model lies in its attribution framework rather than in raw return lift. Third,
@@ -568,7 +570,7 @@ macroeconomic conditioning that moves beyond the binary regime classification to
 explicit term-structure, FX, and commodity factors; the existing regime analysis
 suggests there is variance to capture that the current binary specification leaves
 on the table. The third, and most operationally important, is the construction of
-an ensemble between the ElasticNet and XGBoost paths with regime-conditional
+an ensemble between the ElasticNet and LightGBM paths with regime-conditional
 weights, exploiting the asymmetric reliability of the two models across the
 macroeconomic cycle. The framework as constructed provides the diagnostic
 infrastructure to make such an ensemble robust; the empirical work of fitting it
@@ -600,7 +602,7 @@ Analysts Journal*, 48(5), 28–43.
 Cakici, N., F. Fabozzi, and S. Tan (2013). "Size, value, and momentum in emerging
 market stock returns." *Emerging Markets Review*, 16, 46–65.
 
-Chen, T., and C. Guestrin (2016). "XGBoost: A scalable tree boosting system."
+Chen, T., and C. Guestrin (2016). "LightGBM: A scalable tree boosting system."
 *Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge
 Discovery and Data Mining*, 785–794.
 
@@ -624,7 +626,7 @@ understanding with explainable AI for trees." *Nature Machine Intelligence*, 2(1
 
 ## Appendix A. Hyperparameter Search Space
 
-The XGBoost internal RandomizedSearchCV samples 20 configurations from the following
+The LightGBM internal RandomizedSearchCV samples 20 configurations from the following
 distributions for each training window, with a 5-fold expanding-window TimeSeriesSplit
 and early stopping (50 rounds) on the inner-CV holdout.
 
@@ -647,11 +649,11 @@ purged walk-forward cross-validation with a 21-day gap.
 ## Appendix B. Software and Reproducibility
 
 All results are reproducible from the open-source repository accompanying this paper.
-The software stack is Python 3.10 or higher with xgboost ≥ 2.0, shap ≥ 0.45,
+The software stack is Python 3.10 or higher with lightgbm ≥ 4.0, shap ≥ 0.45,
 scikit-learn, pandas, numpy, Optuna, and CVXPY (CVaR optimization). Matplotlib is
 used for figure generation; the PDF tearsheet pipeline uses WeasyPrint with an
 fpdf2 fallback for environments lacking the pango and gobject system libraries.
 Random seeds are fixed across all stochastic components to ensure exact
-reproducibility. The test suite comprises 107 unit and integration tests.
+reproducibility. The test suite comprises 158 unit and integration tests.
 
 Repository: github.com/MaxHidalgoLeon/FondoMexicoAlfa

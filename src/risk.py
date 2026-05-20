@@ -52,26 +52,56 @@ def blend_regime_constraints(previous: dict, current: dict, alpha: float) -> dic
     return blended
 
 
-def compute_sharpe(returns: pd.Series, risk_free_rate: float = 0.02) -> float:
+def compute_sharpe(
+    returns: pd.Series,
+    risk_free_rate: float | pd.Series = 0.02,
+) -> float:
     """Annualized Sharpe ratio: (μ_excess / σ_excess) × √252.
 
-    Measures the return obtained per unit of total risk. The risk-free rate
-    is divided by 252 to convert it to daily before subtracting.
+    ``risk_free_rate`` may be a scalar (constant annualized rate, divided by 252
+    to convert to daily) or a Series of annualized rates indexed by date — e.g.,
+    a Banxico daily series. Time-varying rates are the methodologically correct
+    choice for multi-year backtests where the policy rate changes materially.
     """
-    excess = returns - risk_free_rate / 252
+    if isinstance(risk_free_rate, pd.Series):
+        # Bootstrap resamples produce returns with RangeIndex (int) which can't
+        # be aligned to a DatetimeIndex Series — fall back to the period mean.
+        try:
+            rf_daily = risk_free_rate.reindex(returns.index, method="ffill") / 252.0
+            rf_daily = rf_daily.fillna(rf_daily.mean() if not rf_daily.empty else 0.0)
+        except TypeError:
+            rf_daily = float(risk_free_rate.mean()) / 252.0
+    else:
+        rf_daily = float(risk_free_rate) / 252.0
+    excess = returns - rf_daily
     return np.sqrt(252) * excess.mean() / (excess.std(ddof=0) + 1e-9)
 
 
-def compute_sortino(returns: pd.Series, required_return: float = 0.0) -> float:
+def compute_sortino(
+    returns: pd.Series,
+    required_return: float | pd.Series = 0.0,
+) -> float:
     """Annualized Sortino ratio: (μ - MAR) / downside_semideviation × √252.
 
     Unlike Sharpe, only penalizes downside volatility (downside deviation),
     ignoring the dispersion of positive returns. MAR = Minimum Acceptable Return.
+
+    ``required_return`` may be a scalar (daily MAR) or a Series of daily MARs
+    indexed to ``returns`` — the latter is the correct choice when the MAR
+    derives from a time-varying risk-free rate.
     """
-    downside = returns[returns < required_return] - required_return  # excess loss below MAR
-    # Lower partial moment (standard semideviation)
+    if isinstance(required_return, pd.Series):
+        try:
+            mar = required_return.reindex(returns.index, method="ffill")
+            mar = mar.fillna(mar.mean() if not mar.empty else 0.0)
+        except TypeError:
+            # Bootstrap path: returns has RangeIndex; collapse rf to scalar mean.
+            mar = float(required_return.mean())
+    else:
+        mar = float(required_return)
+    downside = returns[returns < mar] - (mar.loc[returns < mar] if isinstance(mar, pd.Series) else mar)
     downside_std = np.sqrt((downside ** 2).mean()) if len(downside) > 1 else 0.0
-    excess_mean = returns.mean() - required_return
+    excess_mean = returns.mean() - (mar.mean() if isinstance(mar, pd.Series) else mar)
     return excess_mean / (downside_std + 1e-9) * np.sqrt(252)
 
 
@@ -372,15 +402,7 @@ def compute_macro_regime_history(
 ) -> pd.DataFrame:
     """Build the macro regime history over time.
 
-    Two methods (configured via settings['regime_method']):
-
-    'threshold_discrete':
-      - Fixed rules: stress if IP < 0 or MXN depreciated >5% over 3 months.
-                     tightening if Banxico raised rates >25 bps over 3 months.
-                     expansion otherwise.
-      - Simple and transparent, but without smoothing → many regime switches.
-
-    'ewma_composite' (default):
+    Method ('ewma_composite', the only supported method):
       - Builds a score = z(IP) - z(FX) - z(Banxico) where z = expanding z-score.
       - Smooths the score with EWMA (configurable span).
       - Applies thresholds to the smoothed score (expansion_threshold / stress_threshold).
@@ -403,19 +425,10 @@ def compute_macro_regime_history(
     out = pd.DataFrame(index=df.index)
     out["banxico_delta_3m"] = pd.Series(df.get("banxico_rate", 0.0), index=df.index, dtype=float).diff(3)
     out["fx_mom_3m"] = pd.Series(df.get("usd_mxn", 0.0), index=df.index, dtype=float).pct_change(3)
-    out["ip_yoy"] = pd.Series(df.get("industrial_production_yoy", 0.02), index=df.index, dtype=float)
-
-    if str(cfg["regime_method"]).lower() == "threshold_discrete":
-        conditions = [
-            (out["ip_yoy"] < 0.0) | (out["fx_mom_3m"] > 0.05),
-            out["banxico_delta_3m"] > 0.25,
-        ]
-        choices = ["stress", "tightening"]
-        out["regime"] = np.select(conditions, choices, default="expansion")
-        out["regime_score"] = np.nan
-        out["regime_score_smoothed"] = np.nan
-        out["regime_confidence"] = np.nan
-        return out
+    _mx_ip = df.get("industrial_production_yoy")
+    if _mx_ip is None or pd.isna(_mx_ip).all():
+        _mx_ip = df.get("us_ip_yoy", 0.02)  # US IP as proxy when MX IP unavailable
+    out["ip_yoy"] = pd.Series(_mx_ip, index=df.index, dtype=float)
 
     ip_z = _expanding_zscore(out["ip_yoy"])
     fx_z = _expanding_zscore(out["fx_mom_3m"])

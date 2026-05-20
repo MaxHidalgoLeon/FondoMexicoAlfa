@@ -1168,9 +1168,10 @@ class FREDBanxicoMacroProvider:
     # FRED
     # ------------------------------------------------------------------
     _FRED_SERIES = {
-        "DEXMXUS": "usd_mxn_fred",   # MXN per USD (inverted → USD/MXN)
+        "DEXMXUS": "usd_mxn_fred",       # MXN per USD (inverted → USD/MXN)
         "FEDFUNDS": "us_fed_rate",
-        "INDPRO": "us_ip_index",      # level; we compute yoy internally
+        "INDPRO": "us_ip_index",          # level; we compute yoy internally
+        "XTEXVA01MXM659S": "exports_yoy_raw",  # Mexico exports value YoY % (OECD via FRED)
     }
 
     # ------------------------------------------------------------------
@@ -1189,6 +1190,16 @@ class FREDBanxicoMacroProvider:
         "910406": "IMAI",                       # Monthly Industrial Activity Index
         "910405": "industrial_production_idx",  # Industrial production (level)
         "229954": "exports_idx",                # Total exports (level)
+    }
+
+    # ------------------------------------------------------------------
+    # OECD MEI / CLI series (free, no key required)
+    # Used as fallback when INEGI API is unavailable.
+    # ------------------------------------------------------------------
+    _OECD_SERIES = {
+        "PRINTO01.MEX.GP.M": "industrial_production_yoy",  # Mexico IP YoY %
+        "XTEXVA01.MEX.GP.M": "exports_yoy",                # Mexico Exports value YoY %
+        "LOLITOAA.MEX.ST.M": "IMAI",                       # Mexico CLI (proxy for IMAI)
     }
 
     # ------------------------------------------------------------------
@@ -1270,6 +1281,12 @@ class FREDBanxicoMacroProvider:
             if df["us_fed_rate"].dropna().median() > 1.0:
                 df["us_fed_rate"] = df["us_fed_rate"] / 100.0
 
+        # Mexico exports YoY: FRED returns percent (e.g. 12.0 = 12%) → decimal
+        if "exports_yoy_raw" in df.columns:
+            s = df["exports_yoy_raw"].dropna()
+            df["exports_yoy"] = df["exports_yoy_raw"] / 100.0 if s.abs().median() > 1.0 else df["exports_yoy_raw"]
+            df = df.drop(columns=["exports_yoy_raw"])
+
         return df
 
     # ------------------------------------------------------------------
@@ -1282,6 +1299,7 @@ class FREDBanxicoMacroProvider:
 
         import urllib.request
         import json
+        import ssl
 
         series_ids = ",".join(self._BANXICO_SERIES.keys())
         url = (
@@ -1290,12 +1308,28 @@ class FREDBanxicoMacroProvider:
         )
         headers = {"Bmx-Token": self._banxico_token}
 
-        try:
+        # Banxico SIE uses a self-signed cert chain on some environments;
+        # fall back to unverified context when the default context fails.
+        def _open(ctx):
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read().decode())
-        except Exception:
-            return pd.DataFrame()
+            with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+                return json.loads(resp.read().decode())
+
+        def _is_ssl_error(exc: Exception) -> bool:
+            return isinstance(exc, ssl.SSLError) or "SSL" in str(exc) or "certificate" in str(exc).lower()
+
+        try:
+            data = _open(ssl.create_default_context())
+        except Exception as _e1:
+            if not _is_ssl_error(_e1):
+                return pd.DataFrame()
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            try:
+                data = _open(ctx)
+            except Exception:
+                return pd.DataFrame()
 
         frames = {}
         for serie in data.get("bmx", {}).get("series", []):
@@ -1339,6 +1373,23 @@ class FREDBanxicoMacroProvider:
     def _fetch_inegi(self, start_date: str, end_date: str) -> pd.DataFrame:
         import urllib.request
         import json
+        import ssl
+
+        def _is_ssl_error(exc: Exception) -> bool:
+            return isinstance(exc, ssl.SSLError) or "SSL" in str(exc) or "certificate" in str(exc).lower()
+
+        def _urlopen(url: str):
+            try:
+                with urllib.request.urlopen(url, timeout=15) as resp:
+                    return resp.read().decode()
+            except Exception as e:
+                if not _is_ssl_error(e):
+                    raise
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                with urllib.request.urlopen(url, timeout=15, context=ctx) as resp:
+                    return resp.read().decode()
 
         frames = {}
         for indicator, col in self._INEGI_SERIES.items():
@@ -1347,8 +1398,7 @@ class FREDBanxicoMacroProvider:
                 f"jsonxml/INDICATOR/{indicator}/es/0700/false/BIE/2.0/data.json"
             )
             try:
-                with urllib.request.urlopen(url, timeout=15) as resp:
-                    data = json.loads(resp.read().decode())
+                data = json.loads(_urlopen(url))
                 obs = data.get("Series", [{}])[0].get("OBSERVATIONS", [])
                 idx = pd.to_datetime([o["TIME_PERIOD"] for o in obs])
                 vals = pd.to_numeric([o["OBS_VALUE"] for o in obs], errors="coerce")
@@ -1376,6 +1426,90 @@ class FREDBanxicoMacroProvider:
         return df
 
     # ------------------------------------------------------------------
+    # OECD (fallback when INEGI is unavailable)
+    # ------------------------------------------------------------------
+
+    def _fetch_oecd(self, start_date: str, end_date: str) -> pd.DataFrame:
+        """Fetch Mexico macro series from OECD MEI/CLI (no API key required)."""
+        import urllib.request
+        import json
+        import ssl
+
+        def _is_ssl_error(exc: Exception) -> bool:
+            return isinstance(exc, ssl.SSLError) or "SSL" in str(exc) or "certificate" in str(exc).lower()
+
+        def _urlopen(url: str) -> str:
+            try:
+                req = urllib.request.Request(url, headers={"Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    return r.read().decode()
+            except Exception as e:
+                if not _is_ssl_error(e):
+                    raise
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                req = urllib.request.Request(url, headers={"Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
+                    return r.read().decode()
+
+        start_ym = pd.Timestamp(start_date).strftime("%Y-%m")
+        end_ym = pd.Timestamp(end_date).strftime("%Y-%m")
+        series_key = "+".join(self._OECD_SERIES.keys())
+        url = (
+            f"https://stats.oecd.org/SDMX-JSON/data/MEI/{series_key}/all"
+            f"?startTime={start_ym}&endTime={end_ym}&dimensionAtObservation=allDimensions"
+        )
+
+        try:
+            raw = json.loads(_urlopen(url))
+        except Exception:
+            return pd.DataFrame()
+
+        try:
+            structure = raw["structure"]
+            obs_dim = next(
+                d for d in structure["dimensions"]["observation"]
+                if d["id"] == "TIME_PERIOD"
+            )
+            time_values = [v["id"] for v in obs_dim["values"]]
+
+            series_dims = structure["dimensions"]["series"]
+            series_values = [d["values"] for d in series_dims]
+
+            frames: dict[str, pd.Series] = {}
+            for series_key_str, series_obj in raw["dataSets"][0]["series"].items():
+                indices = [int(i) for i in series_key_str.split(":")]
+                # Rebuild the OECD series key from dimension indices
+                oecd_key = ".".join(
+                    series_values[d][i]["id"]
+                    for d, i in enumerate(indices)
+                )
+                canonical = self._OECD_SERIES.get(oecd_key)
+                if canonical is None:
+                    continue
+                obs = series_obj.get("observations", {})
+                vals = {time_values[int(t)]: v[0] for t, v in obs.items() if v[0] is not None}
+                s = pd.Series(vals, dtype=float)
+                s.index = pd.to_datetime(s.index)
+                s = s.sort_index()
+                # OECD returns values as percentage points (e.g. 3.5 = 3.5%)
+                # Convert to decimal to match pipeline convention
+                if s.dropna().abs().median() > 1.0:
+                    s = s / 100.0
+                frames[canonical] = s
+
+            if not frames:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(frames)
+            df = self._resample_monthly(df)
+            return df
+
+        except Exception:
+            return pd.DataFrame()
+
+    # ------------------------------------------------------------------
     # Public methods
     # ------------------------------------------------------------------
 
@@ -1393,6 +1527,7 @@ class FREDBanxicoMacroProvider:
 
         import urllib.request
         import json
+        import ssl
 
         series_ids = ",".join(self._BANXICO_BOND_SERIES.keys())
         url = (
@@ -1401,12 +1536,26 @@ class FREDBanxicoMacroProvider:
         )
         headers = {"Bmx-Token": self._banxico_token}
 
-        try:
+        def _open(ctx):
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read().decode())
-        except Exception:
-            return pd.DataFrame()
+            with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+                return json.loads(resp.read().decode())
+
+        def _is_ssl_error(exc: Exception) -> bool:
+            return isinstance(exc, ssl.SSLError) or "SSL" in str(exc) or "certificate" in str(exc).lower()
+
+        try:
+            data = _open(ssl.create_default_context())
+        except Exception as _e1:
+            if not _is_ssl_error(_e1):
+                return pd.DataFrame()
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            try:
+                data = _open(ctx)
+            except Exception:
+                return pd.DataFrame()
 
         records = []
         for serie in data.get("bmx", {}).get("series", []):
@@ -1455,12 +1604,17 @@ class FREDBanxicoMacroProvider:
         fred_df    = self._fetch_fred(start_date, end_date)
         banxico_df = self._fetch_banxico(start_date, end_date)
         inegi_df   = self._fetch_inegi(start_date, end_date)
+        # OECD fills IMAI, industrial_production_yoy, exports_yoy when INEGI is down
+        oecd_df    = self._fetch_oecd(start_date, end_date)
 
         # Merge all sources on a common monthly index
         result = pd.DataFrame(index=monthly_idx)
-        for df in [fred_df, banxico_df, inegi_df]:
+        for df in [fred_df, banxico_df, inegi_df, oecd_df]:
             if not df.empty:
-                result = result.join(df, how="left")
+                # Only fill columns not already populated (INEGI takes priority over OECD)
+                for col in df.columns:
+                    if col not in result.columns or result[col].isna().all():
+                        result[col] = df[col].reindex(result.index, method="ffill")
 
         # Prefer Banxico FIX rate over FRED for USD/MXN when both exist
         if "usd_mxn_banxico" in result.columns:
@@ -1469,6 +1623,13 @@ class FREDBanxicoMacroProvider:
             else:
                 result["usd_mxn"] = result["usd_mxn"].fillna(result["usd_mxn_banxico"])
                 result = result.drop(columns=["usd_mxn_banxico"])
+
+        # IMAI fallback: if INEGI unavailable, use industrial_production_yoy or us_ip_yoy
+        if "IMAI" not in result.columns or result.get("IMAI", pd.Series(dtype=float)).isna().all():
+            for proxy in ("industrial_production_yoy", "us_ip_yoy"):
+                if proxy in result.columns and not result[proxy].isna().all():
+                    result["IMAI"] = result[proxy]
+                    break
 
         # Ensure all expected columns exist (fill missing with NaN)
         expected = [

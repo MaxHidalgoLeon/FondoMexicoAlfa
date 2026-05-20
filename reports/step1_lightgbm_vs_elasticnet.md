@@ -1,11 +1,11 @@
-# Step 1 — XGBoost vs ElasticNetCV
+# Step 1 — LightGBM vs ElasticNetCV
 
 Side-by-side walk-forward backtest on the same `mock` data panel,
 same rebalance schedule, same Mean-Variance optimizer, same transaction-cost
 model. Only the cross-sectional return predictor changes.
 
 The ElasticNetCV path is the existing baseline (KFold(5) inside ElasticNet's
-own internal CV). The XGBoost path uses `XGBRegressor` tuned with
+own internal CV). The LightGBM path uses `XGBRegressor` tuned with
 `RandomizedSearchCV` over the spec's grid (`max_depth`, `learning_rate`,
 `subsample`, `colsample_bytree`, `min_child_weight`, `reg_alpha`,
 `reg_lambda`) inside a `TimeSeriesSplit(5)` over the *training window only*,
@@ -22,12 +22,12 @@ Or via the production CLI:
 
 ```bash
 python scripts/run_all.py --skip-tests --source mock --model elasticnet
-python scripts/run_all.py --skip-tests --source mock --model xgboost
+python scripts/run_all.py --skip-tests --source mock --model lightgbm
 ```
 
 ## Comparison table
 
-| Metric | ElasticNetCV | XGBoost | Δ (xgb − elastic) |
+| Metric | ElasticNetCV | LightGBM | Δ (lgbm − elastic) |
 |---|---:|---:|---:|
 | IC mean (Spearman) | +0.0794 | +0.3389 | +0.2595 |
 | IC std | 0.2597 | 0.2335 | -0.0263 |
@@ -50,7 +50,7 @@ Notes
   come from `run_backtest._compute_returns_and_metrics`, net of a
   10 bp transaction cost on each rebalance.
 - `forecast_seconds` is the wall-clock for `forecast_returns` only
-  (the inner search dominates XGBoost runtime; backtest cost is identical).
+  (the inner search dominates LightGBM runtime; backtest cost is identical).
 
 ## Equity curve
 
@@ -62,22 +62,22 @@ Notes
 
 ## Interpretation
 
-- XGBoost lifts mean Spearman IC from +0.0794 to +0.3389 (+0.2595) — the non-linear interactions between fundamentals and momentum that ElasticNet's linear shrinkage flattens are picked up by tree splits.
-- Net-of-cost Sharpe improves from +0.981 (elastic) to +3.292 (xgb) — Δ=+2.310.
-- Max drawdown: ElasticNet -0.127 vs XGBoost -0.046 (turnover 0.062 vs 0.268) — different signal stability changes how much the optimizer churns month over month.
-- Wall time: ElasticNet 13.0 s vs XGBoost 573.0 s (44.2× slower) — the inner RandomizedSearchCV × TimeSeriesSplit grid dominates; reducing `forecast_xgb_n_iter` is the obvious knob if speed matters more than the last few bps of IC.
+- LightGBM lifts mean Spearman IC from +0.0794 to +0.3389 (+0.2595) — the non-linear interactions between fundamentals and momentum that ElasticNet's linear shrinkage flattens are picked up by tree splits.
+- Net-of-cost Sharpe improves from +0.981 (elastic) to +3.292 (lgbm) — Δ=+2.310.
+- Max drawdown: ElasticNet -0.127 vs LightGBM -0.046 (turnover 0.062 vs 0.268) — different signal stability changes how much the optimizer churns month over month.
+- Wall time: ElasticNet 13.0 s vs LightGBM 573.0 s (44.2× slower) — the inner RandomizedSearchCV × TimeSeriesSplit grid dominates; reducing `forecast_lgbm_n_iter` is the obvious knob if speed matters more than the last few bps of IC.
 
 ## Method notes
 
 - Same expanding-window training set per rebalance (no change vs baseline).
 - Same `_compute_forward_returns` — predictions are bit-identical w.r.t.
-  data leakage protection. The `XGBoostModel.fit → predict` round-trip never
+  data leakage protection. The `LightGBMModel.fit → predict` round-trip never
   sees rows after the rebalance date (verified in
-  `tests/test_xgboost_model.py::test_no_lookahead`).
+  `tests/test_lightgbm_model.py::test_no_lookahead`).
 - Hyperparameter search uses the spec defaults (TimeSeriesSplit(5),
   early_stopping_rounds=25 here) except this run set `n_iter=4` and
   `n_estimators_cap=300` so the side-by-side fits in a single short
-  session. Bump `forecast_xgb_n_iter` to 20 and the cap back to 2000 in
+  session. Bump `forecast_lgbm_n_iter` to 20 and the cap back to 2000 in
   `config.yaml` for the publication-quality search at the cost of ~10×
   runtime.
 - Both models run on the same Mean-Variance optimizer with min_position=0,
@@ -85,4 +85,4 @@ Notes
   predictor effect from the rest of the pipeline. Production
   `run_pipeline` adds Black-Litterman, FX overlay, sleeve sizing, etc.;
   those layers are model-agnostic and were tested separately via
-  `python scripts/run_all.py --skip-tests --source mock --model xgboost`.
+  `python scripts/run_all.py --skip-tests --source mock --model lightgbm`.

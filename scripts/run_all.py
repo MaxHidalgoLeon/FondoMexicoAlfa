@@ -97,6 +97,29 @@ def _load_config() -> dict:
     return defaults
 
 
+def _maybe_run_hyperopt(source: str, config: dict) -> None:
+    """Auto-run hyperopt for `source` when hyperopt_enabled is True and no
+    optimized config exists yet. Failures are warned, not fatal.
+
+    Mock data is excluded — tuning on synthetic data is meaningless and would
+    just block the pipeline for hours during smoke runs.
+    """
+    if source == "mock":
+        return
+    if not bool(config.get("hyperopt_enabled", False)):
+        return
+    optimized_path = ROOT / f"config_optimized_{source}.yaml"
+    if optimized_path.exists():
+        return
+    print(f"[Hyperopt:{source}] hyperopt_enabled=true and no {optimized_path.name} found — running hyperopt.")
+    import subprocess
+    cmd = [sys.executable, str(ROOT / "scripts" / "run_hyperopt.py"), "--source", source]
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as exc:
+        print(f"[WARNING] hyperopt run failed for {source}: {exc}. Continuing with current config.")
+
+
 def _apply_optimized_params(config: dict, source: str) -> dict:
     """Overlay source-specific optimized hyperparams from config_optimized_{source}.yaml if it exists."""
     optimized_path = ROOT / f"config_optimized_{source}.yaml"
@@ -149,7 +172,7 @@ def _parse_args(config: dict) -> argparse.Namespace:
     )
     p.add_argument(
         "--model",
-        choices=["elasticnet", "xgboost"],
+        choices=["elasticnet", "lightgbm"],
         default=None,
         help=(
             "Cross-sectional return predictor "
@@ -261,6 +284,65 @@ def run_report(
     print(f"\n[OK] Report saved to: {out}")
 
 # ---------------------------------------------------------------------------
+# Parallel provider execution
+# ---------------------------------------------------------------------------
+def _run_sources_parallel(
+    sources: list[str],
+    *,
+    start: str,
+    end: str,
+    hedge: bool,
+    reform: bool,
+    out: str,
+    optimizer: str,
+    forecast_model: str,
+    benchmarks: list[str] | None,
+) -> tuple[list[str], list[tuple[str, str]], dict[str, float]]:
+    """Launch one subprocess per source in parallel, each with FMIA_SOURCE_LABEL set.
+
+    Returns (successful_sources, failed_sources, timings_seconds).
+    Tests must have already run in the parent — every subprocess gets --skip-tests.
+    """
+    import time
+
+    base_cmd = [
+        sys.executable, str(ROOT / "scripts" / "run_all.py"),
+        "--skip-tests",
+        "--start", start, "--end", end,
+        "--optimizer", optimizer, "--model", forecast_model,
+    ]
+    if hedge:
+        base_cmd.append("--hedge")
+    if reform:
+        base_cmd.append("--reform")
+    if benchmarks:
+        base_cmd += ["--benchmarks", ",".join(benchmarks)]
+    if out:
+        base_cmd += ["--out", out]
+
+    launched: list[tuple[str, subprocess.Popen, float]] = []
+    for source in sources:
+        env = {**os.environ, "FMIA_SOURCE_LABEL": source}
+        cmd = base_cmd + ["--source", source]
+        print(f"[Parallel] Launching {source}…")
+        p = subprocess.Popen(cmd, env=env)
+        launched.append((source, p, time.time()))
+
+    successful: list[str] = []
+    failed: list[tuple[str, str]] = []
+    timings: dict[str, float] = {}
+    for source, p, t0 in launched:
+        p.wait()
+        timings[source] = time.time() - t0
+        if p.returncode == 0:
+            successful.append(source)
+        else:
+            failed.append((source, f"exit code {p.returncode}"))
+
+    return successful, failed, timings
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 def main() -> None:
@@ -302,6 +384,11 @@ def main() -> None:
     print(f"  Forecast   : {forecast_model}")
     print(f"  Report     : {out}")
 
+    parallel_providers = bool(config.get("parallel_providers", False))
+    # Single source or explicit --skip-tests child process → never spawn sub-children.
+    if len(sources) == 1 or args.skip_tests:
+        parallel_providers = False
+
     if not args.skip_tests:
         ok = run_tests(abort_on_failure=abort)
         if not ok:
@@ -311,33 +398,51 @@ def main() -> None:
 
     successful_sources: list[str] = []
     failed_sources: list[tuple[str, str]] = []
+    timings: dict[str, float] = {}
 
-    for source in sources:
-        benchmark_tickers = _benchmarks_for_source(source)
-        out_for_source = _output_path_for_source(out, source, forecast_model)
-        source_settings = _apply_optimized_params(dict(pipeline_settings), source)
-        print(
-            f"\n[RUN] source={source} | benchmarks={', '.join(benchmark_tickers) if benchmark_tickers else 'N/A'} "
-            f"| out={out_for_source}"
+    if parallel_providers:
+        print(f"\n[Parallel] Running {len(sources)} providers simultaneously…")
+        benchmarks_for_parallel = _benchmarks_for_source(sources[0]) if sources else None
+        successful_sources, failed_sources, timings = _run_sources_parallel(
+            sources,
+            start=start, end=end, hedge=hedge, reform=reform,
+            out=out, optimizer=optimizer, forecast_model=forecast_model,
+            benchmarks=benchmarks_for_parallel,
         )
-        try:
-            run_report(
-                source,
-                start,
-                end,
-                hedge,
-                out_for_source,
-                optimizer,
-                benchmark_tickers,
-                settings=source_settings,
-                reform=reform,
+    else:
+        import time as _time
+        for source in sources:
+            benchmark_tickers = _benchmarks_for_source(source)
+            out_for_source = _output_path_for_source(out, source, forecast_model)
+            _maybe_run_hyperopt(source, pipeline_settings)
+            source_settings = _apply_optimized_params(dict(pipeline_settings), source)
+            os.environ["FMIA_SOURCE_LABEL"] = source
+            print(
+                f"\n[RUN] source={source} | benchmarks={', '.join(benchmark_tickers) if benchmark_tickers else 'N/A'} "
+                f"| out={out_for_source}"
             )
-            successful_sources.append(source)
-        except Exception as exc:
-            failed_sources.append((source, str(exc)))
-            print(f"\n[ERROR] {source}: {exc}")
-            print("        Continuing with next provider.")
+            t0 = _time.time()
+            try:
+                run_report(
+                    source,
+                    start,
+                    end,
+                    hedge,
+                    out_for_source,
+                    optimizer,
+                    benchmark_tickers,
+                    settings=source_settings,
+                    reform=reform,
+                )
+                successful_sources.append(source)
+            except Exception as exc:
+                failed_sources.append((source, str(exc)))
+                print(f"\n[ERROR] {source}: {exc}")
+                print("        Continuing with next provider.")
+            finally:
+                timings[source] = _time.time() - t0
 
+    # --- Summary ---------------------------------------------------------
     if failed_sources:
         print("\n" + "=" * 60)
         print("PROVIDER ERROR SUMMARY")
@@ -348,6 +453,21 @@ def main() -> None:
     if not successful_sources:
         print("\n[ERROR] No provider completed successfully.")
         sys.exit(1)
+
+    print("\n" + "=" * 60)
+    print("TIMING SUMMARY")
+    print("=" * 60)
+    for source in sources:
+        secs = timings.get(source, 0)
+        m = int(secs) // 60
+        label = "✓" if source in successful_sources else "✗"
+        print(f"  {label} {source:<12} {m}m")
+    if parallel_providers and timings:
+        wall = max(timings.values())
+        print(f"  Total wall time: {int(wall) // 60}m  (parallel)")
+    else:
+        total = sum(timings.values())
+        print(f"  Total:           {int(total) // 60}m")
 
     print("\n[DONE] Pipeline completed successfully.\n")
 

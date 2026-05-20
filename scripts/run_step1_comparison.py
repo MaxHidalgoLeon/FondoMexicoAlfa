@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-"""Step 1 — XGBoost vs ElasticNet side-by-side driver.
+"""Step 1 — LightGBM vs ElasticNet side-by-side driver.
 
 Runs `forecast_returns` + `run_backtest` twice (one model each) on the
 same data panel, writes per-model artifacts under reports/output/step1/,
-and emits a metrics summary used by `reports/step1_xgboost_vs_elasticnet.md`.
+and emits a metrics summary used by `reports/step1_lightgbm_vs_elasticnet.md`.
 
 Idempotent: cached pickles under reports/output/step1/ are reused unless
 `--force` is passed. Defaults to the locally-cached Bloomberg parquet.
@@ -11,7 +11,7 @@ Idempotent: cached pickles under reports/output/step1/ are reused unless
 Usage:
     python scripts/run_step1_comparison.py
     python scripts/run_step1_comparison.py --source mock --force
-    python scripts/run_step1_comparison.py --models xgboost
+    python scripts/run_step1_comparison.py --models lightgbm
 """
 from __future__ import annotations
 
@@ -186,19 +186,19 @@ def main() -> None:
     p.add_argument("--source", default="bloomberg", choices=["mock", "bloomberg", "yahoo", "refinitiv"])
     p.add_argument("--start", default=None)
     p.add_argument("--end", default=None)
-    p.add_argument("--models", default="elasticnet,xgboost")
-    p.add_argument("--n-iter", type=int, default=10, help="XGB RandomizedSearchCV draws")
-    p.add_argument("--cv-splits", type=int, default=5, help="XGB inner TimeSeriesSplit folds")
-    p.add_argument("--n-estimators-cap", type=int, default=2000, help="XGB upper bound on boosting rounds")
+    p.add_argument("--models", default="elasticnet,lightgbm")
+    p.add_argument("--n-iter", type=int, default=10, help="LightGBM RandomizedSearchCV draws")
+    p.add_argument("--cv-splits", type=int, default=5, help="LightGBM inner TimeSeriesSplit folds")
+    p.add_argument("--n-estimators-cap", type=int, default=2000, help="LightGBM upper bound on boosting rounds")
     p.add_argument("--early-stopping-rounds", type=int, default=50)
     p.add_argument("--force", action="store_true", help="Re-run even if cached pickles exist")
     args = p.parse_args()
 
     base_settings = {
-        "forecast_xgb_n_iter": args.n_iter,
-        "forecast_xgb_cv_splits": args.cv_splits,
-        "forecast_xgb_n_estimators_cap": args.n_estimators_cap,
-        "forecast_xgb_early_stopping_rounds": args.early_stopping_rounds,
+        "forecast_lgbm_n_iter": args.n_iter,
+        "forecast_lgbm_cv_splits": args.cv_splits,
+        "forecast_lgbm_n_estimators_cap": args.n_estimators_cap,
+        "forecast_lgbm_early_stopping_rounds": args.early_stopping_rounds,
     }
 
     print(f"[step1] source={args.source} models={args.models} n_iter={args.n_iter} cv_splits={args.cv_splits}")

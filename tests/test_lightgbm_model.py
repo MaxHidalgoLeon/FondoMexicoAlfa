@@ -1,11 +1,11 @@
-"""Tests for src/xgboost_model.py.
+"""Tests for src/lightgbm_model.py.
 
 Covers the four contract checks called out in Step 1:
   - test_fit_predict_shapes  : fit on a synthetic panel → predict shape matches.
   - test_no_lookahead        : training window predictions don't depend on
                                post-cutoff feature rows.
   - test_reproducibility     : same seed + same data → bit-identical preds.
-  - test_interface_parity    : XGBoostModel exposes the sklearn-compatible
+  - test_interface_parity    : LightGBMModel exposes the sklearn-compatible
                                (fit, predict) surface that the inline
                                ElasticNetCV path also relies on.
 
@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.xgboost_model import XGBoostModel
+from src.lightgbm_model import LightGBMModel
 
 
 # --------------------------------------------------------------------------
@@ -61,7 +61,7 @@ def test_fit_predict_shapes(synthetic_panel) -> None:
     X, y = synthetic_panel
     train, test = X.iloc[:200], X.iloc[200:]
     y_train = y.iloc[:200]
-    model = XGBoostModel(config=_fast_cfg())
+    model = LightGBMModel(config=_fast_cfg())
     model.fit(train, y_train)
     preds = model.predict(test)
     assert preds.shape == (len(test),)
@@ -86,14 +86,14 @@ def test_no_lookahead(synthetic_panel) -> None:
     train_X, train_y = X.iloc[:cut], y.iloc[:cut]
     eval_X = X.iloc[cut - 10 : cut]
 
-    model_a = XGBoostModel(config=_fast_cfg())
+    model_a = LightGBMModel(config=_fast_cfg())
     model_a.fit(train_X, train_y)
     preds_a = model_a.predict(eval_X)
 
     X_polluted = X.copy()
     X_polluted.iloc[cut:] = np.nan  # destroy future rows
 
-    model_b = XGBoostModel(config=_fast_cfg())
+    model_b = LightGBMModel(config=_fast_cfg())
     model_b.fit(X_polluted.iloc[:cut], y.iloc[:cut])
     preds_b = model_b.predict(eval_X)
 
@@ -110,11 +110,11 @@ def test_reproducibility(synthetic_panel) -> None:
     y_train = y.iloc[:200]
 
     cfg = _fast_cfg(random_state=123)
-    model_a = XGBoostModel(config=cfg)
+    model_a = LightGBMModel(config=cfg)
     model_a.fit(train, y_train)
     preds_a = model_a.predict(test)
 
-    model_b = XGBoostModel(config=cfg)
+    model_b = LightGBMModel(config=cfg)
     model_b.fit(train, y_train)
     preds_b = model_b.predict(test)
 
@@ -123,7 +123,7 @@ def test_reproducibility(synthetic_panel) -> None:
 
 
 # --------------------------------------------------------------------------
-# 4. Interface parity — XGBoostModel exposes the sklearn surface
+# 4. Interface parity — LightGBMModel exposes the sklearn surface
 #    the existing ElasticNetCV path also relies on inside forecast_returns.
 # --------------------------------------------------------------------------
 
@@ -131,18 +131,18 @@ def test_interface_parity() -> None:
     from sklearn.linear_model import ElasticNetCV
 
     elastic = ElasticNetCV(cv=3, random_state=0)
-    xgb = XGBoostModel(config=_fast_cfg())
+    model = LightGBMModel(config=_fast_cfg())
 
     for method in ("fit", "predict"):
         assert hasattr(elastic, method), f"sanity: ElasticNetCV missing {method}"
-        assert hasattr(xgb, method), f"XGBoostModel missing {method}"
-        assert callable(getattr(xgb, method))
+        assert hasattr(model, method), f"LightGBMModel missing {method}"
+        assert callable(getattr(model, method))
 
-    fit_sig = inspect.signature(xgb.fit)
+    fit_sig = inspect.signature(model.fit)
     fit_params = list(fit_sig.parameters)
-    assert fit_params[:2] == ["X", "y"], f"XGBoostModel.fit signature drifted: {fit_params}"
+    assert fit_params[:2] == ["X", "y"], f"LightGBMModel.fit signature drifted: {fit_params}"
 
-    predict_sig = inspect.signature(xgb.predict)
+    predict_sig = inspect.signature(model.predict)
     assert list(predict_sig.parameters)[:1] == ["X"]
 
 
@@ -180,7 +180,7 @@ def test_forecast_returns_rejects_unknown_model() -> None:
 
 def test_holdout_cut_small_n() -> None:
     """n=10 must return a valid split: training >= 1, holdout >= 1."""
-    from src.xgboost_model import _holdout_cut
+    from src.lightgbm_model import _holdout_cut
 
     cut = _holdout_cut(n=10, holdout_frac=0.2)
     assert 1 <= cut <= 9, f"Expected 1 <= cut <= 9, got {cut}"
@@ -188,7 +188,7 @@ def test_holdout_cut_small_n() -> None:
 
 def test_holdout_cut_normal_n() -> None:
     """n=300, holdout_frac=0.2 → cut should be max(240, max(50, 100)) = 240."""
-    from src.xgboost_model import _holdout_cut
+    from src.lightgbm_model import _holdout_cut
 
     cut = _holdout_cut(n=300, holdout_frac=0.2)
     # int(300 * 0.8)=240, max(50, 300-200)=100 → max(240,100)=240
@@ -198,7 +198,7 @@ def test_holdout_cut_normal_n() -> None:
 
 def test_holdout_cut_large_n() -> None:
     """n=1000 caps holdout at 200 samples (cut >= n-200 = 800)."""
-    from src.xgboost_model import _holdout_cut
+    from src.lightgbm_model import _holdout_cut
 
     cut = _holdout_cut(n=1000, holdout_frac=0.2)
     # int(1000*0.8)=800, max(50, 1000-200)=800 → max(800,800)=800
