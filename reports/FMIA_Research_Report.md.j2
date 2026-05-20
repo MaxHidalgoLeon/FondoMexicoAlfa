@@ -1,12 +1,12 @@
 ---
 title: "Fondo Mexico Inversión Alfa: Machine Learning Asset Selection in a Small-Cross-Section Emerging Market with Regulatory Constraints"
-author: "Maximiliano Hidalgo Léon"
+author: "Maximiliano Hidalgo León"
 date: "May 2026"
 ---
 
 # Fondo Mexico Inversión Alfa: Machine Learning Asset Selection in a Small-Cross-Section Emerging Market with Regulatory Constraints
 
-**Author:** Maximiliano Hidalgo Léon
+**Author:** Maximiliano Hidalgo León
 **Date:** May 2026
 
 ---
@@ -21,7 +21,7 @@ long-only portfolio. The strategy is built on a multi-provider data infrastructu
 that combines machine-learning views with low-confidence macro tilts, mean-variance
 and CVaR optimizers operating under CNBV regulatory constraints, a Layer 2 FX hedge
 overlay, and a complete suite of overfitting diagnostics including deflated Sharpe
-ratios and combinatorially symmetric cross-validation. We extend the pipeline with an
+ratios and combinatorially symmetric cross-validation. We extend the pipeline with a
 LightGBM cross-sectional return forecaster, TreeExplainer SHAP attribution, and Banxico
 macro-regime conditioning. Evaluated on 108 monthly walk-forward out-of-sample
 rebalances from 2017 through early 2026 with Bloomberg point-in-time fundamentals,
@@ -32,10 +32,11 @@ value of the gradient-boosted model lies in its attribution framework rather tha
 raw return lift. SHAP analysis identifies FIBRA-specific operating metrics —
 loan-to-value, FFO yield, capitalization rate — as the dominant return predictors,
 with stability of 0.44 (Spearman) across consecutive rebalances. Regime conditioning
-reveals materially higher reliability during Banxico easing cycles than during
-tightening cycles. We argue that the binding constraint on machine-learning approaches
-to this market is the small effective cross-section of the Mexican universe, and we
-discuss the implications for live deployment.
+reveals higher signal quality (ICIR) during TIGHTENING cycles and higher attribution
+stability (SHAP) during EASING cycles — a finding with direct operational implications
+for regime-conditional model governance. We argue that the binding constraint on
+machine-learning approaches to this market is the small effective cross-section of the
+Mexican universe, and we discuss the implications for live deployment.
 
 **Keywords:** quantitative equity, factor investing, FIBRAs, emerging markets,
 Black–Litterman, gradient boosting, SHAP, macro regimes, walk-forward validation,

@@ -27,16 +27,16 @@ transaction costs. Period: January 2017 – March 2026 (108 monthly rebalances).
 
 | Metric | ElasticNetCV | LightGBM |
 |:---|:---:|:---:|
-| Annualized return | 8.46% | 5.28% |
-| Annualized vol | 13.70% | 14.56% |
-| Sharpe ratio | 0.03 | −0.17 |
-| Sortino ratio | 0.03 | −0.18 |
-| Max drawdown | −37.19% | −39.46% |
-| CVaR 95% (daily) | −1.98% | −2.11% |
-| Avg monthly turnover | 8.87% | 3.49% |
+| Annualized return | 5.25% | 5.28% |
+| Annualized vol | 14.56% | 14.56% |
+| Sharpe ratio | −0.18 | −0.17 |
+| Sortino ratio | −0.18 | −0.18 |
+| Max drawdown | −39.83% | −39.46% |
+| CVaR 95% (daily) | −2.11% | −2.11% |
+| Avg monthly turnover | 3.48% | 3.49% |
 
 Bootstrap 95% CI on Bloomberg ElasticNetCV Sharpe (stationary block bootstrap,
-N = 5,000): [−0.634, 0.740]. The point estimates differ numerically between models
+N = 5,000): [−0.849, 0.534]. The point estimates differ numerically between models
 but are statistically indistinguishable at conventional significance levels.
 The value of the LightGBM component is attribution (SHAP per rebalance, feature-rank
 stability, regime conditioning), not raw return lift.
@@ -45,7 +45,7 @@ stability, regime conditioning), not raw return lift.
 
 | Source | Return | Vol | Sharpe | Sortino | Max DD | Turnover | Signal set |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|:---|
-| Bloomberg | 8.46% | 13.70% | 0.03 | 0.03 | −37.19% | 8.87% | PIT fundamentals + price |
+| Bloomberg | 5.25% | 14.56% | −0.18 | −0.18 | −39.83% | 3.48% | PIT fundamentals + price |
 | Yahoo Finance | 3.32% | 15.49% | −0.31 | −0.31 | −43.37% | 1.01% | Price only |
 | Refinitiv | 2.63% | 16.59% | −0.33 | −0.33 | −48.64% | 0.98% | PIT fundamentals + price |
 
@@ -189,7 +189,7 @@ vector toward the equilibrium prior weighted by view confidence.
 
 **Macro-regime conditioning.** Banxico rate regime (TIGHTENING / EASING / NEUTRAL) and IPC
 stress regime (CALM / STRESS) are classified at each rebalance using only lagged data.
-Current regime (as of March 2026): EXPANSION with confidence 0.924.
+Current regime (as of March 2026): EXPANSION with confidence 0.66.
 Regime-conditioned metrics: TIGHTENING shows higher IC mean (0.14) and ICIR (0.59) than
 EASING (IC 0.04, ICIR 0.18); EASING shows higher SHAP feature-rank stability (0.57 vs 0.41).
 
@@ -216,8 +216,8 @@ band replicates the ETF allocation.
 **Layer 2 FX hedge overlay.** FX directional signal (expanding z-score, GARCH vol
 adjustment), dynamic leverage, and short borrow cost model. Reported on an analytical
 basis — excluded from CNBV-regulated NAV. Bloomberg ElasticNetCV with hedge overlay
-(analytical): Sharpe −0.16, Return 3.88%, Vol 24.1%. Bloomberg LightGBM with hedge
-(analytical): Sharpe 0.22, Return 13.41%, Vol 22.8%.
+(analytical): Sharpe −0.18, Return 3.25%, Vol 24.5%. Bloomberg LightGBM with hedge
+(analytical): Sharpe 0.21, Return 13.41%, Vol 22.8%.
 
 **LFI reform scenario analysis.** Comparative backtest across four regulatory structures:
 current regulated (long-only CNBV NAV), 130/30, market-neutral, and 130/30

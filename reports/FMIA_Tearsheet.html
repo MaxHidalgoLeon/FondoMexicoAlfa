@@ -170,23 +170,6 @@ tr:nth-child(odd)  td { background: #FFFFFF; }
   line-height: 1.4;
 }
 
-/* ── Screen-only padding ──────────────────────────────────────────────────
-   @page margin (14 mm) applies only when printing / in WeasyPrint.
-   In the browser there is no page margin, so add breathing room here.
-   These rules are completely ignored by WeasyPrint / print media.
-   ──────────────────────────────────────────────────────────────────────── */
-@media screen {
-  body  { padding: 0 28px; }
-  .page { padding: 16px 0; }
-  .section-header { padding: 4px 10px; }
-  .cover-header   { padding: 14px 16px; }
-  th, td          { padding: 4px 8px; }
-  .stat-box       { padding: 10px 16px; }
-  .fig-frame      { padding: 8px; }
-  .disclaimer     { padding: 8px; }
-  .method-list li { padding: 3px 0; }
-}
-
 </style>
 </head>
 <body>
@@ -199,27 +182,27 @@ tr:nth-child(odd)  td { background: #FFFFFF; }
 
   <div class="stat-strip">
     <div class="stat-box">
-      <div class="big"><span class="pos">0.44</span></div>
+      <div class="big"><span class="pos">-0.18</span></div>
       <div class="label">Sharpe Ratio</div>
     </div>
     <div class="stat-box">
-      <div class="big"><span class="pos">8.34%</span></div>
+      <div class="big"><span class="pos">5.25%</span></div>
       <div class="label">Annualized Return</div>
     </div>
     <div class="stat-box">
-      <div class="big muted">13.59%</div>
+      <div class="big muted">14.56%</div>
       <div class="label">Annualized Vol</div>
     </div>
     <div class="stat-box">
-      <div class="big"><span class="neg">−35.5%</span></div>
+      <div class="big"><span class="neg">-39.83%</span></div>
       <div class="label">Max Drawdown</div>
     </div>
     <div class="stat-box">
-      <div class="big"><span class="neg">−1.95%</span></div>
+      <div class="big"><span class="neg">-2.11%</span></div>
       <div class="label">CVaR 95% (daily)</div>
     </div>
     <div class="stat-box">
-      <div class="big muted">0.57%</div>
+      <div class="big muted">3.48%</div>
       <div class="label">Avg Turnover / Rebalance</div>
     </div>
   </div>
@@ -467,15 +450,15 @@ tr:nth-child(odd)  td { background: #FFFFFF; }
       <table>
         <thead><tr><th>Metric</th><th>Value</th></tr></thead>
         <tbody>
-          <tr><td>Annualized return</td><td><span class="pos">8.34%</span></td></tr>
-          <tr><td>Annualized vol</td><td>13.59%</td></tr>
-          <tr><td>Sharpe ratio</td><td><span class="pos">0.44</span></td></tr>
-          <tr><td>Max drawdown</td><td><span class="neg">−35.5%</span></td></tr>
-          <tr><td>CVaR 95% (daily)</td><td><span class="neg">−1.95%</span></td></tr>
-          <tr><td>Avg turnover / rebalance</td><td>0.57%</td></tr>
+          <tr><td>Annualized return</td><td><span class="pos">5.25%</span></td></tr>
+          <tr><td>Annualized vol</td><td>14.56%</td></tr>
+          <tr><td>Sharpe ratio</td><td><span class="pos">-0.18</span></td></tr>
+          <tr><td>Max drawdown</td><td><span class="neg">-39.83%</span></td></tr>
+          <tr><td>CVaR 95% (daily)</td><td><span class="neg">-2.11%</span></td></tr>
+          <tr><td>Avg turnover / rebalance</td><td>3.48%</td></tr>
         </tbody>
       </table>
-      <p style="font-size:6.5pt;color:#6B7280;margin-top:1mm;">&#9733; Headline metrics correspond to Bloomberg point-in-time OOS, regulated NAV, 2017–2026.</p>
+      <p style="font-size:6.5pt;color:#6B7280;margin-top:1mm;">&#9733; Headline metrics from live run: source=bloomberg, model=elasticnet, as_of=2026-03-31.</p>
       <h3 style="margin-top:3mm;">LightGBM Risk Metrics (Walk-forward OOS — mock data)</h3>
       <table>
         <thead><tr><th>Metric</th><th>Value</th></tr></thead>

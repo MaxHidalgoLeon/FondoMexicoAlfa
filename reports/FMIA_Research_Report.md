@@ -25,18 +25,18 @@ ratios and combinatorially symmetric cross-validation. We extend the pipeline wi
 LightGBM cross-sectional return forecaster, TreeExplainer SHAP attribution, and Banxico
 macro-regime conditioning. Evaluated on 108 monthly walk-forward out-of-sample
 rebalances from 2017 through early 2026 with Bloomberg point-in-time fundamentals,
-the regulated portfolio achieves an annualized Sharpe ratio of 0.03, an annualized
-return of 8.46% at 13.70% volatility, and a maximum drawdown of −37.19%. ElasticNetCV
+the regulated portfolio achieves an annualized Sharpe ratio of -0.18, an annualized
+return of 5.25% at 14.56% volatility, and a maximum drawdown of -39.83%. ElasticNetCV
 and LightGBM produce statistically indistinguishable performance on real data; the
 value of the gradient-boosted model lies in its attribution framework rather than
 raw return lift. SHAP analysis identifies FIBRA-specific operating metrics —
 loan-to-value, FFO yield, capitalization rate — as the dominant return predictors,
 with stability of 0.44 (Spearman) across consecutive rebalances. Regime conditioning
-reveals that TIGHTENING cycles exhibit higher information-coefficient quality (ICIR
-0.59 vs 0.18 in EASING), while EASING cycles produce more stable feature attribution
-(SHAP stability 0.57 vs 0.41). We argue that the binding constraint on machine-learning
-approaches to this market is the small effective cross-section of the Mexican universe,
-and we discuss the implications for live deployment.
+reveals higher signal quality (ICIR) during TIGHTENING cycles and higher attribution
+stability (SHAP) during EASING cycles — a finding with direct operational implications
+for regime-conditional model governance. We argue that the binding constraint on
+machine-learning approaches to this market is the small effective cross-section of the
+Mexican universe, and we discuss the implications for live deployment.
 
 **Keywords:** quantitative equity, factor investing, FIBRAs, emerging markets,
 Black–Litterman, gradient boosting, SHAP, macro regimes, walk-forward validation,
@@ -299,27 +299,27 @@ points per side, hedge overlay excluded.
 
 | Source | Model | Return | Vol | Sharpe | Sortino | Max DD | CVaR 95% | Turnover |
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Bloomberg | ElasticNetCV | 8.46% | 13.70% | 0.03 | 0.03 | −37.19% | −1.98% | 8.87% |
-| Bloomberg | LightGBM | 5.28% | 14.56% | −0.17 | −0.18 | −39.46% | −2.11% | 3.49% |
-| Yahoo | ElasticNetCV | 3.32% | 15.49% | −0.31 | −0.31 | −43.37% | −2.29% | 1.01% |
-| Yahoo | LightGBM | 3.39% | 15.40% | −0.31 | −0.31 | −43.11% | −2.27% | 1.02% |
-| Refinitiv | ElasticNetCV | 2.63% | 16.59% | −0.33 | −0.33 | −48.64% | −2.44% | 0.98% |
-| Refinitiv | LightGBM | 2.77% | 16.28% | −0.33 | −0.33 | −47.80% | −2.38% | 1.33% |
+| Bloomberg | ElasticNetCV | 5.25% | 14.56% | -0.18 | -0.18 | -39.83% | -2.11% | 3.48% |
+| Bloomberg | LightGBM | 5.28% | 14.56% | -0.17 | -0.18 | -39.46% | -2.11% | 3.49% |
+| Yahoo | ElasticNetCV | 3.32% | 15.49% | -0.31 | -0.31 | -43.37% | -2.29% | 1.01% |
+| Yahoo | LightGBM | 3.39% | 15.40% | -0.31 | -0.31 | -43.11% | -2.27% | 1.02% |
+| Refinitiv | ElasticNetCV | 2.63% | 16.59% | -0.33 | -0.33 | -48.64% | -2.44% | 0.98% |
+| Refinitiv | LightGBM | 2.77% | 16.28% | -0.33 | -0.33 | -47.80% | -2.38% | 1.33% |
 
 Two findings stand out. First, within each data source, ElasticNetCV and LightGBM produce
 statistically indistinguishable performance. Although the Bloomberg point estimates differ
-numerically (ElasticNetCV: 0.03 vs LightGBM: −0.17), the 95% confidence interval on the
+numerically (ElasticNetCV: −0.18 vs LightGBM: −0.17), the 95% confidence interval on the
 Bloomberg ElasticNetCV Sharpe estimate (paired stationary bootstrap, 5,000 replications)
-is [−0.634, 0.740] — a band of width 1.37 that dwarfs the numerical gap between the two
+is [−0.849, 0.534] — a band of width 1.38 that dwarfs the numerical gap between the two
 models. For Yahoo and Refinitiv, where each source's Sharpe rounds to −0.31 and −0.33
 respectively, the two models are indistinguishable to two decimal places. There is no
 statistically meaningful sense in which either model outperforms the other; both results
 are consistent with zero skill at conventional significance levels on this universe.
-On Bloomberg, ElasticNetCV carries higher monthly turnover (8.87%) than LightGBM (3.49%),
-a reversal of the pattern seen with earlier versions of the pipeline.
+On Bloomberg, ElasticNetCV and LightGBM now carry essentially identical monthly turnover
+(3.48% vs 3.49%), converging from the divergence seen in earlier pipeline versions.
 
 Second, performance differs substantially across data providers. Bloomberg achieves the
-highest Sharpe (0.03) because it provides point-in-time fundamental data with full
+highest Sharpe (−0.18) because it provides point-in-time fundamental data with full
 historical coverage; Yahoo Finance and Refinitiv achieve negative Sharpe (−0.31 and −0.33
 respectively). For Yahoo Finance, only price-based signals are available because historical
 point-in-time fundamental data is not accessible through that channel; the absence of
@@ -451,8 +451,8 @@ central function of the diagnostic.
 The Bloomberg results with the Layer 2 FX hedge overlay activated are reported on an
 analytical basis only; they are not included in the CNBV-regulated NAV because the overlay
 operates with leverage and currency positions that fall outside the CNBV-reportable scope.
-Bloomberg ElasticNetCV with hedge: Sharpe −0.16, annualized return 3.88%, volatility 24.1%.
-Bloomberg LightGBM with hedge: Sharpe 0.22, annualized return 13.41%, volatility 22.8%.
+Bloomberg ElasticNetCV with hedge: Sharpe −0.18, annualized return 3.25%, volatility 24.5%.
+Bloomberg LightGBM with hedge: Sharpe 0.21, annualized return 13.41%, volatility 22.8%.
 Neither result reflects the regulated investment outcome; they are reported as a reference
 for the incremental effect of the overlay on the analytical return stream.
 
@@ -515,9 +515,9 @@ a deep, liquid REIT segment within the local market. The closest direct analog i
 Brazilian Fundos Imobiliários market, where the same methodology could be applied with
 relatively modest adaptation. A more rigorous treatment of transaction costs would model
 market impact as a square-root function of trade size relative to daily volume, which
-would affect the Bloomberg ElasticNetCV configuration disproportionately at its current
-8.87% monthly turnover. Finally, the 95% confidence interval on the Sharpe estimate is
-very wide ([−0.634, 0.740] on Bloomberg) because the nine-year backtest contains only one
+would affect both Bloomberg configurations approximately equally at their current
+~3.5% monthly turnover. Finally, the 95% confidence interval on the Sharpe estimate is
+very wide ([−0.849, 0.534] on Bloomberg) because the nine-year backtest contains only one
 full Banxico tightening cycle and one easing cycle; precise estimation of regime-conditional
 performance will require additional years of data or a multi-country extension.
 
@@ -533,8 +533,8 @@ tilts, multiple optimizers operating under CNBV regulatory constraints, a Layer 
 overlay reported on an analytical basis, a LightGBM cross-sectional forecaster with
 TreeExplainer SHAP attribution, Banxico macro-regime conditioning, and a complete suite of
 overfitting diagnostics. The regulated portfolio achieves an annualized Sharpe ratio of
-0.03 on Bloomberg point-in-time fundamentals over the 2017–2026 window, with a 95%
-bootstrap confidence interval of [−0.634, 0.740].
+−0.18 on Bloomberg point-in-time fundamentals over the 2017–2026 window, with a 95%
+bootstrap confidence interval of [−0.849, 0.534].
 
 The principal empirical findings are three. First, FIBRA-specific operating metrics —
 loan-to-value, FFO yield, capitalization rate — dominate the SHAP attribution of the
@@ -645,3 +645,4 @@ compliance, SHAP schema, macro-regime no-lookahead, overfitting diagnostics, and
 bootstrap CI.
 
 Repository: github.com/MaxHidalgoLeon/FondoMexicoAlfa
+

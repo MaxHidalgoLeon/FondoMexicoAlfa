@@ -38,12 +38,12 @@ FIGURES = ROOT / "reports" / "figures"
 # Set any value to None to render an explicit placeholder.
 # ---------------------------------------------------------------------------
 BLOOMBERG_OOS: dict[str, str | None] = {
-    "sharpe":   "0.44",
-    "return":   "8.34%",
-    "vol":      "13.59%",
-    "max_dd":   "−35.5%",
-    "cvar":     "−1.95%",
-    "turnover": "0.57%",
+    "sharpe":   "−0.18",
+    "return":   "5.25%",
+    "vol":      "14.56%",
+    "max_dd":   "−39.83%",
+    "cvar":     "−2.11%",
+    "turnover": "3.48%",
 }
 _BBG_NOTE_DEFAULT = "Headline metrics correspond to Bloomberg point-in-time OOS, regulated NAV, 2017–2026."
 _BBG_NOTE         = _BBG_NOTE_DEFAULT

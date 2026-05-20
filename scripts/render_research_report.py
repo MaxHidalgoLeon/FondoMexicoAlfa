@@ -41,12 +41,12 @@ CANONICAL_TABLE1 = """**Table 1. Out-of-sample performance, regulated NAV, Janua
 
 | Source | Model | Return | Vol | Sharpe | Sortino | Max DD | CVaR 95% | Turnover |
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Bloomberg | ElasticNetCV | 8.34% | 13.59% | 0.44 | 0.45 | −35.50% | −1.95% | 0.57% |
-| Bloomberg | LightGBM | 8.29% | 13.57% | 0.44 | 0.44 | −35.38% | −1.95% | 6.33% |
-| Yahoo | ElasticNetCV | 9.98% | 15.86% | 0.47 | 0.48 | −36.58% | −2.26% | 0.04% |
-| Yahoo | LightGBM | 9.89% | 15.81% | 0.47 | 0.48 | −36.58% | −2.25% | 0.44% |
-| Refinitiv | ElasticNetCV | 5.80% | 16.01% | 0.23 | 0.23 | −43.19% | −2.28% | 0.04% |
-| Refinitiv | LightGBM | 5.73% | 15.60% | 0.23 | 0.23 | −42.75% | −2.23% | 0.67% |
+| Bloomberg | ElasticNetCV | 5.25% | 14.56% | −0.18 | −0.18 | −39.83% | −2.11% | 3.48% |
+| Bloomberg | LightGBM | 5.28% | 14.56% | −0.17 | −0.18 | −39.46% | −2.11% | 3.49% |
+| Yahoo | ElasticNetCV | 3.32% | 15.49% | −0.31 | −0.31 | −43.37% | −2.29% | 1.01% |
+| Yahoo | LightGBM | 3.39% | 15.40% | −0.31 | −0.31 | −43.11% | −2.27% | 1.02% |
+| Refinitiv | ElasticNetCV | 2.63% | 16.59% | −0.33 | −0.33 | −48.64% | −2.44% | 0.98% |
+| Refinitiv | LightGBM | 2.77% | 16.28% | −0.33 | −0.33 | −47.80% | −2.38% | 1.33% |
 
 *All figures are walk-forward OOS. Hedge overlay excluded. Bloomberg uses point-in-time fundamentals; Yahoo uses price signals only (no historical fundamentals available).*"""
 
@@ -190,13 +190,12 @@ def normalize_report_content(text: str, canonical_content: bool = False) -> str:
         text = re.sub(
             r"the regulated portfolio achieves an annualized Sharpe ratio of .*? "
             r"and a maximum drawdown of [−-]?\d+(?:\.\d+)?%\.",
-            "the regulated portfolio achieves an annualized Sharpe ratio of 0.44, "
-            "an annualized return of 8.34% at 13.59% volatility, and a maximum "
-            "drawdown of −35.5%.",
+            "the regulated portfolio achieves an annualized Sharpe ratio of −0.18, "
+            "an annualized return of 5.25% at 14.56% volatility, and a maximum "
+            "drawdown of −39.83%.",
             text,
             flags=re.DOTALL,
         )
-        text = text.replace("−35.5%.19%.", "−35.5%.")
         text = re.sub(
             r"\*\*Table 1\..*?(?=\n\n(?:Two findings stand out|### 5\.2))",
             CANONICAL_TABLE1,
