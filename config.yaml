@@ -79,6 +79,18 @@ compute_shap: true
 # Output path for the HTML report
 report_output: "reports/output/strategy_report.html"
 
+# --------------------------------------------------------------------------
+# Post-pipeline report renderers (executed by scripts/run_all.py)
+# --------------------------------------------------------------------------
+# Generate FMIA_Tearsheet.html/.pdf from latest artifacts.
+tearsheet_enabled: true
+
+# Generate FMIA_Research_Report.md from latest artifacts/template.
+research_report_enabled: true
+research_report_source: "bloomberg"          # fallback source for abstract KPIs
+research_report_model: "elasticnet"          # elasticnet | lightgbm
+research_report_render_pdf: true             # render FMIA_Research_Report.pdf from markdown
+
 # Run multiple data providers simultaneously (true) or one at a time (false).
 # WHEN TO USE:
 #   true  → LightGBM: reduces wall time from 3×T to ≈T (each uses n_jobs=1, so 3 cores

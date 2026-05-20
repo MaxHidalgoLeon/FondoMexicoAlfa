@@ -8,6 +8,7 @@ lightgbm>=4.0,<5.0   # Alternative cross-sectional return predictor (src/lightgb
 shap>=0.45,<1.0      # SHAP feature attribution for LightGBM walk-forward explainability (src/shap_attribution.py)
 weasyprint>=60.0     # HTML → PDF engine for tearsheet (requires pango/gobject system libs)
 fpdf2>=2.7,<3.0      # Pure-Python PDF fallback if WeasyPrint system libs unavailable
+reportlab>=4.5,<5.0  # Research-report PDF renderer (Platypus academic layout)
 plotly>=5.18,<6.0
 arch>=5.3,<7.0
 optuna>=3.6.0           # Bayesian hyperparameter optimization (scripts/run_hyperopt.py)

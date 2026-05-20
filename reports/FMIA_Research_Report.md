@@ -1,16 +1,13 @@
-# FondoMéxicoAlfa
+---
+title: "Fondo Mexico Inversión Alfa: Machine Learning Asset Selection in a Small-Cross-Section Emerging Market with Regulatory Constraints"
+author: "Maximiliano Hidalgo Léon"
+date: "May 2026"
+---
 
-## A Systematic Equity Strategy for Mexican Equities and FIBRAs
+# Fondo Mexico Inversión Alfa: Machine Learning Asset Selection in a Small-Cross-Section Emerging Market with Regulatory Constraints
 
-*Primary results for the CNBV-regulated long-only portfolio;
-long-short and 130/30 variants reported on an analytical basis in Section 5.5*
-
-*Multi-provider data infrastructure, Black–Litterman portfolio construction,
-machine-learning attribution, and macro-regime conditioning*
-
-**Maximiliano Hidalgo León**
-Tecnológico de Monterrey · Campus Querétaro
-May 2026
+**Author:** Maximiliano Hidalgo Léon
+**Date:** May 2026
 
 ---
 
@@ -28,8 +25,8 @@ ratios and combinatorially symmetric cross-validation. We extend the pipeline wi
 LightGBM cross-sectional return forecaster, TreeExplainer SHAP attribution, and Banxico
 macro-regime conditioning. Evaluated on 108 monthly walk-forward out-of-sample
 rebalances from 2017 through early 2026 with Bloomberg point-in-time fundamentals,
-the regulated portfolio achieves an annualized Sharpe ratio of 0.44, an annualized
-return of 8.34% at 13.59% volatility, and a maximum drawdown of -35.5%. ElasticNetCV
+the regulated portfolio achieves an annualized Sharpe ratio of 0.03, an annualized
+return of 8.46% at 13.70% volatility, and a maximum drawdown of -37.19%. ElasticNetCV
 and LightGBM produce statistically indistinguishable performance on real data; the
 value of the gradient-boosted model lies in its attribution framework rather than
 raw return lift. SHAP analysis identifies FIBRA-specific operating metrics —
@@ -304,12 +301,12 @@ are 10 basis points per side, hedge overlay excluded.
 
 | Source | Model | Return | Vol | Sharpe | Sortino | Max DD | CVaR 95% | Turnover |
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Bloomberg | ElasticNetCV | 8.34% | 13.59% | 0.44 | 0.45 | −35.50% | −1.95% | 0.57% |
-| Bloomberg | LightGBM      | 8.29% | 13.57% | 0.44 | 0.44 | −35.38% | −1.95% | 6.33% |
-| Yahoo     | ElasticNetCV | 9.98% | 15.86% | 0.47 | 0.48 | −36.58% | −2.26% | 0.04% |
-| Yahoo     | LightGBM      | 9.89% | 15.81% | 0.47 | 0.48 | −36.58% | −2.25% | 0.44% |
-| Refinitiv | ElasticNetCV | 5.80% | 16.01% | 0.23 | 0.23 | −43.19% | −2.28% | 0.04% |
-| Refinitiv | LightGBM      | 5.73% | 15.60% | 0.23 | 0.23 | −42.75% | −2.23% | 0.67% |
+| Bloomberg | ElasticNetCV | 8.46% | 13.70% | 0.03 | 0.03 | -37.19% | -1.98% | 8.87% |
+| Bloomberg | LightGBM | 5.28% | 14.56% | -0.17 | -0.18 | -39.46% | -2.11% | 3.49% |
+| Yahoo | ElasticNetCV | 3.32% | 15.49% | -0.31 | -0.31 | -43.37% | -2.29% | 1.01% |
+| Yahoo | LightGBM | 3.39% | 15.40% | -0.31 | -0.31 | -43.11% | -2.27% | 1.02% |
+| Refinitiv | ElasticNetCV | 2.63% | 16.59% | -0.33 | -0.33 | -48.64% | -2.44% | 0.98% |
+| Refinitiv | LightGBM | 2.77% | 16.28% | -0.33 | -0.33 | -47.80% | -2.38% | 1.33% |
 
 Two findings stand out. First, within each data source, ElasticNetCV and LightGBM
 produce statistically indistinguishable performance. The Sharpe ratios are identical
@@ -657,3 +654,4 @@ Random seeds are fixed across all stochastic components to ensure exact
 reproducibility. The test suite comprises 158 unit and integration tests.
 
 Repository: github.com/MaxHidalgoLeon/FondoMexicoAlfa
+

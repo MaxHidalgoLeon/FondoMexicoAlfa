@@ -84,6 +84,11 @@ def _load_config() -> dict:
         "report_output": "reports/output/strategy_report.html",
         "abort_on_test_failure": True,
         "optimizer": "mv",
+        "tearsheet_enabled": True,
+        "research_report_enabled": True,
+        "research_report_source": "bloomberg",
+        "research_report_model": "elasticnet",
+        "research_report_render_pdf": True,
     }
     if not config_path.exists():
         return defaults
@@ -322,7 +327,7 @@ def _run_sources_parallel(
 
     launched: list[tuple[str, subprocess.Popen, float]] = []
     for source in sources:
-        env = {**os.environ, "FMIA_SOURCE_LABEL": source}
+        env = {**os.environ, "FMIA_SOURCE_LABEL": source, "FMIA_PARALLEL_CHILD": "1"}
         cmd = base_cmd + ["--source", source]
         print(f"[Parallel] Launching {source}…")
         p = subprocess.Popen(cmd, env=env)
@@ -340,6 +345,40 @@ def _run_sources_parallel(
             failed.append((source, f"exit code {p.returncode}"))
 
     return successful, failed, timings
+
+
+def _run_post_reports(config: dict, successful_sources: list[str], forecast_model: str) -> None:
+    """Generate tearsheet and research report after the pipeline finishes."""
+    if bool(config.get("tearsheet_enabled", True)):
+        print("\n" + "=" * 60)
+        print("POST STEP — Generating tearsheet")
+        print("=" * 60)
+        subprocess.run([sys.executable, str(ROOT / "scripts" / "render_tearsheet.py")], cwd=ROOT, check=True)
+
+    if bool(config.get("research_report_enabled", True)):
+        print("\n" + "=" * 60)
+        print("POST STEP — Generating research report")
+        print("=" * 60)
+        source = str(config.get("research_report_source") or "").strip().lower()
+        if not source:
+            source = successful_sources[0]
+        if source not in successful_sources:
+            print(
+                f"[WARNING] research_report_source={source} did not complete successfully. "
+                f"Using {successful_sources[0]} instead."
+            )
+            source = successful_sources[0]
+
+        model = str(config.get("research_report_model") or forecast_model).strip().lower()
+        cmd = [
+            sys.executable,
+            str(ROOT / "scripts" / "render_research_report.py"),
+            "--source", source,
+            "--model", model,
+        ]
+        if bool(config.get("research_report_render_pdf", True)):
+            cmd.append("--render-pdf")
+        subprocess.run(cmd, cwd=ROOT, check=True)
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +509,12 @@ def main() -> None:
         print(f"  Total:           {int(total) // 60}m")
 
     print("\n[DONE] Pipeline completed successfully.\n")
+
+    # In parallel mode, only the parent process should render consolidated reports.
+    is_parallel_child = os.environ.get("FMIA_PARALLEL_CHILD") == "1"
+    if not is_parallel_child:
+        _run_post_reports(config=config, successful_sources=successful_sources, forecast_model=forecast_model)
+        print("\n[DONE] Post-report generation completed.\n")
 
 if __name__ == "__main__":
     main()
